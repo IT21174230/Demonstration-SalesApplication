@@ -1,0 +1,1827 @@
+{
+  "main_processes": [
+    {
+      "id": 1,
+      "code": "1",
+      "name": "Quotation",
+      "description": "Customer inquiry intake, verification, KYC for new customers, and routing to pricing.",
+      "sequence_order": 1,
+      "created_at": "2026-01-15T09:00:00Z"
+    },
+    {
+      "id": 2,
+      "code": "2",
+      "name": "Rate Management & Pricing",
+      "description": "Rate lookup in AMS, escalation to Procurement when missing, retrieval from shipping lines, markup and quotation.",
+      "sequence_order": 2,
+      "created_at": "2026-01-15T09:00:00Z"
+    }
+  ],
+  "activity_types": [
+    {
+      "id": 1,
+      "name": "Inquiry",
+      "description": "Receiving a customer inquiry."
+    },
+    {
+      "id": 2,
+      "name": "Verification",
+      "description": "Background / internal verification of an inquiry or customer."
+    },
+    {
+      "id": 3,
+      "name": "Documentation",
+      "description": "Capturing or completing required documentation (e.g., KYC)."
+    },
+    {
+      "id": 4,
+      "name": "System Check",
+      "description": "Looking up data in an internal system (e.g., AMS)."
+    },
+    {
+      "id": 5,
+      "name": "Communication",
+      "description": "Inter-team or external communication, often informal."
+    },
+    {
+      "id": 6,
+      "name": "Quotation",
+      "description": "Producing and sending a quotation to a customer."
+    }
+  ],
+  "responsible_parties": [
+    {
+      "id": 1,
+      "name": "Sales Team",
+      "party_type": "internal_team",
+      "description": "Owns customer relationships and quotations."
+    },
+    {
+      "id": 2,
+      "name": "Customer Service Team",
+      "party_type": "internal_team",
+      "description": "Handles inquiry intake and AMS rate checks."
+    },
+    {
+      "id": 3,
+      "name": "Finance Team",
+      "party_type": "internal_team",
+      "description": "Approves KYC and credit."
+    },
+    {
+      "id": 4,
+      "name": "Procurement Team",
+      "party_type": "internal_team",
+      "description": "Sources rates from shipping lines and updates AMS."
+    },
+    {
+      "id": 5,
+      "name": "Customer",
+      "party_type": "external",
+      "description": "External customer (new or existing)."
+    }
+  ],
+  "documents_systems": [
+    {
+      "id": 1,
+      "name": "WhatsApp",
+      "asset_type": "channel",
+      "description": "Primary informal channel for inquiries and rate requests.",
+      "is_formal": false
+    },
+    {
+      "id": 2,
+      "name": "Email",
+      "asset_type": "channel",
+      "description": "Secondary formal channel.",
+      "is_formal": true
+    },
+    {
+      "id": 3,
+      "name": "KYC Form",
+      "asset_type": "document",
+      "description": "Standard format KYC document sent via email.",
+      "is_formal": true
+    },
+    {
+      "id": 4,
+      "name": "AMS",
+      "asset_type": "system",
+      "description": "Internal pricing system holding contracted and monthly rates.",
+      "is_formal": true
+    },
+    {
+      "id": 5,
+      "name": "Gensoft",
+      "asset_type": "system",
+      "description": "Quotation module exists but unused.",
+      "is_formal": true
+    },
+    {
+      "id": 6,
+      "name": "Liner Portals",
+      "asset_type": "system",
+      "description": "External shipping line portals used by Procurement.",
+      "is_formal": true
+    },
+    {
+      "id": 7,
+      "name": "WhatsApp Group",
+      "asset_type": "channel",
+      "description": "Internal CS↔Procurement group used for rate requests.",
+      "is_formal": false
+    },
+    {
+      "id": 8,
+      "name": "Direct Call",
+      "asset_type": "channel",
+      "description": "Phone call between teams.",
+      "is_formal": false
+    },
+    {
+      "id": 9,
+      "name": "Internal Verification Note",
+      "asset_type": "document",
+      "description": "Ad-hoc note — no defined system.",
+      "is_formal": false
+    }
+  ],
+  "process_steps": [
+    {
+      "id": 11,
+      "main_process_id": 1,
+      "step_code": "1.1",
+      "activity_type_id": 1,
+      "activity_description": "New customer first contact (initial inquiry intake).",
+      "tat_min": null,
+      "tat_max": null,
+      "tat_unit": "immediate",
+      "tat_raw": "Immediate",
+      "remarks": "WhatsApp for first contact. No standard inquiry template exists.",
+      "sequence_order": 1
+    },
+    {
+      "id": 12,
+      "main_process_id": 1,
+      "step_code": "1.2",
+      "activity_type_id": 2,
+      "activity_description": "Sales receives inquiry and performs background verification.",
+      "tat_min": 1,
+      "tat_max": 2,
+      "tat_unit": "days",
+      "tat_raw": "1–2 days",
+      "remarks": "No formal verification SOP. Process is ad hoc and varies by salesperson. KYC form sent to new customer and must be returned before quotation proceeds.",
+      "sequence_order": 2
+    },
+    {
+      "id": 13,
+      "main_process_id": 1,
+      "step_code": "1.3",
+      "activity_type_id": 3,
+      "activity_description": "KYC form sent to and completed by new customer.",
+      "tat_min": 1,
+      "tat_max": 3,
+      "tat_unit": "days",
+      "tat_raw": "1–3 days (customer-dependent)",
+      "remarks": "Customer delay is common. No tracking system for outstanding KYC forms. Finance approval required before any booking is released for new customers.",
+      "sequence_order": 3
+    },
+    {
+      "id": 14,
+      "main_process_id": 1,
+      "step_code": "1.4",
+      "activity_type_id": 1,
+      "activity_description": "Existing customer contacts Sales or CS directly for rate / booking.",
+      "tat_min": null,
+      "tat_max": null,
+      "tat_unit": "same_day",
+      "tat_raw": "Immediate / same day",
+      "remarks": "~35–40 inquiries per day across the team with no centralised tracking. No CRM in use. Dropped or unconverted inquiries are invisible — no conversion rate data available. Existing customers bypass formal onboarding and communicate directly with CS.",
+      "sequence_order": 4
+    },
+    {
+      "id": 21,
+      "main_process_id": 2,
+      "step_code": "2.1",
+      "activity_type_id": 4,
+      "activity_description": "CS checks AMS for contracted or monthly rates.",
+      "tat_min": null,
+      "tat_max": null,
+      "tat_unit": "minutes",
+      "tat_raw": "Minutes",
+      "remarks": "AMS holds contracted rates (fixed 1–6 months) and monthly rates (15-day validity). Spot rates are absent from AMS. Not all liner rates are always updated — gaps exist when liners have not yet issued new rate sheets. AMS is not linked to Gensoft.",
+      "sequence_order": 1
+    },
+    {
+      "id": 22,
+      "main_process_id": 2,
+      "step_code": "2.2",
+      "activity_type_id": 5,
+      "activity_description": "If rate unavailable in AMS, CS requests rate from Procurement.",
+      "tat_min": null,
+      "tat_max": null,
+      "tat_unit": "hours",
+      "tat_raw": "Hours (same day)",
+      "remarks": "Informal channel — WhatsApp group used for all rate requests. Process is undocumented with no SLA. Risk of delays when procurement team is unavailable. Spot rates are never stored centrally after retrieval.",
+      "sequence_order": 2
+    },
+    {
+      "id": 23,
+      "main_process_id": 2,
+      "step_code": "2.3",
+      "activity_type_id": 5,
+      "activity_description": "Procurement retrieves rate from shipping line and updates AMS.",
+      "tat_min": null,
+      "tat_max": null,
+      "tat_unit": "hours",
+      "tat_raw": "Minutes to hours (liner-dependent)",
+      "remarks": "Each liner sends rate sheets on different schedules (daily, 15-day, monthly). ~12 shipping lines total; 80% of volume through 4–5 main carriers (US: ~70% via MSC). Rates not always current in AMS at point of inquiry. Spot rates never stored centrally.",
+      "sequence_order": 3
+    },
+    {
+      "id": 24,
+      "main_process_id": 2,
+      "step_code": "2.4",
+      "activity_type_id": 6,
+      "activity_description": "Sales determines markup and quotes customer.",
+      "tat_min": null,
+      "tat_max": null,
+      "tat_unit": "same_day",
+      "tat_raw": "Same day",
+      "remarks": "No standardised markup guidelines. Markup is 100% salesperson judgment. Very low or zero-margin deals accepted without approval. Quotation options (Option 1, 2, 3) may be given. Gensoft has quotation module but it is not used. Subject to space availability for spot rates.",
+      "sequence_order": 4
+    }
+  ],
+  "step_responsible_parties": [
+    {
+      "id": 1,
+      "step_id": 11,
+      "responsible_party_id": 5,
+      "role": "primary"
+    },
+    {
+      "id": 2,
+      "step_id": 12,
+      "responsible_party_id": 1,
+      "role": "primary"
+    },
+    {
+      "id": 3,
+      "step_id": 13,
+      "responsible_party_id": 1,
+      "role": "handoff_from"
+    },
+    {
+      "id": 4,
+      "step_id": 13,
+      "responsible_party_id": 5,
+      "role": "handoff_to"
+    },
+    {
+      "id": 5,
+      "step_id": 14,
+      "responsible_party_id": 5,
+      "role": "handoff_from"
+    },
+    {
+      "id": 6,
+      "step_id": 14,
+      "responsible_party_id": 1,
+      "role": "handoff_to"
+    },
+    {
+      "id": 7,
+      "step_id": 14,
+      "responsible_party_id": 2,
+      "role": "handoff_to"
+    },
+    {
+      "id": 8,
+      "step_id": 21,
+      "responsible_party_id": 2,
+      "role": "primary"
+    },
+    {
+      "id": 9,
+      "step_id": 22,
+      "responsible_party_id": 2,
+      "role": "handoff_from"
+    },
+    {
+      "id": 10,
+      "step_id": 22,
+      "responsible_party_id": 4,
+      "role": "handoff_to"
+    },
+    {
+      "id": 11,
+      "step_id": 23,
+      "responsible_party_id": 4,
+      "role": "primary"
+    },
+    {
+      "id": 12,
+      "step_id": 24,
+      "responsible_party_id": 1,
+      "role": "primary"
+    }
+  ],
+  "step_notified_parties": [
+    {
+      "id": 1,
+      "step_id": 12,
+      "responsible_party_id": 3
+    },
+    {
+      "id": 2,
+      "step_id": 12,
+      "responsible_party_id": 2
+    },
+    {
+      "id": 3,
+      "step_id": 13,
+      "responsible_party_id": 1
+    },
+    {
+      "id": 4,
+      "step_id": 13,
+      "responsible_party_id": 3
+    },
+    {
+      "id": 5,
+      "step_id": 14,
+      "responsible_party_id": 2
+    },
+    {
+      "id": 6,
+      "step_id": 21,
+      "responsible_party_id": 1
+    },
+    {
+      "id": 7,
+      "step_id": 22,
+      "responsible_party_id": 1
+    },
+    {
+      "id": 8,
+      "step_id": 23,
+      "responsible_party_id": 2
+    },
+    {
+      "id": 9,
+      "step_id": 24,
+      "responsible_party_id": 5
+    }
+  ],
+  "step_documents": [
+    {
+      "id": 1,
+      "step_id": 11,
+      "document_system_id": 1,
+      "usage_note": "First contact via WhatsApp — no standard inquiry template"
+    },
+    {
+      "id": 2,
+      "step_id": 12,
+      "document_system_id": 9,
+      "usage_note": "Internal check (no defined system)"
+    },
+    {
+      "id": 3,
+      "step_id": 13,
+      "document_system_id": 3,
+      "usage_note": "Standard KYC format"
+    },
+    {
+      "id": 4,
+      "step_id": 13,
+      "document_system_id": 2,
+      "usage_note": "KYC sent over email"
+    },
+    {
+      "id": 5,
+      "step_id": 14,
+      "document_system_id": 1,
+      "usage_note": "~90% of inquiries arrive on WhatsApp"
+    },
+    {
+      "id": 6,
+      "step_id": 14,
+      "document_system_id": 2,
+      "usage_note": "Remaining ~10% via email"
+    },
+    {
+      "id": 7,
+      "step_id": 21,
+      "document_system_id": 4,
+      "usage_note": "Internal pricing system — contracted & monthly rates only"
+    },
+    {
+      "id": 8,
+      "step_id": 22,
+      "document_system_id": 7,
+      "usage_note": "Procurement WhatsApp group"
+    },
+    {
+      "id": 9,
+      "step_id": 22,
+      "document_system_id": 8,
+      "usage_note": "Direct call fallback"
+    },
+    {
+      "id": 10,
+      "step_id": 23,
+      "document_system_id": 6,
+      "usage_note": "Liner portals for rate retrieval"
+    },
+    {
+      "id": 11,
+      "step_id": 23,
+      "document_system_id": 2,
+      "usage_note": "Email rate sheets"
+    },
+    {
+      "id": 12,
+      "step_id": 23,
+      "document_system_id": 7,
+      "usage_note": "WhatsApp group from liners"
+    },
+    {
+      "id": 13,
+      "step_id": 23,
+      "document_system_id": 4,
+      "usage_note": "Rate is ultimately keyed back into AMS"
+    },
+    {
+      "id": 14,
+      "step_id": 24,
+      "document_system_id": 2,
+      "usage_note": "Quotation usually via email"
+    },
+    {
+      "id": 15,
+      "step_id": 24,
+      "document_system_id": 1,
+      "usage_note": "Or WhatsApp; Gensoft quotation module unused"
+    }
+  ],
+  "customers": [
+    {
+      "id": 1,
+      "name": "Lanka Textiles (Pvt) Ltd",
+      "customer_type": "new",
+      "contact_email": "kevi@gmail.com",
+      "contact_phone": "0759759251",
+      "kyc_status": "approved",
+      "kyc_completed_at": "2026-04-30T11:30:00Z",
+      "created_at": "2026-04-27T08:15:00Z",
+      "tier": "Regular",
+      "payment_terms": "Pay Upfront",
+      "location": "Colombo, Sri Lanka",
+      "blacklisted": false,
+      "credit_hold": false,
+      "min_margin_pct": 7
+    },
+    {
+      "id": 2,
+      "name": "Ceylon Spice Exporters",
+      "customer_type": "existing",
+      "contact_email": "shipping@ceylonspice.lk",
+      "contact_phone": "+94117788990",
+      "kyc_status": "approved",
+      "kyc_completed_at": "2024-08-10T10:00:00Z",
+      "created_at": "2024-08-01T09:00:00Z",
+      "tier": "Key Account",
+      "payment_terms": "30-Day Credit",
+      "location": "Colombo, Sri Lanka",
+      "blacklisted": false,
+      "credit_hold": false,
+      "min_margin_pct": 5
+    },
+    {
+      "id": 3,
+      "name": "Indo-Asia Trading",
+      "customer_type": "new",
+      "contact_email": "imports@indoasia.in",
+      "contact_phone": "+919876543210",
+      "kyc_status": "pending_customer",
+      "kyc_completed_at": null,
+      "created_at": "2026-05-04T14:20:00Z",
+      "tier": "Regular",
+      "payment_terms": "Pay Upfront",
+      "location": "Mumbai, India",
+      "blacklisted": false,
+      "credit_hold": false,
+      "min_margin_pct": 7
+    },
+    {
+      "id": 7,
+      "name": "Hayleys Logistics",
+      "customer_type": "existing",
+      "contact_email": "shipping@hayleys.lk",
+      "contact_phone": "+94112345001",
+      "kyc_status": "approved",
+      "kyc_completed_at": "2025-06-15T10:00:00Z",
+      "created_at": "2025-06-01T09:00:00Z",
+      "tier": "Key Account",
+      "payment_terms": "30-Day Credit",
+      "location": "Colombo, Sri Lanka",
+      "blacklisted": false,
+      "credit_hold": false,
+      "min_margin_pct": 5
+    },
+    {
+      "id": 8,
+      "name": "Brandix Apparel",
+      "customer_type": "existing",
+      "contact_email": "logistics@brandix.com",
+      "contact_phone": "+94112345002",
+      "kyc_status": "approved",
+      "kyc_completed_at": "2025-03-10T10:00:00Z",
+      "created_at": "2025-03-01T09:00:00Z",
+      "tier": "Key Account",
+      "payment_terms": "30-Day Credit",
+      "location": "Colombo, Sri Lanka",
+      "blacklisted": false,
+      "credit_hold": false,
+      "min_margin_pct": 5
+    },
+    {
+      "id": 9,
+      "name": "Customer ABC",
+      "customer_type": "new",
+      "contact_email": "contact@customerabc.com",
+      "contact_phone": "+94112345003",
+      "kyc_status": "approved",
+      "kyc_completed_at": "2026-04-25T14:00:00Z",
+      "created_at": "2026-04-20T09:00:00Z",
+      "tier": "Regular",
+      "payment_terms": "Pay Upfront",
+      "location": "Colombo, Sri Lanka",
+      "blacklisted": false,
+      "credit_hold": false,
+      "min_margin_pct": 7
+    },
+    {
+      "id": 10,
+      "name": "MAS Holdings",
+      "customer_type": "existing",
+      "contact_email": "freight@masholdings.com",
+      "contact_phone": "+94112345004",
+      "kyc_status": "approved",
+      "kyc_completed_at": "2024-11-05T10:00:00Z",
+      "created_at": "2024-10-15T09:00:00Z",
+      "tier": "Key Account",
+      "payment_terms": "60-Day Credit",
+      "location": "Colombo, Sri Lanka",
+      "blacklisted": false,
+      "credit_hold": false,
+      "min_margin_pct": 4,
+      "notes": "Strategic account — large monthly volume"
+    },
+    {
+      "id": 11,
+      "name": "Dilmah Tea",
+      "customer_type": "existing",
+      "contact_email": "exports@dilmahtea.com",
+      "contact_phone": "+94112345005",
+      "kyc_status": "approved",
+      "kyc_completed_at": "2024-09-20T10:00:00Z",
+      "created_at": "2024-09-01T09:00:00Z",
+      "tier": "Key Account",
+      "payment_terms": "30-Day Credit",
+      "location": "Peliyagoda, Sri Lanka",
+      "blacklisted": false,
+      "credit_hold": true,
+      "min_margin_pct": 5,
+      "notes": "Credit hold — finance to clear before next quote"
+    },
+    {
+      "id": 12,
+      "name": "Hela Apparel",
+      "customer_type": "new",
+      "contact_email": "logistics@helaapparel.lk",
+      "contact_phone": "+94112345006",
+      "kyc_status": "pending_customer",
+      "kyc_completed_at": null,
+      "created_at": "2026-04-28T09:00:00Z",
+      "tier": "Regular",
+      "payment_terms": "Pay Upfront",
+      "location": "Katunayake, Sri Lanka",
+      "blacklisted": false,
+      "credit_hold": false,
+      "min_margin_pct": 7
+    },
+    {
+      "id": 15,
+      "name": "Vanguard Shippers",
+      "customer_type": "new",
+      "contact_email": "ops@vanguardshippers.pk",
+      "contact_phone": "+92213456789",
+      "kyc_status": "not_started",
+      "kyc_completed_at": null,
+      "created_at": "2026-03-15T09:00:00Z",
+      "tier": "Walk-in",
+      "payment_terms": "Pay Upfront",
+      "location": "Karachi, Pakistan",
+      "blacklisted": true,
+      "credit_hold": false,
+      "min_margin_pct": 10,
+      "notes": "Blacklisted -- repeated payment defaults in 2025"
+    }
+  ],
+  "process_instances": [
+    {
+      "id": 101,
+      "main_process_id": 1,
+      "customer_id": 1,
+      "reference_number": "QUO-2026-0001",
+      "current_step_id": 13,
+      "status": "completed",
+      "started_at": "2026-04-27T08:20:00Z",
+      "completed_at": "2026-04-30T11:35:00Z"
+    },
+    {
+      "id": 102,
+      "main_process_id": 2,
+      "customer_id": 1,
+      "reference_number": "PRC-2026-0001",
+      "current_step_id": 24,
+      "status": "completed",
+      "started_at": "2026-04-30T12:00:00Z",
+      "completed_at": "2026-04-30T16:45:00Z"
+    },
+    {
+      "id": 103,
+      "main_process_id": 1,
+      "customer_id": 2,
+      "reference_number": "QUO-2026-0014",
+      "current_step_id": 14,
+      "status": "completed",
+      "started_at": "2026-05-06T09:10:00Z",
+      "completed_at": "2026-05-06T09:25:00Z"
+    },
+    {
+      "id": 104,
+      "main_process_id": 2,
+      "customer_id": 2,
+      "reference_number": "PRC-2026-0014",
+      "current_step_id": 22,
+      "status": "active",
+      "started_at": "2026-05-06T09:30:00Z",
+      "completed_at": null
+    },
+    {
+      "id": 105,
+      "main_process_id": 1,
+      "customer_id": 3,
+      "reference_number": "QUO-2026-0019",
+      "current_step_id": 13,
+      "status": "blocked",
+      "started_at": "2026-05-04T14:25:00Z",
+      "completed_at": null
+    },
+    {
+      "id": 106,
+      "main_process_id": 1,
+      "customer_id": 7,
+      "reference_number": "QUO-2026-0020",
+      "current_step_id": 14,
+      "status": "active",
+      "started_at": "2026-05-02T09:14:00Z",
+      "completed_at": null
+    },
+    {
+      "id": 107,
+      "main_process_id": 1,
+      "customer_id": 8,
+      "reference_number": "QUO-2026-0021",
+      "current_step_id": 14,
+      "status": "active",
+      "started_at": "2026-05-02T08:42:00Z",
+      "completed_at": null
+    },
+    {
+      "id": 108,
+      "main_process_id": 1,
+      "customer_id": 9,
+      "reference_number": "QUO-2026-0022",
+      "current_step_id": 14,
+      "status": "completed",
+      "started_at": "2026-05-01T14:08:00Z",
+      "completed_at": "2026-05-01T17:22:00Z"
+    },
+    {
+      "id": 109,
+      "main_process_id": 1,
+      "customer_id": 10,
+      "reference_number": "QUO-2026-0023",
+      "current_step_id": 14,
+      "status": "completed",
+      "started_at": "2026-05-01T10:20:00Z",
+      "completed_at": "2026-05-01T16:05:00Z"
+    },
+    {
+      "id": 110,
+      "main_process_id": 1,
+      "customer_id": 11,
+      "reference_number": "QUO-2026-0024",
+      "current_step_id": 14,
+      "status": "completed",
+      "started_at": "2026-04-30T11:45:00Z",
+      "completed_at": "2026-04-30T15:10:00Z"
+    },
+    {
+      "id": 111,
+      "main_process_id": 1,
+      "customer_id": 12,
+      "reference_number": "QUO-2026-0025",
+      "current_step_id": 12,
+      "status": "active",
+      "started_at": "2026-04-30T09:02:00Z",
+      "completed_at": null
+    },
+    {
+      "id": 112,
+      "main_process_id": 2,
+      "customer_id": 9,
+      "reference_number": "PRC-2026-0022",
+      "current_step_id": 24,
+      "status": "completed",
+      "started_at": "2026-05-01T15:00:00Z",
+      "completed_at": "2026-05-01T17:22:00Z"
+    },
+    {
+      "id": 113,
+      "main_process_id": 2,
+      "customer_id": 10,
+      "reference_number": "PRC-2026-0023",
+      "current_step_id": 24,
+      "status": "completed",
+      "started_at": "2026-05-01T11:00:00Z",
+      "completed_at": "2026-05-01T16:05:00Z"
+    },
+    {
+      "id": 114,
+      "main_process_id": 2,
+      "customer_id": 11,
+      "reference_number": "PRC-2026-0024",
+      "current_step_id": 24,
+      "status": "completed",
+      "started_at": "2026-04-30T12:00:00Z",
+      "completed_at": "2026-04-30T15:10:00Z"
+    }
+  ],
+  "step_executions": [
+    {
+      "id": 1001,
+      "process_instance_id": 101,
+      "step_id": 11,
+      "assigned_to_party_id": 5,
+      "status": "completed",
+      "started_at": "2026-04-27T08:20:00Z",
+      "completed_at": "2026-04-27T08:25:00Z",
+      "actual_tat_minutes": 5,
+      "notes": "Customer reached out on WhatsApp asking for FCL rates COL→HAM."
+    },
+    {
+      "id": 1002,
+      "process_instance_id": 101,
+      "step_id": 12,
+      "assigned_to_party_id": 1,
+      "status": "completed",
+      "started_at": "2026-04-27T09:00:00Z",
+      "completed_at": "2026-04-28T15:40:00Z",
+      "actual_tat_minutes": 1840,
+      "notes": "Background check — confirmed registered exporter."
+    },
+    {
+      "id": 1003,
+      "process_instance_id": 101,
+      "step_id": 13,
+      "assigned_to_party_id": 5,
+      "status": "completed",
+      "started_at": "2026-04-28T16:00:00Z",
+      "completed_at": "2026-04-30T11:35:00Z",
+      "actual_tat_minutes": 2735,
+      "notes": "KYC returned by customer; Finance approved."
+    },
+    {
+      "id": 1004,
+      "process_instance_id": 102,
+      "step_id": 21,
+      "assigned_to_party_id": 2,
+      "status": "completed",
+      "started_at": "2026-04-30T12:00:00Z",
+      "completed_at": "2026-04-30T12:08:00Z",
+      "actual_tat_minutes": 8,
+      "notes": "AMS had monthly rate for MSC — within validity."
+    },
+    {
+      "id": 1005,
+      "process_instance_id": 102,
+      "step_id": 24,
+      "assigned_to_party_id": 1,
+      "status": "completed",
+      "started_at": "2026-04-30T15:30:00Z",
+      "completed_at": "2026-04-30T16:45:00Z",
+      "actual_tat_minutes": 75,
+      "notes": "Markup applied 12%; sent 2 options via email."
+    },
+    {
+      "id": 1006,
+      "process_instance_id": 103,
+      "step_id": 14,
+      "assigned_to_party_id": 2,
+      "status": "completed",
+      "started_at": "2026-05-06T09:10:00Z",
+      "completed_at": "2026-05-06T09:25:00Z",
+      "actual_tat_minutes": 15,
+      "notes": "Existing customer pinged CS on WhatsApp for COL→LAX rate."
+    },
+    {
+      "id": 1007,
+      "process_instance_id": 104,
+      "step_id": 21,
+      "assigned_to_party_id": 2,
+      "status": "completed",
+      "started_at": "2026-05-06T09:30:00Z",
+      "completed_at": "2026-05-06T09:34:00Z",
+      "actual_tat_minutes": 4,
+      "notes": "AMS had no current rate for that lane (gap — liner not yet updated)."
+    },
+    {
+      "id": 1008,
+      "process_instance_id": 104,
+      "step_id": 22,
+      "assigned_to_party_id": 4,
+      "status": "in_progress",
+      "started_at": "2026-05-06T09:35:00Z",
+      "completed_at": null,
+      "actual_tat_minutes": null,
+      "notes": "CS posted request in Procurement WhatsApp group; waiting."
+    },
+    {
+      "id": 1009,
+      "process_instance_id": 105,
+      "step_id": 11,
+      "assigned_to_party_id": 5,
+      "status": "completed",
+      "started_at": "2026-05-04T14:25:00Z",
+      "completed_at": "2026-05-04T14:30:00Z",
+      "actual_tat_minutes": 5,
+      "notes": "First contact via WhatsApp."
+    },
+    {
+      "id": 1010,
+      "process_instance_id": 105,
+      "step_id": 12,
+      "assigned_to_party_id": 1,
+      "status": "completed",
+      "started_at": "2026-05-04T15:00:00Z",
+      "completed_at": "2026-05-05T11:00:00Z",
+      "actual_tat_minutes": 1200,
+      "notes": "Verification done; KYC issued."
+    },
+    {
+      "id": 1011,
+      "process_instance_id": 105,
+      "step_id": 13,
+      "assigned_to_party_id": 5,
+      "status": "blocked",
+      "started_at": "2026-05-05T11:05:00Z",
+      "completed_at": null,
+      "actual_tat_minutes": null,
+      "notes": "Awaiting KYC return from customer (>2 days outstanding, not tracked formally)."
+    },
+    {
+      "id": 1012,
+      "process_instance_id": 106,
+      "step_id": 14,
+      "assigned_to_party_id": 2,
+      "status": "in_progress",
+      "started_at": "2026-05-02T09:14:00Z",
+      "completed_at": null,
+      "actual_tat_minutes": null,
+      "notes": "Inquiry received via email. Awaiting rate check."
+    },
+    {
+      "id": 1013,
+      "process_instance_id": 107,
+      "step_id": 14,
+      "assigned_to_party_id": 2,
+      "status": "in_progress",
+      "started_at": "2026-05-02T08:42:00Z",
+      "completed_at": null,
+      "actual_tat_minutes": null,
+      "notes": "WhatsApp inquiry for 4x40ft to Singapore."
+    },
+    {
+      "id": 1014,
+      "process_instance_id": 111,
+      "step_id": 11,
+      "assigned_to_party_id": 5,
+      "status": "completed",
+      "started_at": "2026-04-30T09:02:00Z",
+      "completed_at": "2026-04-30T09:10:00Z",
+      "actual_tat_minutes": 8,
+      "notes": "First contact via WhatsApp — 3x20ft to Mumbai."
+    },
+    {
+      "id": 1015,
+      "process_instance_id": 111,
+      "step_id": 12,
+      "assigned_to_party_id": 1,
+      "status": "in_progress",
+      "started_at": "2026-04-30T10:00:00Z",
+      "completed_at": null,
+      "actual_tat_minutes": null,
+      "notes": "Background verification started. KYC form pending."
+    },
+    {
+      "id": 1016,
+      "process_instance_id": 108,
+      "step_id": 14,
+      "assigned_to_party_id": 2,
+      "status": "completed",
+      "started_at": "2026-05-01T14:08:00Z",
+      "completed_at": "2026-05-01T14:20:00Z",
+      "actual_tat_minutes": 12,
+      "notes": "Inquiry intake for 10 containers Shanghai→Colombo."
+    },
+    {
+      "id": 1017,
+      "process_instance_id": 109,
+      "step_id": 14,
+      "assigned_to_party_id": 2,
+      "status": "completed",
+      "started_at": "2026-05-01T10:20:00Z",
+      "completed_at": "2026-05-01T10:35:00Z",
+      "actual_tat_minutes": 15,
+      "notes": "Email inquiry for 6 dry containers to Rotterdam."
+    },
+    {
+      "id": 1018,
+      "process_instance_id": 110,
+      "step_id": 14,
+      "assigned_to_party_id": 2,
+      "status": "completed",
+      "started_at": "2026-04-30T11:45:00Z",
+      "completed_at": "2026-04-30T12:00:00Z",
+      "actual_tat_minutes": 15,
+      "notes": "Email inquiry for 8 containers to Dubai."
+    },
+    {
+      "id": 1019,
+      "process_instance_id": 112,
+      "step_id": 21,
+      "assigned_to_party_id": 2,
+      "status": "completed",
+      "started_at": "2026-05-01T15:00:00Z",
+      "completed_at": "2026-05-01T15:06:00Z",
+      "actual_tat_minutes": 6,
+      "notes": "AMS rate found for ONE Shanghai→Colombo."
+    },
+    {
+      "id": 1020,
+      "process_instance_id": 112,
+      "step_id": 24,
+      "assigned_to_party_id": 1,
+      "status": "completed",
+      "started_at": "2026-05-01T16:30:00Z",
+      "completed_at": "2026-05-01T17:22:00Z",
+      "actual_tat_minutes": 52,
+      "notes": "Quoted via WhatsApp. Booking confirmed."
+    },
+    {
+      "id": 1021,
+      "process_instance_id": 113,
+      "step_id": 21,
+      "assigned_to_party_id": 2,
+      "status": "completed",
+      "started_at": "2026-05-01T11:00:00Z",
+      "completed_at": "2026-05-01T11:05:00Z",
+      "actual_tat_minutes": 5,
+      "notes": "AMS rate found for Evergreen Colombo→Rotterdam."
+    },
+    {
+      "id": 1022,
+      "process_instance_id": 113,
+      "step_id": 24,
+      "assigned_to_party_id": 1,
+      "status": "completed",
+      "started_at": "2026-05-01T15:00:00Z",
+      "completed_at": "2026-05-01T16:05:00Z",
+      "actual_tat_minutes": 65,
+      "notes": "Rate sent via email. Awaiting PO."
+    },
+    {
+      "id": 1023,
+      "process_instance_id": 114,
+      "step_id": 21,
+      "assigned_to_party_id": 2,
+      "status": "completed",
+      "started_at": "2026-04-30T12:00:00Z",
+      "completed_at": "2026-04-30T12:04:00Z",
+      "actual_tat_minutes": 4,
+      "notes": "AMS contracted rate found for MSC Colombo→Dubai."
+    },
+    {
+      "id": 1024,
+      "process_instance_id": 114,
+      "step_id": 24,
+      "assigned_to_party_id": 1,
+      "status": "completed",
+      "started_at": "2026-04-30T14:00:00Z",
+      "completed_at": "2026-04-30T15:10:00Z",
+      "actual_tat_minutes": 70,
+      "notes": "Quoted via email. Space confirmed."
+    }
+  ],
+  "step_state_history": [
+    {
+      "id": 1,
+      "step_execution_id": 1001,
+      "previous_state": null,
+      "new_state": "in_progress",
+      "changed_by": "system",
+      "changed_at": "2026-04-27T08:20:00Z",
+      "reason": "Inquiry received."
+    },
+    {
+      "id": 2,
+      "step_execution_id": 1001,
+      "previous_state": "in_progress",
+      "new_state": "completed",
+      "changed_by": "cs.agent.k",
+      "changed_at": "2026-04-27T08:25:00Z",
+      "reason": "Logged in WhatsApp."
+    },
+    {
+      "id": 3,
+      "step_execution_id": 1002,
+      "previous_state": null,
+      "new_state": "pending",
+      "changed_by": "system",
+      "changed_at": "2026-04-27T08:30:00Z",
+      "reason": "Auto-created on flow."
+    },
+    {
+      "id": 4,
+      "step_execution_id": 1002,
+      "previous_state": "pending",
+      "new_state": "in_progress",
+      "changed_by": "sales.j",
+      "changed_at": "2026-04-27T09:00:00Z",
+      "reason": "Sales picked up."
+    },
+    {
+      "id": 5,
+      "step_execution_id": 1002,
+      "previous_state": "in_progress",
+      "new_state": "completed",
+      "changed_by": "sales.j",
+      "changed_at": "2026-04-28T15:40:00Z",
+      "reason": "Verification complete."
+    },
+    {
+      "id": 6,
+      "step_execution_id": 1003,
+      "previous_state": null,
+      "new_state": "pending",
+      "changed_by": "system",
+      "changed_at": "2026-04-28T15:41:00Z",
+      "reason": ""
+    },
+    {
+      "id": 7,
+      "step_execution_id": 1003,
+      "previous_state": "pending",
+      "new_state": "in_progress",
+      "changed_by": "sales.j",
+      "changed_at": "2026-04-28T16:00:00Z",
+      "reason": "KYC sent to customer."
+    },
+    {
+      "id": 8,
+      "step_execution_id": 1003,
+      "previous_state": "in_progress",
+      "new_state": "completed",
+      "changed_by": "finance.r",
+      "changed_at": "2026-04-30T11:35:00Z",
+      "reason": "Finance approved KYC."
+    },
+    {
+      "id": 9,
+      "step_execution_id": 1007,
+      "previous_state": null,
+      "new_state": "in_progress",
+      "changed_by": "cs.agent.k",
+      "changed_at": "2026-05-06T09:30:00Z",
+      "reason": "Started AMS lookup."
+    },
+    {
+      "id": 10,
+      "step_execution_id": 1007,
+      "previous_state": "in_progress",
+      "new_state": "completed",
+      "changed_by": "cs.agent.k",
+      "changed_at": "2026-05-06T09:34:00Z",
+      "reason": "No rate found in AMS."
+    },
+    {
+      "id": 11,
+      "step_execution_id": 1008,
+      "previous_state": null,
+      "new_state": "pending",
+      "changed_by": "system",
+      "changed_at": "2026-05-06T09:34:30Z",
+      "reason": ""
+    },
+    {
+      "id": 12,
+      "step_execution_id": 1008,
+      "previous_state": "pending",
+      "new_state": "in_progress",
+      "changed_by": "cs.agent.k",
+      "changed_at": "2026-05-06T09:35:00Z",
+      "reason": "Posted request to Procurement WA group."
+    },
+    {
+      "id": 13,
+      "step_execution_id": 1011,
+      "previous_state": null,
+      "new_state": "in_progress",
+      "changed_by": "sales.j",
+      "changed_at": "2026-05-05T11:05:00Z",
+      "reason": "KYC sent."
+    },
+    {
+      "id": 14,
+      "step_execution_id": 1011,
+      "previous_state": "in_progress",
+      "new_state": "blocked",
+      "changed_by": "system",
+      "changed_at": "2026-05-07T11:05:00Z",
+      "reason": "No customer response after 48h (manual flag)."
+    }
+  ],
+  "inquiries": [
+    {
+      "id": 5001,
+      "process_instance_id": 101,
+      "customer_id": 1,
+      "channel": "whatsapp",
+      "origin": "Colombo",
+      "destination": "Hamburg",
+      "commodity": "Apparel",
+      "container_type": "40'HC",
+      "quantity": 2,
+      "status": "verified",
+      "received_at": "2026-04-27T08:20:00Z",
+      "received_by_party_id": 2
+    },
+    {
+      "id": 5002,
+      "process_instance_id": 103,
+      "customer_id": 2,
+      "channel": "whatsapp",
+      "origin": "Colombo",
+      "destination": "Los Angeles",
+      "commodity": "Cinnamon",
+      "container_type": "20'GP",
+      "quantity": 4,
+      "status": "in_pricing",
+      "received_at": "2026-05-06T09:10:00Z",
+      "received_by_party_id": 2
+    },
+    {
+      "id": 5003,
+      "process_instance_id": 105,
+      "customer_id": 3,
+      "channel": "email",
+      "origin": "Mumbai",
+      "destination": "Colombo",
+      "commodity": "Pharmaceuticals",
+      "container_type": "20'GP",
+      "quantity": 1,
+      "status": "new",
+      "received_at": "2026-05-04T14:25:00Z",
+      "received_by_party_id": 1
+    },
+    {
+      "id": 5013,
+      "customer_id": 7,
+      "channel": "email",
+      "origin": "Colombo",
+      "destination": "Hamburg",
+      "commodity": "Perishable goods (reefer)",
+      "container_type": "40'RF",
+      "quantity": 12,
+      "status": "new",
+      "received_at": "2026-05-02T09:14:00Z",
+      "received_by_party_id": 2,
+      "inquiry_text": "Hi, we need 12 reefer containers from Colombo to Hamburg by next Friday.",
+      "request": "12 reefer containers",
+      "sbu": "Ocean Exports",
+      "fe_id": "INQ-1041"
+    },
+    {
+      "id": 5014,
+      "customer_id": 8,
+      "channel": "whatsapp",
+      "origin": "Colombo",
+      "destination": "Singapore",
+      "commodity": "Apparel",
+      "container_type": "40'HC",
+      "quantity": 4,
+      "status": "new",
+      "received_at": "2026-05-02T08:42:00Z",
+      "received_by_party_id": 2,
+      "inquiry_text": "Need quote for 4x40ft to Singapore, ETD this week.",
+      "request": "4x 40ft containers",
+      "sbu": "Ocean Exports",
+      "fe_id": "INQ-1040"
+    },
+    {
+      "id": 5015,
+      "customer_id": 9,
+      "channel": "whatsapp",
+      "origin": "Shanghai",
+      "destination": "Colombo",
+      "commodity": "General cargo",
+      "container_type": "20'GP",
+      "quantity": 10,
+      "status": "quoted",
+      "received_at": "2026-05-01T14:08:00Z",
+      "received_by_party_id": 2,
+      "inquiry_text": "Customer ABC requested 10 containers from Chennai to Colombo.",
+      "request": "10 containers",
+      "sbu": "Ocean Imports",
+      "fe_id": "INQ-1039"
+    },
+    {
+      "id": 5016,
+      "customer_id": 10,
+      "channel": "email",
+      "origin": "Colombo",
+      "destination": "Rotterdam",
+      "commodity": "Apparel",
+      "container_type": "20'GP",
+      "quantity": 6,
+      "status": "quoted",
+      "received_at": "2026-05-01T10:20:00Z",
+      "received_by_party_id": 2,
+      "inquiry_text": "Looking for 6 dry containers to Rotterdam, please advise rate.",
+      "request": "6 dry containers",
+      "sbu": "Ocean Exports",
+      "fe_id": "INQ-1038"
+    },
+    {
+      "id": 5017,
+      "customer_id": 11,
+      "channel": "email",
+      "origin": "Colombo",
+      "destination": "Dubai",
+      "commodity": "Tea",
+      "container_type": "20'GP",
+      "quantity": 8,
+      "status": "quoted",
+      "received_at": "2026-04-30T11:45:00Z",
+      "received_by_party_id": 2,
+      "inquiry_text": "Please confirm space for 8 containers to Dubai sailing on the 10th.",
+      "request": "8 containers",
+      "sbu": "Ocean Exports",
+      "fe_id": "INQ-1037"
+    },
+    {
+      "id": 5018,
+      "customer_id": 12,
+      "channel": "whatsapp",
+      "origin": "Colombo",
+      "destination": "Mumbai",
+      "commodity": "Apparel",
+      "container_type": "20'GP",
+      "quantity": 3,
+      "status": "quoted",
+      "received_at": "2026-04-30T09:02:00Z",
+      "received_by_party_id": 2,
+      "inquiry_text": "Need 3x20ft to Mumbai urgent.",
+      "request": "3x 20ft containers",
+      "sbu": "Ocean Exports",
+      "fe_id": "INQ-1036"
+    }
+  ],
+  "rates": [
+    {
+      "id": 9001,
+      "liner_name": "MSC",
+      "origin": "Colombo",
+      "destination": "Hamburg",
+      "container_type": "40'HC",
+      "rate_type": "monthly",
+      "amount": 2450,
+      "currency": "USD",
+      "valid_from": "2026-04-15",
+      "valid_to": "2026-04-30",
+      "source_system": "AMS",
+      "last_updated": "2026-04-15T07:00:00Z"
+    },
+    {
+      "id": 9002,
+      "liner_name": "Maersk",
+      "origin": "Colombo",
+      "destination": "Los Angeles",
+      "container_type": "20'GP",
+      "rate_type": "contracted",
+      "amount": 1820,
+      "currency": "USD",
+      "valid_from": "2026-01-01",
+      "valid_to": "2026-06-30",
+      "source_system": "AMS",
+      "last_updated": "2026-01-02T06:30:00Z"
+    },
+    {
+      "id": 9003,
+      "liner_name": "CMA CGM",
+      "origin": "Colombo",
+      "destination": "Los Angeles",
+      "container_type": "20'GP",
+      "rate_type": "spot",
+      "amount": 1975,
+      "currency": "USD",
+      "valid_from": "2026-05-06",
+      "valid_to": "2026-05-06",
+      "source_system": null,
+      "last_updated": "2026-05-06T10:15:00Z"
+    },
+    {
+      "id": 9004,
+      "liner_name": "Hapag-Lloyd",
+      "origin": "Colombo",
+      "destination": "Singapore",
+      "container_type": "40'HC",
+      "rate_type": "contracted",
+      "amount": 850,
+      "currency": "USD",
+      "valid_from": "2026-01-01",
+      "valid_to": "2026-06-30",
+      "source_system": "AMS",
+      "last_updated": "2026-01-05T08:00:00Z"
+    },
+    {
+      "id": 9005,
+      "liner_name": "Evergreen",
+      "origin": "Colombo",
+      "destination": "Rotterdam",
+      "container_type": "20'GP",
+      "rate_type": "monthly",
+      "amount": 2100,
+      "currency": "USD",
+      "valid_from": "2026-04-15",
+      "valid_to": "2026-04-30",
+      "source_system": "AMS",
+      "last_updated": "2026-04-15T08:00:00Z"
+    },
+    {
+      "id": 9006,
+      "liner_name": "MSC",
+      "origin": "Colombo",
+      "destination": "Dubai",
+      "container_type": "20'GP",
+      "rate_type": "contracted",
+      "amount": 980,
+      "currency": "USD",
+      "valid_from": "2026-03-01",
+      "valid_to": "2026-08-31",
+      "source_system": "AMS",
+      "last_updated": "2026-03-02T08:00:00Z"
+    },
+    {
+      "id": 9007,
+      "liner_name": "ONE",
+      "origin": "Shanghai",
+      "destination": "Colombo",
+      "container_type": "20'GP",
+      "rate_type": "monthly",
+      "amount": 1200,
+      "currency": "USD",
+      "valid_from": "2026-04-15",
+      "valid_to": "2026-04-30",
+      "source_system": "AMS",
+      "last_updated": "2026-04-16T08:00:00Z"
+    },
+    {
+      "id": 9008,
+      "liner_name": "PIL",
+      "origin": "Colombo",
+      "destination": "Mumbai",
+      "container_type": "20'GP",
+      "rate_type": "contracted",
+      "amount": 450,
+      "currency": "USD",
+      "valid_from": "2026-01-01",
+      "valid_to": "2026-06-30",
+      "source_system": "AMS",
+      "last_updated": "2026-01-03T08:00:00Z"
+    },
+    {
+      "id": 9009,
+      "liner_name": "MSC",
+      "origin": "Colombo",
+      "destination": "Hamburg",
+      "container_type": "40'RF",
+      "rate_type": "monthly",
+      "amount": 3800,
+      "currency": "USD",
+      "valid_from": "2026-05-01",
+      "valid_to": "2026-05-15",
+      "source_system": "AMS",
+      "last_updated": "2026-05-01T07:00:00Z"
+    }
+  ],
+  "rate_requests": [
+    {
+      "id": 7001,
+      "process_instance_id": 104,
+      "inquiry_id": 5002,
+      "requested_by_party_id": 2,
+      "requested_from_party_id": 4,
+      "channel": "whatsapp_group",
+      "requested_at": "2026-05-06T09:35:00Z",
+      "responded_at": null,
+      "resulting_rate_id": null,
+      "status": "open"
+    }
+  ],
+  "quotations": [
+    {
+      "id": 6001,
+      "process_instance_id": 102,
+      "inquiry_id": 5001,
+      "rate_id": 9001,
+      "markup_percent": 12,
+      "markup_amount": 294,
+      "quoted_amount": 2744,
+      "currency": "USD",
+      "option_label": "Option 1",
+      "channel": "email",
+      "quoted_by_party_id": 1,
+      "quoted_at": "2026-04-30T16:45:00Z",
+      "status": "accepted"
+    },
+    {
+      "id": 6002,
+      "process_instance_id": 102,
+      "inquiry_id": 5001,
+      "rate_id": 9001,
+      "markup_percent": 8,
+      "markup_amount": 196,
+      "quoted_amount": 2646,
+      "currency": "USD",
+      "option_label": "Option 2",
+      "channel": "email",
+      "quoted_by_party_id": 1,
+      "quoted_at": "2026-04-30T16:45:00Z",
+      "status": "sent"
+    },
+    {
+      "id": 6003,
+      "process_instance_id": 112,
+      "inquiry_id": 5015,
+      "rate_id": 9007,
+      "markup_percent": 10,
+      "markup_amount": 120,
+      "quoted_amount": 1320,
+      "currency": "USD",
+      "option_label": "Option 1",
+      "channel": "whatsapp",
+      "quoted_by_party_id": 1,
+      "quoted_at": "2026-05-01T17:22:00Z",
+      "status": "accepted"
+    },
+    {
+      "id": 6004,
+      "process_instance_id": 113,
+      "inquiry_id": 5016,
+      "rate_id": 9005,
+      "markup_percent": 8,
+      "markup_amount": 168,
+      "quoted_amount": 2268,
+      "currency": "USD",
+      "option_label": "Option 1",
+      "channel": "email",
+      "quoted_by_party_id": 1,
+      "quoted_at": "2026-05-01T16:05:00Z",
+      "status": "sent"
+    },
+    {
+      "id": 6005,
+      "process_instance_id": 114,
+      "inquiry_id": 5017,
+      "rate_id": 9006,
+      "markup_percent": 15,
+      "markup_amount": 147,
+      "quoted_amount": 1127,
+      "currency": "USD",
+      "option_label": "Option 1",
+      "channel": "email",
+      "quoted_by_party_id": 1,
+      "quoted_at": "2026-04-30T15:10:00Z",
+      "status": "accepted"
+    }
+  ],
+  "employees": [
+    {
+      "id": 1,
+      "name": "Nimal Perera",
+      "role": "Sales Executive",
+      "party_id": 1
+    },
+    {
+      "id": 2,
+      "name": "Anjali Silva",
+      "role": "Customer Manager",
+      "party_id": 2
+    },
+    {
+      "id": 3,
+      "name": "Rohan Fernando",
+      "role": "Operations",
+      "party_id": 2
+    }
+  ],
+  "tasks": [
+    {
+      "id": 1,
+      "inquiry_id": 5013,
+      "customer_id": 7,
+      "task": "Send Quotation",
+      "status": "pending",
+      "due_date": "2026-05-03",
+      "employee_id": 2
+    },
+    {
+      "id": 2,
+      "inquiry_id": 5014,
+      "customer_id": 8,
+      "task": "Confirm sailing schedule",
+      "status": "pending",
+      "due_date": "2026-05-03",
+      "employee_id": 1
+    },
+    {
+      "id": 3,
+      "inquiry_id": 5018,
+      "customer_id": 12,
+      "task": "Negotiate rate with carrier",
+      "status": "pending",
+      "due_date": "2026-05-04",
+      "employee_id": 1
+    },
+    {
+      "id": 4,
+      "inquiry_id": 5015,
+      "customer_id": 9,
+      "task": "Follow up on payment",
+      "status": "completed",
+      "due_date": "2026-05-01",
+      "employee_id": 1
+    },
+    {
+      "id": 5,
+      "inquiry_id": 5016,
+      "customer_id": 10,
+      "task": "Send draft B/L",
+      "status": "completed",
+      "due_date": "2026-05-01",
+      "employee_id": 3
+    }
+  ],
+  "missing_items": [
+    {
+      "id": 1,
+      "customer_id": 7,
+      "missing_item": "SI not submitted",
+      "since": "2026-05-02",
+      "cutoff_date": "2026-05-04",
+      "employee_id": 2
+    },
+    {
+      "id": 2,
+      "customer_id": 8,
+      "missing_item": "KYC pending",
+      "since": "2026-05-02",
+      "cutoff_date": "2026-05-05",
+      "employee_id": 1
+    },
+    {
+      "id": 3,
+      "customer_id": 12,
+      "missing_item": "PO not received",
+      "since": "2026-04-30",
+      "cutoff_date": "2026-05-01",
+      "employee_id": 1
+    },
+    {
+      "id": 4,
+      "customer_id": 7,
+      "missing_item": "B/L draft approval",
+      "since": "2026-05-02",
+      "cutoff_date": "2026-05-06",
+      "employee_id": 2
+    }
+  ],
+  "followups": [
+    {
+      "id": 1,
+      "inquiry_id": 5015,
+      "customer_id": 9,
+      "note": "Quoted, booking confirmed.",
+      "employee_id": 1,
+      "created_at": "2026-05-01T17:22:00Z",
+      "completion_flag": true
+    },
+    {
+      "id": 2,
+      "inquiry_id": 5016,
+      "customer_id": 10,
+      "note": "Rate sent, awaiting PO.",
+      "employee_id": 3,
+      "created_at": "2026-05-01T16:05:00Z",
+      "completion_flag": true
+    },
+    {
+      "id": 3,
+      "inquiry_id": 5017,
+      "customer_id": 11,
+      "note": "Space confirmed.",
+      "employee_id": 2,
+      "created_at": "2026-04-30T15:10:00Z",
+      "completion_flag": true
+    },
+    {
+      "id": 4,
+      "inquiry_id": 5013,
+      "customer_id": 7,
+      "note": "Called, awaiting SI.",
+      "employee_id": 2,
+      "created_at": "2026-05-02T11:30:00Z",
+      "completion_flag": false
+    }
+  ],
+  "shipments": [
+    {
+      "id": "SHP-801",
+      "quote_id": "QUO-501",
+      "customer_id": 9,
+      "origin": "Chennai",
+      "destination": "Colombo",
+      "shipping_line": "Hapag-Lloyd",
+      "status": "In Transit",
+      "booked_at": "2026-05-02 09:00",
+      "expected_delivery": "2026-05-05",
+      "pod_received": null,
+      "legs": [
+        {
+          "id": "SL-1",
+          "port": "Chennai",
+          "type": "Origin",
+          "expected_at": "2026-05-02",
+          "actual_at": "2026-05-02",
+          "status": "Departed"
+        },
+        {
+          "id": "SL-2",
+          "port": "Colombo",
+          "type": "Destination",
+          "expected_at": "2026-05-05",
+          "actual_at": null,
+          "status": "Pending"
+        }
+      ]
+    },
+    {
+      "id": "SHP-800",
+      "quote_id": "QUO-500",
+      "customer_id": 10,
+      "origin": "Colombo",
+      "destination": "Rotterdam",
+      "shipping_line": "Maersk",
+      "status": "At Transshipment",
+      "booked_at": "2026-05-02 08:00",
+      "expected_delivery": "2026-05-26",
+      "pod_received": null,
+      "legs": [
+        {
+          "id": "SL-3",
+          "port": "Colombo",
+          "type": "Origin",
+          "expected_at": "2026-05-02",
+          "actual_at": "2026-05-02",
+          "status": "Departed"
+        },
+        {
+          "id": "SL-4",
+          "port": "Singapore",
+          "type": "Transshipment",
+          "expected_at": "2026-05-08",
+          "actual_at": "2026-05-09",
+          "status": "Arrived"
+        },
+        {
+          "id": "SL-5",
+          "port": "Rotterdam",
+          "type": "Destination",
+          "expected_at": "2026-05-26",
+          "actual_at": null,
+          "status": "Pending"
+        }
+      ]
+    }
+  ],
+  "fe_quotes": [
+    {
+      "id": "QUO-501",
+      "inquiry_id": "INQ-1039",
+      "customer_id": 9,
+      "origin": "Chennai",
+      "destination": "Colombo",
+      "quote_type": "FCA",
+      "margin_pct": 8,
+      "status": "Confirmed",
+      "created_at": "2026-05-01 15:40",
+      "created_by": 1,
+      "approver_id": null,
+      "approval_reason": null,
+      "lines": [
+        {
+          "id": "QL-1",
+          "shipping_line": "Hapag-Lloyd",
+          "rate_type": "Contractual",
+          "base_rate_usd": 850,
+          "transit_days": 3,
+          "free_time_days": 14,
+          "transshipment_points": "Direct",
+          "destination_charges_usd": 120
+        },
+        {
+          "id": "QL-2",
+          "shipping_line": "CMA CGM",
+          "rate_type": "Spot",
+          "base_rate_usd": 920,
+          "transit_days": 4,
+          "free_time_days": 10,
+          "transshipment_points": "Direct",
+          "destination_charges_usd": 110
+        },
+        {
+          "id": "QL-3",
+          "shipping_line": "ONE",
+          "rate_type": "NAC",
+          "base_rate_usd": 870,
+          "transit_days": 3,
+          "free_time_days": 21,
+          "transshipment_points": "Direct",
+          "destination_charges_usd": 130
+        }
+      ]
+    },
+    {
+      "id": "QUO-500",
+      "inquiry_id": "INQ-1038",
+      "customer_id": 10,
+      "origin": "Colombo",
+      "destination": "Rotterdam",
+      "quote_type": "DDP",
+      "margin_pct": 4,
+      "status": "Confirmed",
+      "created_at": "2026-05-01 14:00",
+      "created_by": 3,
+      "approver_id": null,
+      "approval_reason": null,
+      "lines": [
+        {
+          "id": "QL-4",
+          "shipping_line": "Maersk",
+          "rate_type": "Contractual",
+          "base_rate_usd": 2400,
+          "transit_days": 24,
+          "free_time_days": 14,
+          "transshipment_points": "Singapore",
+          "destination_charges_usd": 220
+        },
+        {
+          "id": "QL-5",
+          "shipping_line": "MSC",
+          "rate_type": "Contractual",
+          "base_rate_usd": 2350,
+          "transit_days": 26,
+          "free_time_days": 14,
+          "transshipment_points": "Jebel Ali",
+          "destination_charges_usd": 240
+        }
+      ]
+    }
+  ]
+}
