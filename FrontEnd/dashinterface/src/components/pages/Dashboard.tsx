@@ -20,7 +20,7 @@ const Tip = ({ active, payload, label }: any) => {
     <div className="db-tooltip">
       <div className="db-tooltip-label">{label}</div>
       {payload.map((p: any, i: number) => (
-        <div key={i} className="db-tooltip-val" style={{ color: p.color || '#f1f5f9' }}>
+        <div key={i} className="db-tooltip-val" style={{ color: p.color || '#1e293b' }}>
           {p.name}: {p.value}
         </div>
       ))}
@@ -30,15 +30,15 @@ const Tip = ({ active, payload, label }: any) => {
 
 // SBU label colours (used by both the SBU card and the per-SBU list).
 const SBU_COLORS: Record<SBU, string> = {
-  'Ocean Exports': '#6366f1',
-  'Ocean Imports': '#22c55e',
-  'Air Freight': '#f59e0b',
-  'Domestic': '#8b5cf6',
+  'Ocean Exports': '#4f46e5',
+  'Ocean Imports': '#16a34a',
+  'Air Freight': '#d97706',
+  'Domestic': '#7c3aed',
 }
 
 // Hit-rate band colours so 70%+ reads green, 40–69% amber, below red.
 const rateColor = (rate: number) =>
-  rate >= 70 ? '#22c55e' : rate >= 40 ? '#f59e0b' : '#ef4444'
+  rate >= 70 ? '#16a34a' : rate >= 40 ? '#d97706' : '#dc2626'
 
 export default function Dashboard({ inquiries, tasks, followups, missingItems, quotes, onGoTo }: DashboardProps) {
   const today = new Date().toISOString().slice(0, 10)
@@ -114,8 +114,8 @@ export default function Dashboard({ inquiries, tasks, followups, missingItems, q
     for (const inq of inquiries) {
       map.set(inq.channel, (map.get(inq.channel) ?? 0) + 1)
     }
-    const colors: Record<string, string> = { WhatsApp: '#22c55e', Email: '#6366f1', Phone: '#f59e0b' }
-    return Array.from(map.entries()).map(([name, value]) => ({ name, value, color: colors[name] ?? '#8b5cf6' }))
+    const colors: Record<string, string> = { WhatsApp: '#16a34a', Email: '#4f46e5', Phone: '#d97706' }
+    return Array.from(map.entries()).map(([name, value]) => ({ name, value, color: colors[name] ?? '#7c3aed' }))
   }, [inquiries])
 
   const recent = inquiries.slice(0, 5)
@@ -155,12 +155,12 @@ export default function Dashboard({ inquiries, tasks, followups, missingItems, q
       {/* Lifetime summary tiles */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 22 }}>
         {[
-          { label: 'Total Inquiries', value: total, color: '#6366f1' },
-          { label: 'Completed', value: completedTotal, color: '#22c55e' },
-          { label: 'Completion Rate', value: `${completionRate}%`, color: '#f59e0b' },
+          { label: 'Total Inquiries', value: total, color: '#4f46e5' },
+          { label: 'Completed', value: completedTotal, color: '#16a34a' },
+          { label: 'Completion Rate', value: `${completionRate}%`, color: '#d97706' },
         ].map(t => (
           <div key={t.label} style={{
-            background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border)',
+            background: '#ffffff', border: '1px solid var(--border)',
             borderRadius: 10, padding: '14px 16px',
           }}>
             <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{t.label}</div>
@@ -197,7 +197,7 @@ export default function Dashboard({ inquiries, tasks, followups, missingItems, q
                     <strong style={{ color: rateColor(r.rate), fontSize: 13 }}>{r.rate}%</strong>
                   </span>
                 </div>
-                <div style={{ height: 6, background: 'rgba(255,255,255,0.05)', borderRadius: 999, overflow: 'hidden' }}>
+                <div style={{ height: 6, background: 'rgba(0,0,0,0.03)', borderRadius: 999, overflow: 'hidden' }}>
                   <div style={{
                     width: `${r.rate}%`,
                     height: '100%',
@@ -242,7 +242,7 @@ export default function Dashboard({ inquiries, tasks, followups, missingItems, q
                       )}
                     </span>
                   </div>
-                  <div style={{ height: 6, background: 'rgba(255,255,255,0.05)', borderRadius: 999, overflow: 'hidden', display: 'flex' }}>
+                  <div style={{ height: 6, background: 'rgba(0,0,0,0.03)', borderRadius: 999, overflow: 'hidden', display: 'flex' }}>
                     <div style={{
                       width: `${widthPct}%`,
                       height: '100%',
@@ -252,7 +252,7 @@ export default function Dashboard({ inquiries, tasks, followups, missingItems, q
                       overflow: 'hidden',
                     }}>
                       {/* Pending portion appears slightly faded to distinguish from completed */}
-                      <div style={{ width: `${pendingPct}%`, height: '100%', background: 'rgba(0,0,0,0.35)' }} />
+                      <div style={{ width: `${pendingPct}%`, height: '100%', background: 'rgba(0,0,0,0.18)' }} />
                     </div>
                   </div>
                 </div>
@@ -261,11 +261,11 @@ export default function Dashboard({ inquiries, tasks, followups, missingItems, q
           </div>
           <div style={{ display: 'flex', gap: 12, marginTop: 14, fontSize: 10, color: 'var(--text-muted)' }}>
             <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              <span style={{ width: 8, height: 8, borderRadius: 2, background: 'rgba(0,0,0,0.35)', border: '1px solid var(--border)' }} />
+              <span style={{ width: 8, height: 8, borderRadius: 2, background: 'rgba(0,0,0,0.18)', border: '1px solid var(--border)' }} />
               Pending portion
             </span>
             <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              <span style={{ width: 8, height: 8, borderRadius: 2, background: '#6366f1' }} />
+              <span style={{ width: 8, height: 8, borderRadius: 2, background: '#4f46e5' }} />
               Completed portion
             </span>
           </div>
@@ -283,16 +283,16 @@ export default function Dashboard({ inquiries, tasks, followups, missingItems, q
           </div>
           <ResponsiveContainer width="100%" height={240}>
             <BarChart data={byDay} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
-              <XAxis dataKey="day" tick={{ fill: '#475569', fontSize: 10 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fill: '#475569', fontSize: 10 }} axisLine={false} tickLine={false} allowDecimals={false} />
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" vertical={false} />
+              <XAxis dataKey="day" tick={{ fill: '#94a3b8', fontSize: 10 }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} axisLine={false} tickLine={false} allowDecimals={false} />
               <Tooltip content={<Tip />} />
-              <Bar dataKey="pending" name="Pending" fill="#f59e0b" radius={[3, 3, 0, 0]} opacity={0.85} />
-              <Bar dataKey="completed" name="Completed" fill="#22c55e" radius={[3, 3, 0, 0]} opacity={0.85} />
+              <Bar dataKey="pending" name="Pending" fill="#d97706" radius={[3, 3, 0, 0]} opacity={0.85} />
+              <Bar dataKey="completed" name="Completed" fill="#16a34a" radius={[3, 3, 0, 0]} opacity={0.85} />
             </BarChart>
           </ResponsiveContainer>
           <div style={{ display: 'flex', gap: 14, marginTop: 8 }}>
-            {[['#f59e0b', 'Pending'], ['#22c55e', 'Completed']].map(([c, l]) => (
+            {[['#d97706', 'Pending'], ['#16a34a', 'Completed']].map(([c, l]) => (
               <div key={l} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                 <div style={{ width: 8, height: 8, borderRadius: 2, background: c }} />
                 <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{l}</span>
@@ -357,7 +357,7 @@ export default function Dashboard({ inquiries, tasks, followups, missingItems, q
               {recent.map(i => {
                 const isPending = i.status === 'pending'
                 return (
-                  <tr key={i.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                  <tr key={i.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
                     <td style={{ padding: '12px 8px', color: 'var(--text)', fontWeight: 600 }}>
                       {i.customer_name}
                       <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 400, marginTop: 2 }}>

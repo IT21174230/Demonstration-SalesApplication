@@ -87,10 +87,10 @@ export default function Followups({
 
       {/* Phase 4.2: Spot Rate / Urgent — only render if we actually have any */}
       {spotInquiries.length > 0 && (
-        <div className="db-chart-card" style={{ marginBottom: 18, borderColor: 'rgba(239,68,68,0.4)' }}>
+        <div className="db-chart-card" style={{ marginBottom: 18, borderColor: 'rgba(220,38,38,0.25)' }}>
           <div className="db-chart-head">
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Zap size={15} style={{ color: '#ef4444' }} />
+              <Zap size={15} style={{ color: '#dc2626' }} />
               <div>
                 <div className="db-chart-title">Spot Rate / Urgent — Time Critical</div>
                 <div className="db-chart-sub">Confirm within 15 minutes · spot-rate validity windows are short</div>
@@ -104,8 +104,8 @@ export default function Followups({
                 key={i.id}
                 style={{
                   padding: '10px 12px',
-                  background: 'rgba(239,68,68,0.06)',
-                  border: '1px solid rgba(239,68,68,0.2)',
+                  background: 'rgba(220,38,38,0.04)',
+                  border: '1px solid rgba(220,38,38,0.15)',
                   borderRadius: 8,
                   display: 'flex',
                   justifyContent: 'space-between',
@@ -137,7 +137,7 @@ export default function Followups({
         <div className="db-chart-card" style={{ marginBottom: 18 }}>
           <div className="db-chart-head">
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Phone size={14} style={{ color: '#f59e0b' }} />
+              <Phone size={14} style={{ color: '#d97706' }} />
               <div>
                 <div className="db-chart-title">Most-Chased Pending Inquiries</div>
                 <div className="db-chart-sub">How many times sales has followed up — high counts = procurement bottleneck</div>
@@ -147,13 +147,13 @@ export default function Followups({
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {mostChased.map(({ inquiry: i, chases }) => {
               const intensity = Math.min(1, chases / 10)
-              const barColor = chases >= 5 ? '#ef4444' : chases >= 2 ? '#f59e0b' : '#22c55e'
+              const barColor = chases >= 5 ? '#dc2626' : chases >= 2 ? '#d97706' : '#16a34a'
               return (
                 <div
                   key={i.id}
                   style={{
                     padding: '10px 12px',
-                    background: 'rgba(255,255,255,0.02)',
+                    background: '#ffffff',
                     border: '1px solid var(--border)',
                     borderRadius: 8,
                   }}
@@ -170,7 +170,7 @@ export default function Followups({
                       {chases} {chases === 1 ? 'chase' : 'chases'}
                     </span>
                   </div>
-                  <div style={{ height: 4, background: 'rgba(255,255,255,0.05)', borderRadius: 999, overflow: 'hidden' }}>
+                  <div style={{ height: 4, background: 'rgba(0,0,0,0.03)', borderRadius: 999, overflow: 'hidden' }}>
                     <div style={{
                       width: `${intensity * 100}%`,
                       height: '100%',
@@ -263,7 +263,7 @@ export default function Followups({
             </thead>
             <tbody>
               {followups.map(f => (
-                <tr key={f.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                <tr key={f.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
                   <td style={{ padding: '12px 8px', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{f.created_at}</td>
                   <td style={{ padding: '12px 8px', color: 'var(--text)', fontWeight: 600 }}>{f.customer_name}</td>
                   <td style={{ padding: '12px 8px', color: 'var(--text-secondary)' }}>{f.note}</td>
@@ -345,7 +345,7 @@ export default function Followups({
                 const overdue = isPending && isOverdue(t.due_date)
                 const dueToday = isPending && t.due_date === today
                 return (
-                  <tr key={t.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                  <tr key={t.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
                     <td style={{ padding: '12px 8px', color: 'var(--text)', fontWeight: 600 }}>{t.customer_name}</td>
                     <td style={{ padding: '12px 8px', color: 'var(--text-secondary)' }}>{t.task}</td>
                     <td style={{ padding: '12px 8px' }}>
@@ -355,7 +355,7 @@ export default function Followups({
                       {overdue && <span className="lt-pill overdue" style={{ marginLeft: 6 }}>{daysOverdue(t.due_date)}d overdue</span>}
                       {dueToday && <span className="lt-pill due-today" style={{ marginLeft: 6 }}>Due today</span>}
                     </td>
-                    <td style={{ padding: '12px 8px', color: overdue ? '#ef4444' : 'var(--text-muted)', fontWeight: overdue ? 600 : 400 }}>{t.due_date}</td>
+                    <td style={{ padding: '12px 8px', color: overdue ? '#dc2626' : 'var(--text-muted)', fontWeight: overdue ? 600 : 400 }}>{t.due_date}</td>
                     <td style={{ padding: '12px 8px', color: 'var(--text-secondary)' }}>{empName(t.employee_id)}</td>
                     <td style={{ padding: '12px 8px' }}>
                       {isPending && (
@@ -376,10 +376,10 @@ export default function Followups({
       </div>
 
       {/* Section 3: Missing Tasks */}
-      <div className="db-chart-card" style={{ borderColor: 'rgba(245,158,11,0.4)' }}>
+      <div className="db-chart-card" style={{ borderColor: 'rgba(217,119,6,0.25)' }}>
         <div className="db-chart-head">
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <AlertTriangle size={16} style={{ color: '#f59e0b' }} />
+            <AlertTriangle size={16} style={{ color: '#d97706' }} />
             <div>
               <div className="db-chart-title">Section 3 — Missing Tasks (Power Feature)</div>
               <div className="db-chart-sub">Customers with outstanding documents or actions blocking the deal · cutoff dates flagged</div>
@@ -404,16 +404,16 @@ export default function Followups({
                 const overdue = isOverdue(m.cutoff_date)
                 const dueToday = m.cutoff_date === today
                 return (
-                  <tr key={m.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                  <tr key={m.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
                     <td style={{ padding: '12px 8px', color: 'var(--text)', fontWeight: 600 }}>{m.customer_name}</td>
-                    <td style={{ padding: '12px 8px', color: '#f59e0b', fontWeight: 600 }}>
+                    <td style={{ padding: '12px 8px', color: '#d97706', fontWeight: 600 }}>
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                         <AlertTriangle size={11} /> {m.missing_item}
                       </span>
                     </td>
                     <td style={{ padding: '12px 8px', color: 'var(--text-muted)' }}>{m.since}</td>
                     <td style={{ padding: '12px 8px' }}>
-                      <span style={{ color: overdue ? '#ef4444' : 'var(--text-muted)', fontWeight: overdue ? 600 : 400 }}>
+                      <span style={{ color: overdue ? '#dc2626' : 'var(--text-muted)', fontWeight: overdue ? 600 : 400 }}>
                         {m.cutoff_date ?? '—'}
                       </span>
                       {overdue && <span className="lt-pill overdue" style={{ marginLeft: 6 }}>{daysOverdue(m.cutoff_date)}d past</span>}

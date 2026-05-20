@@ -74,8 +74,8 @@ export default function Customers({ inquiries, customers }: CustomersProps) {
       <div style={{
         marginBottom: 18,
         padding: '12px 16px',
-        background: 'rgba(99,102,241,0.06)',
-        border: '1px dashed rgba(99,102,241,0.35)',
+        background: 'rgba(79,70,229,0.03)',
+        border: '1px dashed rgba(79,70,229,0.2)',
         borderRadius: 10,
         display: 'flex',
         alignItems: 'center',
@@ -84,7 +84,7 @@ export default function Customers({ inquiries, customers }: CustomersProps) {
         fontSize: 12,
       }}>
         <div>
-          <div style={{ color: 'var(--accent-light)', fontWeight: 700, marginBottom: 2 }}>🌐 Customer Portal · Phase 2</div>
+          <div style={{ color: 'var(--accent)', fontWeight: 700, marginBottom: 2 }}>🌐 Customer Portal · Phase 2</div>
           <div style={{ color: 'var(--text-muted)' }}>
             Tracking dashboard, document downloads, and quote management for customers — optional login;
             non-portal customers receive the same updates by automated email.
@@ -119,8 +119,8 @@ export default function Customers({ inquiries, customers }: CustomersProps) {
                   <tr
                     key={c.id}
                     style={{
-                      borderBottom: '1px solid rgba(255,255,255,0.04)',
-                      background: blocked ? 'rgba(239,68,68,0.04)' : warned ? 'rgba(245,158,11,0.03)' : undefined,
+                      borderBottom: '1px solid #f1f5f9',
+                      background: blocked ? 'rgba(220,38,38,0.03)' : warned ? 'rgba(217,119,6,0.03)' : undefined,
                       opacity: blocked ? 0.85 : 1,
                     }}
                   >

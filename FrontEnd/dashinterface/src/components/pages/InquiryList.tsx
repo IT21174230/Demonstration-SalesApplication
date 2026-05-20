@@ -168,7 +168,7 @@ export default function InquiryList({ inquiries, followups, customers, quotes, o
                 const isPending = i.status === 'pending'
                 const cust = findCustomer(i.customer_name, customers)
                 return (
-                  <tr key={i.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                  <tr key={i.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
                     <td style={{ padding: '12px 8px', color: 'var(--text-muted)', fontFamily: 'monospace', fontSize: 11 }}>{i.id}</td>
                     <td style={{ padding: '12px 8px', color: 'var(--text)', fontWeight: 600 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
@@ -253,7 +253,7 @@ export default function InquiryList({ inquiries, followups, customers, quotes, o
               <button className="lt-icon-btn" onClick={() => setViewing(null)}><X size={14} /></button>
             </div>
 
-            <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', borderRadius: 8, padding: '12px 14px', marginBottom: 12, fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+            <div style={{ background: '#f8fafc', border: '1px solid var(--border)', borderRadius: 8, padding: '12px 14px', marginBottom: 12, fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
               {viewing.inquiry_text}
             </div>
 
@@ -287,8 +287,8 @@ export default function InquiryList({ inquiries, followups, customers, quotes, o
                     {inquiryFollowups.map(f => (
                       <div key={f.id} style={{
                         padding: '8px 10px',
-                        background: f.completion_flag ? 'rgba(34,197,94,0.08)' : 'rgba(245,158,11,0.06)',
-                        border: `1px solid ${f.completion_flag ? 'rgba(34,197,94,0.25)' : 'rgba(245,158,11,0.18)'}`,
+                        background: f.completion_flag ? 'rgba(22,163,74,0.06)' : 'rgba(217,119,6,0.04)',
+                        border: `1px solid ${f.completion_flag ? 'rgba(22,163,74,0.18)' : 'rgba(217,119,6,0.12)'}`,
                         borderRadius: 8, fontSize: 12,
                       }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
@@ -297,7 +297,7 @@ export default function InquiryList({ inquiries, followups, customers, quotes, o
                         </div>
                         <div style={{ color: 'var(--text-secondary)' }}>
                           {f.note}
-                          {f.completion_flag && <span style={{ color: '#22c55e', marginLeft: 6, fontSize: 11 }}>· closed inquiry</span>}
+                          {f.completion_flag && <span style={{ color: '#15803d', marginLeft: 6, fontSize: 11 }}>· closed inquiry</span>}
                         </div>
                       </div>
                     ))}

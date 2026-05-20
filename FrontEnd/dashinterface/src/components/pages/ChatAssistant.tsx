@@ -113,9 +113,9 @@ export default function ChatAssistant({
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 5 }} title={aiConnected ? 'AI assistant connected' : 'AI assistant offline'}>
               {aiConnected
-                ? <Wifi size={13} style={{ color: '#22c55e' }} />
+                ? <Wifi size={13} style={{ color: '#16a34a' }} />
                 : <WifiOff size={13} style={{ color: '#94a3b8' }} />}
-              <span style={{ fontSize: 11, color: aiConnected ? '#22c55e' : '#94a3b8' }}>
+              <span style={{ fontSize: 11, color: aiConnected ? '#16a34a' : '#94a3b8' }}>
                 {aiWaiting ? 'AI thinking...' : aiConnected ? 'AI online' : 'AI offline'}
               </span>
             </div>

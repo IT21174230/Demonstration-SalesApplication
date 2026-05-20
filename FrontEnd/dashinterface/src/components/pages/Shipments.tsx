@@ -27,9 +27,9 @@ const LEG_ICON = ({ type }: { type: ShipmentLeg['type'] }) => {
 
 const LEG_STATUS_COLOR: Record<ShipmentLeg['status'], string> = {
   Pending: 'var(--text-muted)',
-  Arrived: '#f59e0b',
-  Departed: '#22c55e',
-  Delayed: '#ef4444',
+  Arrived: '#d97706',
+  Departed: '#16a34a',
+  Delayed: '#dc2626',
 }
 
 export default function Shipments({ shipments, onAdvanceLeg, onRecordPOD }: ShipmentsProps) {
@@ -60,7 +60,7 @@ export default function Shipments({ shipments, onAdvanceLeg, onRecordPOD }: Ship
               Track every confirmed booking from origin to POD · {shipments.length} active · {counts['Delivered'] ?? 0} delivered · {counts['At Transshipment'] ?? 0} at transshipment
             </div>
           </div>
-          <div style={{ fontSize: 11, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', background: 'rgba(99,102,241,0.05)', border: '1px solid rgba(99,102,241,0.2)', borderRadius: 8 }}>
+          <div style={{ fontSize: 11, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', background: 'rgba(79,70,229,0.03)', border: '1px solid rgba(79,70,229,0.12)', borderRadius: 8 }}>
             🛰️ Mock Inttra / Freightify integration · live tracking stubbed
           </div>
         </div>
@@ -68,10 +68,10 @@ export default function Shipments({ shipments, onAdvanceLeg, onRecordPOD }: Ship
 
       {/* Critical-watch banner — meeting flagged transshipment monitoring as a key gap */}
       {stuckAtTransshipment.length > 0 && (
-        <div className="db-chart-card" style={{ marginBottom: 18, borderColor: 'rgba(245,158,11,0.4)' }}>
+        <div className="db-chart-card" style={{ marginBottom: 18, borderColor: 'rgba(217,119,6,0.25)' }}>
           <div className="db-chart-head">
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Clock size={15} style={{ color: '#f59e0b' }} />
+              <Clock size={15} style={{ color: '#d97706' }} />
               <div>
                 <div className="db-chart-title">Critical Watch — At Transshipment</div>
                 <div className="db-chart-sub">Verify connection to onward leg · we're liable until POD</div>
@@ -87,7 +87,7 @@ export default function Shipments({ shipments, onAdvanceLeg, onRecordPOD }: Ship
                   <span style={{ color: 'var(--text)', fontWeight: 700 }}>{s.id}</span>
                   {' · '}{s.customer_name}
                   {' · '}{s.origin} → {s.destination}
-                  {' · via '}<strong style={{ color: '#f59e0b' }}>{transshipLeg?.port ?? '—'}</strong>
+                  {' · via '}<strong style={{ color: '#d97706' }}>{transshipLeg?.port ?? '—'}</strong>
                   {transshipLeg?.actual_at && <> · arrived {transshipLeg.actual_at}</>}
                 </div>
               )
@@ -166,7 +166,7 @@ export default function Shipments({ shipments, onAdvanceLeg, onRecordPOD }: Ship
                 const color = LEG_STATUS_COLOR[leg.status]
                 return (
                   <div key={leg.id} style={{ display: 'flex', alignItems: 'stretch', flex: 1, minWidth: 0 }}>
-                    <div style={{ flex: 1, padding: '10px 12px', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border)', borderRadius: 8, minWidth: 0 }}>
+                    <div style={{ flex: 1, padding: '10px 12px', background: '#ffffff', border: '1px solid var(--border)', borderRadius: 8, minWidth: 0 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
                         <span style={{ color, display: 'inline-flex', alignItems: 'center' }}>
                           <LEG_ICON type={leg.type} />

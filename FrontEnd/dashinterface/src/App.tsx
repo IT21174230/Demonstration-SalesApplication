@@ -311,7 +311,7 @@ export default function App() {
   if (!backendReady) {
     return (
       <div className="db-app" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' }}>
-        <span style={{ color: '#8899aa', fontSize: 14 }}>Loading dashboard...</span>
+        <span style={{ color: '#94a3b8', fontSize: 14 }}>Loading dashboard...</span>
       </div>
     )
   }

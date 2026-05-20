@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CLS Future-State Database Schema — AMS + Gensoft Replacement</title>
+  <style>
+    :root{
+      --bg:#f7f8fb;--paper:#ffffff;--ink:#142033;--muted:#5f6b7a;--line:#dfe6ef;
+      --blue:#2454d6;--blue2:#eaf0ff;--green:#14835b;--green2:#e8f7f0;--orange:#bb5a00;--orange2:#fff2e4;
+      --red:#b42318;--red2:#fff0ee;--purple:#6f42c1;--purple2:#f2eafd;--gray2:#f2f4f7;
+      --shadow:0 8px 26px rgba(22,34,51,.08);
+    }
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--ink);font-family:Inter,Segoe UI,Arial,sans-serif;line-height:1.55;font-size:14px}
+    header{background:linear-gradient(135deg,#111827,#1e3a8a 60%,#0f766e);color:#fff;padding:48px 36px 42px}
+    .wrap{max-width:1180px;margin:0 auto}
+    h1{font-size:36px;line-height:1.08;margin:0 0 14px;font-weight:800;letter-spacing:-.03em}
+    h2{font-size:25px;margin:40px 0 12px;letter-spacing:-.02em}
+    h3{font-size:18px;margin:28px 0 8px}
+    h4{font-size:15px;margin:18px 0 8px}
+    p{margin:8px 0;color:var(--muted)}
+    header p{color:#dbeafe;max-width:900px;font-size:16px}
+    .pill{display:inline-block;padding:5px 10px;border-radius:999px;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.25);margin:4px 6px 0 0;font-size:12px;color:#fff}
+    main{max-width:1180px;margin:-22px auto 60px;padding:0 22px}
+    .card{background:var(--paper);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);padding:22px;margin:18px 0}
+    .note{background:var(--blue2);border-left:4px solid var(--blue);padding:13px 16px;border-radius:10px;margin:16px 0;color:#243b66}
+    .warn{background:var(--orange2);border-left:4px solid var(--orange);padding:13px 16px;border-radius:10px;margin:16px 0;color:#5f3800}
+    .grid{display:grid;gap:14px}
+    .grid.cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}
+    .grid.cols-3{grid-template-columns:repeat(3,minmax(0,1fr))}
+    @media(max-width:860px){.grid.cols-2,.grid.cols-3{grid-template-columns:1fr}h1{font-size:28px}}
+    .mini{border:1px solid var(--line);border-radius:14px;padding:15px;background:#fff}
+    .mini strong{display:block;margin-bottom:4px}
+    .tag{display:inline-block;font-size:11px;font-weight:700;padding:3px 7px;border-radius:999px;margin:2px 4px 2px 0}
+    .tag.core{background:var(--blue2);color:var(--blue)}
+    .tag.ops{background:var(--green2);color:var(--green)}
+    .tag.doc{background:var(--purple2);color:var(--purple)}
+    .tag.int{background:var(--orange2);color:var(--orange)}
+    .tag.fin{background:var(--red2);color:var(--red)}
+    table{width:100%;border-collapse:separate;border-spacing:0;margin:10px 0 18px;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#fff}
+    th,td{padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top;text-align:left}
+    th{background:#eef2f7;color:#253145;font-size:12px;text-transform:uppercase;letter-spacing:.04em}
+    tr:last-child td{border-bottom:none}
+    td code, li code, p code{background:#f1f5f9;color:#0f172a;padding:2px 5px;border-radius:5px;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:12px}
+    .flow{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:12px 0}
+    .box{background:#fff;border:1px solid var(--line);border-radius:12px;padding:12px 14px;min-width:142px;text-align:center;box-shadow:0 4px 14px rgba(0,0,0,.04);font-weight:650}
+    .arrow{font-weight:900;color:var(--muted)}
+    details{border:1px solid var(--line);border-radius:14px;background:#fff;margin:12px 0;overflow:hidden}
+    summary{cursor:pointer;padding:14px 16px;background:#f8fafc;font-weight:800;color:#1f2937}
+    details .inner{padding:12px 16px 18px}
+    pre{background:#0b1220;color:#dbeafe;padding:16px;border-radius:12px;overflow:auto;font-size:12px;line-height:1.48}
+    .toc a{display:inline-block;margin:4px 8px 4px 0;padding:6px 10px;border-radius:999px;background:#fff;border:1px solid var(--line);text-decoration:none;color:#1f3b72;font-size:12px}
+    .small{font-size:12px;color:var(--muted)}
+    .kbd{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;background:#111827;color:#fff;border-radius:6px;padding:2px 6px;font-size:11px}
+    .relationship{background:#fbfdff;border:1px dashed #b8c7dd;border-radius:12px;padding:12px;margin:10px 0}
+  </style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <h1>CLS Future-State Database Schema</h1>
+    <p>Approximate database design for a fully automated freight-forwarding operating system that replaces AMS and Gensoft, while using INTTRA as an external ocean-execution integration layer.</p>
+    <span class="pill">Designed for PostgreSQL</span>
+    <span class="pill">Single source of truth</span>
+    <span class="pill">INTTRA-ready</span>
+    <span class="pill">CRM + Rates + Booking + SI + BL + Cut-offs + Documents</span>
+  </div>
+</header>
+<main>
+  <section class="card toc">
+    <h2>Contents</h2>
+    <a href="#principles">Design principles</a>
+    <a href="#erd">High-level ERD</a>
+    <a href="#inttra">Where INTTRA fits</a>
+    <a href="#modules">Schema modules</a>
+    <a href="#process-map">Process-to-table map</a>
+    <a href="#ddl">Sample PostgreSQL DDL</a>
+    <a href="#vocab">Vocabulary</a>
+  </section>
+
+  <section id="principles" class="card">
+    <h2>1. Design principles</h2>
+    <div class="grid cols-2">
+      <div class="mini"><strong>One shipment record from start to finish</strong><p>Create a shipment/job as soon as a confirmed booking or serious booking request exists. Do not wait until SI or BL stage.</p></div>
+      <div class="mini"><strong>AMS + Gensoft replaced by one database</strong><p>Customer master, inquiry tracking, rates, quotation, booking, SI, BL, documents, approvals, and audit trail are stored in one platform.</p></div>
+      <div class="mini"><strong>INTTRA is an integration source</strong><p>INTTRA can support booking, booking confirmation, schedules, rates, and visibility, but the internal platform remains the system of record.</p></div>
+      <div class="mini"><strong>Every document has versioning</strong><p>SI, BL, release order, invoice, and supporting documents must have version history, approval status, and source traceability.</p></div>
+      <div class="mini"><strong>Every manual action has an audit trail</strong><p>Changes to rates, quotations, bookings, SI, BL, cut-offs, approvals, and customer messages should be logged.</p></div>
+      <div class="mini"><strong>Cut-offs trigger workflows</strong><p>SI cut-off, VGM cut-off, gate cut-off, CFS cut-off, and BL cut-off should create alerts and task reminders automatically.</p></div>
+    </div>
+    <div class="warn"><strong>Important:</strong> The provided INTTRA API reference covers booking, schedules, rates, and visibility. It does not show a dedicated API for SI submission, BL draft approval, House BL creation, Switch BL, or cut-off management. Therefore those areas are designed as internal system modules.</div>
+  </section>
+
+  <section id="erd" class="card">
+    <h2>2. High-level relationship flow</h2>
+    <div class="flow">
+      <div class="box">Customer / Lead</div><div class="arrow">→</div>
+      <div class="box">Inquiry</div><div class="arrow">→</div>
+      <div class="box">Rate Request</div><div class="arrow">→</div>
+      <div class="box">Quotation</div><div class="arrow">→</div>
+      <div class="box">Shipment / Job</div><div class="arrow">→</div>
+      <div class="box">Carrier Booking</div><div class="arrow">→</div>
+      <div class="box">SI</div><div class="arrow">→</div>
+      <div class="box">BL</div><div class="arrow">→</div>
+      <div class="box">Documents + Events</div>
+    </div>
+    <div class="relationship"><strong>Core rule:</strong> <code>shipments</code> becomes the main parent table. Bookings, SI, BLs, containers, documents, cut-offs, tasks, approvals, and events all connect back to <code>shipments.id</code>.</div>
+    <div class="relationship"><strong>House/Master BL rule:</strong> a shipment can have one or more Master BLs and one or more House BLs. They are linked through <code>bl_relationships</code>.</div>
+    <div class="relationship"><strong>Cross-trade/Switch BL rule:</strong> separate BL versions are linked through <code>switch_bl_chains</code> so the system can protect confidential supplier/buyer information.</div>
+  </section>
+
+  <section id="inttra" class="card">
+    <h2>3. Where INTTRA fits in the database</h2>
+    <table>
+      <thead><tr><th>INTTRA capability</th><th>Internal tables affected</th><th>How it should work</th></tr></thead>
+      <tbody>
+        <tr><td>Booking request submission</td><td><code>carrier_booking_requests</code>, <code>integration_messages</code></td><td>System creates booking internally, then sends payload to INTTRA. INTTRA reference is stored against the booking.</td></tr>
+        <tr><td>Booking confirmation webhook</td><td><code>carrier_booking_confirmations</code>, <code>release_orders</code>, <code>status_history</code></td><td>INTTRA confirmation updates booking status and can trigger release-order creation and customer notification.</td></tr>
+        <tr><td>Booking amendment / cancellation</td><td><code>booking_amendments</code>, <code>carrier_booking_requests</code>, <code>status_history</code></td><td>Amend/cancel action is first recorded internally, then pushed to INTTRA. Response is stored for audit.</td></tr>
+        <tr><td>Ocean schedule search</td><td><code>schedule_searches</code>, <code>schedule_options</code>, <code>vessels</code>, <code>voyages</code></td><td>INTTRA schedule data can prefill vessel/voyage/ETD/ETA options, but cut-offs still need internal validation.</td></tr>
+        <tr><td>Contract and spot rate search</td><td><code>rate_searches</code>, <code>rate_offers</code>, <code>rate_charges</code></td><td>INTTRA rate results are stored as rate offers. Sales markup and quotation are handled internally.</td></tr>
+        <tr><td>Visibility / track-and-trace</td><td><code>tracking_events</code>, <code>container_events</code>, <code>shipment_exceptions</code></td><td>Track events are pulled/stored, then internal rules decide whether to alert CS, Procurement, customer, or agent.</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="modules" class="card">
+    <h2>4. Schema modules and approximate tables</h2>
+
+    <details open>
+      <summary><span class="tag core">CORE</span> Master data</summary>
+      <div class="inner">
+        <table>
+          <thead><tr><th>Table</th><th>Main columns</th><th>Purpose</th></tr></thead>
+          <tbody>
+            <tr><td><code>organizations</code></td><td><code>id, name, org_type, tax_no, registration_no, status, risk_rating, created_at</code></td><td>All companies: customers, carriers, liners, agents, suppliers, consignees, notify parties.</td></tr>
+            <tr><td><code>organization_roles</code></td><td><code>organization_id, role_code</code></td><td>Allows one organization to be both customer and consignee, or agent and supplier.</td></tr>
+            <tr><td><code>contacts</code></td><td><code>id, organization_id, name, email, phone, whatsapp_no, role_title, is_primary</code></td><td>People linked to customers, liners, agents, and internal partners.</td></tr>
+            <tr><td><code>addresses</code></td><td><code>id, organization_id, address_type, line1, city, country_code, postal_code</code></td><td>Registered, billing, shipper, consignee, and notify addresses.</td></tr>
+            <tr><td><code>ports</code></td><td><code>id, unlocode, port_name, country_code, timezone</code></td><td>Origin, destination, POL, POD, place of receipt, place of delivery.</td></tr>
+            <tr><td><code>carriers</code></td><td><code>id, organization_id, scac, inttra_company_id, api_supported</code></td><td>Shipping lines/liners and their integration identifiers.</td></tr>
+            <tr><td><code>vessels</code></td><td><code>id, vessel_name, imo_number, carrier_id</code></td><td>Vessel master to prevent duplicate vessel entries.</td></tr>
+            <tr><td><code>voyages</code></td><td><code>id, vessel_id, voyage_no, carrier_id, etd, eta, status</code></td><td>Specific sailing/voyage attached to bookings and BLs.</td></tr>
+            <tr><td><code>equipment_types</code></td><td><code>id, iso_code, display_name, size_ft, category</code></td><td>20GP, 40HC, reefer, open-top, etc.</td></tr>
+            <tr><td><code>system_users</code></td><td><code>id, name, email, team_id, role_id, active</code></td><td>Internal users for ownership, approvals, and audit logs.</td></tr>
+            <tr><td><code>teams</code></td><td><code>id, name, team_type</code></td><td>Sales, CS, Procurement, Documentation, Finance, DRF, Management.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </details>
+
+    <details>
+      <summary><span class="tag core">CRM</span> Customer onboarding and inquiry management</summary>
+      <div class="inner">
+        <table>
+          <thead><tr><th>Table</th><th>Main columns</th><th>Purpose</th></tr></thead>
+          <tbody>
+            <tr><td><code>customer_profiles</code></td><td><code>organization_id, customer_code, customer_segment, credit_status, default_payment_terms, sales_owner_id</code></td><td>Replaces AMS/Gensoft customer master duplication.</td></tr>
+            <tr><td><code>kyc_cases</code></td><td><code>id, customer_id, status, submitted_at, approved_at, assigned_to</code></td><td>Tracks KYC from request to approval.</td></tr>
+            <tr><td><code>kyc_documents</code></td><td><code>id, kyc_case_id, document_type, document_id, verification_status</code></td><td>Links uploaded KYC files to checklist items.</td></tr>
+            <tr><td><code>credit_applications</code></td><td><code>id, customer_id, requested_limit, payment_terms, status, finance_owner_id</code></td><td>Replaces email-only BR/credit approval tracking.</td></tr>
+            <tr><td><code>inquiries</code></td><td><code>id, customer_id, inquiry_channel, inquiry_status, origin_port_id, destination_port_id, commodity, expected_loading_date, owner_id</code></td><td>Captures every email/WhatsApp/phone/web inquiry.</td></tr>
+            <tr><td><code>inquiry_equipment</code></td><td><code>id, inquiry_id, equipment_type_id, quantity</code></td><td>Stores required container types and quantities for inquiry.</td></tr>
+            <tr><td><code>inquiry_outcomes</code></td><td><code>id, inquiry_id, outcome, lost_reason, converted_quote_id, converted_shipment_id</code></td><td>Calculates conversion rate and lost-business reasons.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </details>
+
+    <details>
+      <summary><span class="tag core">RATES</span> Rate management and quotations</summary>
+      <div class="inner">
+        <table>
+          <thead><tr><th>Table</th><th>Main columns</th><th>Purpose</th></tr></thead>
+          <tbody>
+            <tr><td><code>rate_searches</code></td><td><code>id, source, requested_by, origin_port_id, destination_port_id, searched_at, raw_request_json</code></td><td>Records INTTRA/manual/carrier portal rate searches.</td></tr>
+            <tr><td><code>rate_offers</code></td><td><code>id, rate_search_id, carrier_id, rate_type, contract_no, valid_from, valid_to, currency, total_amount, source_reference</code></td><td>Contract/monthly/spot rate offers from INTTRA, liner portals, or Procurement.</td></tr>
+            <tr><td><code>rate_charges</code></td><td><code>id, rate_offer_id, charge_code, charge_name, amount, currency, basis, payable_at</code></td><td>Breakdown: ocean freight, THC, documentation, bunker, etc.</td></tr>
+            <tr><td><code>markup_rules</code></td><td><code>id, lane_id, customer_segment, min_margin_amount, min_margin_percent, approval_required_if_below</code></td><td>Guardrails for salesperson quotation markup.</td></tr>
+            <tr><td><code>quotations</code></td><td><code>id, inquiry_id, customer_id, quote_no, status, valid_until, created_by</code></td><td>Formal quotation header.</td></tr>
+            <tr><td><code>quote_versions</code></td><td><code>id, quotation_id, version_no, total_buy_amount, total_sell_amount, margin_amount, margin_percent, status</code></td><td>Keeps quote revision history.</td></tr>
+            <tr><td><code>quote_line_items</code></td><td><code>id, quote_version_id, charge_code, description, buy_amount, sell_amount, currency, basis</code></td><td>Detailed charges included in quotation.</td></tr>
+            <tr><td><code>quote_approvals</code></td><td><code>id, quote_version_id, approver_id, approval_type, status, comments</code></td><td>Approves below-margin or special quotations.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </details>
+
+    <details>
+      <summary><span class="tag ops">OPS</span> Shipment/job and carrier booking</summary>
+      <div class="inner">
+        <table>
+          <thead><tr><th>Table</th><th>Main columns</th><th>Purpose</th></tr></thead>
+          <tbody>
+            <tr><td><code>shipments</code></td><td><code>id, shipment_no, customer_id, quotation_id, shipment_type, trade_type, mode, status, owner_id, created_at</code></td><td>Main operational job replacing late Gensoft job creation.</td></tr>
+            <tr><td><code>shipment_parties</code></td><td><code>id, shipment_id, party_role, organization_id, contact_id, address_id</code></td><td>Shipper, consignee, notify party, destination agent, carrier, booker.</td></tr>
+            <tr><td><code>shipment_routes</code></td><td><code>id, shipment_id, origin_port_id, destination_port_id, place_of_receipt_id, place_of_delivery_id, incoterm</code></td><td>Routing and trade lane details.</td></tr>
+            <tr><td><code>shipment_cargo</code></td><td><code>id, shipment_id, commodity, hs_code, package_count, package_type, gross_weight, gross_volume, hazardous_flag</code></td><td>Cargo details used in SI and BL.</td></tr>
+            <tr><td><code>carrier_booking_requests</code></td><td><code>id, shipment_id, carrier_id, booking_no, inttra_reference_id, booking_status, submitted_via, submitted_at</code></td><td>Internal booking record linked to INTTRA or liner portal booking.</td></tr>
+            <tr><td><code>booking_equipment</code></td><td><code>id, booking_id, equipment_type_id, requested_qty, confirmed_qty, temperature_setting</code></td><td>Container quantities requested/confirmed.</td></tr>
+            <tr><td><code>carrier_booking_confirmations</code></td><td><code>id, booking_id, confirmation_no, confirmed_at, raw_confirmation_json, source</code></td><td>Stores INTTRA webhook or liner portal confirmation.</td></tr>
+            <tr><td><code>booking_amendments</code></td><td><code>id, booking_id, amendment_no, reason, requested_payload_json, response_payload_json, status</code></td><td>Tracks each booking amendment request.</td></tr>
+            <tr><td><code>release_orders</code></td><td><code>id, shipment_id, booking_id, release_order_no, issued_to_customer_at, status, document_id</code></td><td>Release order generation and dispatch tracking.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </details>
+
+    <details>
+      <summary><span class="tag ops">OPS</span> Cut-offs, reminders, and operational follow-up</summary>
+      <div class="inner">
+        <table>
+          <thead><tr><th>Table</th><th>Main columns</th><th>Purpose</th></tr></thead>
+          <tbody>
+            <tr><td><code>cutoff_schedules</code></td><td><code>id, carrier_id, voyage_id, origin_port_id, source, received_at, source_document_id</code></td><td>Header for cut-off data received from liners/terminals.</td></tr>
+            <tr><td><code>cutoff_events</code></td><td><code>id, cutoff_schedule_id, shipment_id, cutoff_type, cutoff_at, timezone, status</code></td><td>SI, BL, VGM, CY/gate, CFS, ENS/EAD cut-offs.</td></tr>
+            <tr><td><code>reminder_rules</code></td><td><code>id, cutoff_type, remind_before_hours, recipient_role, channel, active</code></td><td>Defines reminders such as “2 days before BL cut-off.”</td></tr>
+            <tr><td><code>notifications</code></td><td><code>id, shipment_id, notification_type, recipient_contact_id, channel, scheduled_at, sent_at, status</code></td><td>Customer/internal notifications and reminder history.</td></tr>
+            <tr><td><code>shipment_exceptions</code></td><td><code>id, shipment_id, exception_type, severity, detected_at, owner_id, status, resolved_at</code></td><td>Rolled shipment, missed cut-off, late SI, missing VGM, no gate-in event, etc.</td></tr>
+            <tr><td><code>tasks</code></td><td><code>id, shipment_id, assigned_to, task_type, due_at, priority, status</code></td><td>Operational work queue for CS, Procurement, Documentation, Finance.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </details>
+
+    <details>
+      <summary><span class="tag doc">DOC</span> Shipping Instructions and BL management</summary>
+      <div class="inner">
+        <table>
+          <thead><tr><th>Table</th><th>Main columns</th><th>Purpose</th></tr></thead>
+          <tbody>
+            <tr><td><code>shipping_instructions</code></td><td><code>id, shipment_id, si_no, version_no, source_format, status, received_at, approved_at</code></td><td>Structured SI replacing Excel/Word/PDF manual interpretation.</td></tr>
+            <tr><td><code>si_parties</code></td><td><code>id, si_id, party_role, organization_id, address_snapshot_json</code></td><td>SI shipper, consignee, notify party, etc.</td></tr>
+            <tr><td><code>si_cargo_items</code></td><td><code>id, si_id, marks_numbers, description, package_count, package_type, weight, volume</code></td><td>Cargo lines used to prepare BL.</td></tr>
+            <tr><td><code>containers</code></td><td><code>id, container_no, equipment_type_id, owner_carrier_id</code></td><td>Physical container master.</td></tr>
+            <tr><td><code>shipment_containers</code></td><td><code>id, shipment_id, container_id, seal_no, vgm_weight, gate_in_at, empty_pickup_at</code></td><td>Shipment-specific container, seal, VGM, pickup, gate-in details.</td></tr>
+            <tr><td><code>bills_of_lading</code></td><td><code>id, shipment_id, bl_no, bl_type, version_no, status, issue_place, issue_date, source_system</code></td><td>Master BL, House BL, Direct BL, Switch BL, draft/final versions.</td></tr>
+            <tr><td><code>bl_relationships</code></td><td><code>id, parent_bl_id, child_bl_id, relation_type</code></td><td>Links Master BL to House BL, original BL to amended BL, first leg to second leg.</td></tr>
+            <tr><td><code>bl_parties</code></td><td><code>id, bl_id, party_role, organization_id, display_name, address_snapshot_json</code></td><td>BL-specific party details; snapshots preserve the exact printed BL text.</td></tr>
+            <tr><td><code>bl_cargo_items</code></td><td><code>id, bl_id, description, marks_numbers, package_count, package_type, weight, volume</code></td><td>Cargo details printed on the BL.</td></tr>
+            <tr><td><code>bl_containers</code></td><td><code>id, bl_id, shipment_container_id, container_no_snapshot, seal_no_snapshot</code></td><td>Container/seal details attached to the BL version.</td></tr>
+            <tr><td><code>bl_amendments</code></td><td><code>id, bl_id, requested_by_contact_id, reason, change_summary, status, carrier_submitted_at</code></td><td>All customer/carrier BL change requests.</td></tr>
+            <tr><td><code>bl_approvals</code></td><td><code>id, bl_id, approval_stage, approver_id, status, approved_at, comments</code></td><td>Customer approval, Documentation approval, Finance release approval.</td></tr>
+            <tr><td><code>switch_bl_chains</code></td><td><code>id, shipment_id, first_leg_bl_id, second_leg_bl_id, confidentiality_rule, status</code></td><td>Controls cross-trading/switch BL confidentiality.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </details>
+
+    <details>
+      <summary><span class="tag doc">DOC</span> Document management and communications</summary>
+      <div class="inner">
+        <table>
+          <thead><tr><th>Table</th><th>Main columns</th><th>Purpose</th></tr></thead>
+          <tbody>
+            <tr><td><code>documents</code></td><td><code>id, document_type, file_name, storage_url, checksum, uploaded_by, uploaded_at, version_no</code></td><td>Central file repository for SI, BL, release order, invoices, packing list, etc.</td></tr>
+            <tr><td><code>document_links</code></td><td><code>id, document_id, entity_type, entity_id, link_role</code></td><td>Links the same document to shipment, BL, customer, KYC case, or booking.</td></tr>
+            <tr><td><code>document_checklists</code></td><td><code>id, shipment_id, checklist_type, status</code></td><td>Mandatory checklist for every job file.</td></tr>
+            <tr><td><code>document_checklist_items</code></td><td><code>id, checklist_id, required_document_type, document_id, status</code></td><td>Ensures no job is closed with missing documents.</td></tr>
+            <tr><td><code>communications</code></td><td><code>id, shipment_id, customer_id, channel, direction, subject, body_summary, sent_at, received_at</code></td><td>Logs email, WhatsApp, phone notes, and system messages.</td></tr>
+            <tr><td><code>communication_attachments</code></td><td><code>communication_id, document_id</code></td><td>Links received/sent attachments to the communication trail.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </details>
+
+    <details>
+      <summary><span class="tag int">INT</span> Integration, audit, and tracking</summary>
+      <div class="inner">
+        <table>
+          <thead><tr><th>Table</th><th>Main columns</th><th>Purpose</th></tr></thead>
+          <tbody>
+            <tr><td><code>integration_partners</code></td><td><code>id, partner_name, partner_type, base_url, active</code></td><td>INTTRA, liner portals, email parser, payment/ERP systems.</td></tr>
+            <tr><td><code>integration_credentials</code></td><td><code>id, partner_id, credential_name, encrypted_secret_ref, expires_at</code></td><td>Secure reference to API tokens/secrets.</td></tr>
+            <tr><td><code>integration_messages</code></td><td><code>id, partner_id, entity_type, entity_id, direction, endpoint, request_json, response_json, status, created_at</code></td><td>Audit trail for every API request/response.</td></tr>
+            <tr><td><code>webhook_events</code></td><td><code>id, partner_id, event_type, payload_json, received_at, processed_at, processing_status</code></td><td>Inbound INTTRA booking confirmation and future webhooks.</td></tr>
+            <tr><td><code>schedule_searches</code></td><td><code>id, source, origin_port_id, destination_port_id, search_date, weeks_out, raw_request_json</code></td><td>Ocean schedule searches from INTTRA or carrier portals.</td></tr>
+            <tr><td><code>schedule_options</code></td><td><code>id, schedule_search_id, carrier_id, vessel_id, voyage_no, etd, eta, transit_days, raw_option_json</code></td><td>Schedule options returned from search.</td></tr>
+            <tr><td><code>tracking_events</code></td><td><code>id, shipment_id, container_id, source, event_code, event_name, event_time, location_port_id, raw_event_json</code></td><td>INTTRA/carrier track-and-trace events.</td></tr>
+            <tr><td><code>status_history</code></td><td><code>id, entity_type, entity_id, old_status, new_status, changed_by, changed_at, reason</code></td><td>Status changes for shipment, booking, SI, BL, quote, approval.</td></tr>
+            <tr><td><code>audit_logs</code></td><td><code>id, entity_type, entity_id, action, user_id, before_json, after_json, created_at</code></td><td>Full data-change audit trail.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </details>
+
+    <details>
+      <summary><span class="tag fin">FIN</span> Finance-lite module if Gensoft billing is also replaced</summary>
+      <div class="inner">
+        <table>
+          <thead><tr><th>Table</th><th>Main columns</th><th>Purpose</th></tr></thead>
+          <tbody>
+            <tr><td><code>cost_sheets</code></td><td><code>id, shipment_id, status, total_buy, total_sell, margin_amount, margin_percent</code></td><td>Replaces Gensoft costing module.</td></tr>
+            <tr><td><code>cost_sheet_items</code></td><td><code>id, cost_sheet_id, charge_code, vendor_id, buy_amount, sell_amount, currency</code></td><td>Detailed costs and selling charges.</td></tr>
+            <tr><td><code>vendor_invoices</code></td><td><code>id, shipment_id, vendor_id, invoice_no, invoice_date, amount, status, document_id</code></td><td>Line invoice and supplier invoice tracking.</td></tr>
+            <tr><td><code>customer_invoices</code></td><td><code>id, shipment_id, customer_id, invoice_no, invoice_date, due_date, amount, status</code></td><td>Customer invoice creation and dispatch reminders.</td></tr>
+            <tr><td><code>payment_requests</code></td><td><code>id, shipment_id, vendor_invoice_id, requested_by, approved_by, status</code></td><td>Payment request workflow.</td></tr>
+          </tbody>
+        </table>
+        <p class="small">This module can also be integrated with a separate accounting package if CLS does not want the operating system to become the official accounting ledger.</p>
+      </div>
+    </details>
+  </section>
+
+  <section id="process-map" class="card">
+    <h2>5. AS-IS process mapped to future database tables</h2>
+    <table>
+      <thead><tr><th>Process area</th><th>Future database tables</th><th>Automation effect</th></tr></thead>
+      <tbody>
+        <tr><td>Customer inquiry</td><td><code>inquiries</code>, <code>inquiry_equipment</code>, <code>communications</code></td><td>No more untracked WhatsApp/email inquiries; conversion can be measured.</td></tr>
+        <tr><td>Customer onboarding</td><td><code>customer_profiles</code>, <code>kyc_cases</code>, <code>credit_applications</code>, <code>documents</code></td><td>New customers move through a trackable KYC/BR workflow.</td></tr>
+        <tr><td>Rate management</td><td><code>rate_searches</code>, <code>rate_offers</code>, <code>rate_charges</code>, <code>markup_rules</code></td><td>Spot, monthly, contract, and INTTRA rates stored in one place with validity.</td></tr>
+        <tr><td>Quotation</td><td><code>quotations</code>, <code>quote_versions</code>, <code>quote_line_items</code>, <code>quote_approvals</code></td><td>Formal quote history, margin visibility, and approval control.</td></tr>
+        <tr><td>Carrier booking</td><td><code>shipments</code>, <code>carrier_booking_requests</code>, <code>booking_equipment</code>, <code>carrier_booking_confirmations</code></td><td>Booking request is created in the system and optionally sent through INTTRA.</td></tr>
+        <tr><td>Release order</td><td><code>release_orders</code>, <code>documents</code>, <code>notifications</code></td><td>Release order is generated, stored, sent, and tracked.</td></tr>
+        <tr><td>Cut-off tracking</td><td><code>cutoff_schedules</code>, <code>cutoff_events</code>, <code>reminder_rules</code>, <code>tasks</code></td><td>Excel-based cut-off tracking becomes deadline-driven workflow.</td></tr>
+        <tr><td>SI processing</td><td><code>shipping_instructions</code>, <code>si_parties</code>, <code>si_cargo_items</code>, <code>shipment_containers</code></td><td>Structured SI data feeds BL and carrier submission workflow.</td></tr>
+        <tr><td>BL management</td><td><code>bills_of_lading</code>, <code>bl_parties</code>, <code>bl_cargo_items</code>, <code>bl_containers</code>, <code>bl_amendments</code></td><td>Direct BL, Master BL, House BL, amendments, versions, and approvals are controlled.</td></tr>
+        <tr><td>Document folder</td><td><code>documents</code>, <code>document_links</code>, <code>document_checklists</code></td><td>Every job has a mandatory document checklist and naming/versioning discipline.</td></tr>
+        <tr><td>Tracking and exceptions</td><td><code>tracking_events</code>, <code>shipment_exceptions</code>, <code>tasks</code></td><td>INTTRA tracking becomes actionable workflow, not just visibility.</td></tr>
+        <tr><td>USA handover / destination agent</td><td><code>shipment_parties</code>, <code>communications</code>, <code>notifications</code>, <code>documents</code></td><td>Arrival notifications and agent handover can be generated from the same shipment record.</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="ddl" class="card">
+    <h2>6. Sample PostgreSQL DDL for the core design</h2>
+    <p>This is not the full production DDL. It shows how the main tables would be structured.</p>
+<pre><code>CREATE TABLE organizations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL,
+  org_type TEXT NOT NULL, -- customer, carrier, agent, supplier, consignee, notify_party
+  registration_no TEXT,
+  tax_no TEXT,
+  risk_rating TEXT,
+  status TEXT NOT NULL DEFAULT 'active',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE contacts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id UUID REFERENCES organizations(id),
+  name TEXT NOT NULL,
+  email TEXT,
+  phone TEXT,
+  whatsapp_no TEXT,
+  role_title TEXT,
+  is_primary BOOLEAN DEFAULT false
+);
+
+CREATE TABLE inquiries (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  customer_id UUID REFERENCES organizations(id),
+  inquiry_channel TEXT NOT NULL, -- email, whatsapp, phone, web_form
+  inquiry_status TEXT NOT NULL DEFAULT 'new',
+  origin_port_id UUID,
+  destination_port_id UUID,
+  commodity TEXT,
+  expected_loading_date DATE,
+  owner_id UUID,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE rate_offers (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  source TEXT NOT NULL, -- INTTRA, carrier_portal, email, procurement_manual
+  carrier_id UUID REFERENCES organizations(id),
+  origin_port_id UUID,
+  destination_port_id UUID,
+  rate_type TEXT NOT NULL, -- contract, monthly, spot
+  contract_no TEXT,
+  valid_from DATE,
+  valid_to DATE,
+  currency CHAR(3),
+  total_amount NUMERIC(14,2),
+  raw_source_json JSONB,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE quotations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  inquiry_id UUID REFERENCES inquiries(id),
+  customer_id UUID REFERENCES organizations(id),
+  quote_no TEXT UNIQUE NOT NULL,
+  status TEXT NOT NULL DEFAULT 'draft',
+  valid_until DATE,
+  created_by UUID,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE shipments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  shipment_no TEXT UNIQUE NOT NULL,
+  customer_id UUID REFERENCES organizations(id),
+  quotation_id UUID REFERENCES quotations(id),
+  shipment_type TEXT NOT NULL, -- export, import, cross_trade
+  trade_type TEXT, -- direct_bl, house_master, switch_bl
+  mode TEXT NOT NULL DEFAULT 'ocean',
+  status TEXT NOT NULL DEFAULT 'created',
+  owner_id UUID,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE carrier_booking_requests (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  shipment_id UUID NOT NULL REFERENCES shipments(id),
+  carrier_id UUID REFERENCES organizations(id),
+  booking_no TEXT,
+  inttra_reference_id TEXT,
+  inttra_reference_no TEXT,
+  booking_status TEXT NOT NULL DEFAULT 'draft',
+  submitted_via TEXT, -- INTTRA, liner_portal, email, phone
+  submitted_at TIMESTAMPTZ,
+  raw_request_json JSONB,
+  raw_response_json JSONB
+);
+
+CREATE TABLE shipping_instructions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  shipment_id UUID NOT NULL REFERENCES shipments(id),
+  si_no TEXT,
+  version_no INT NOT NULL DEFAULT 1,
+  source_format TEXT, -- web_form, excel, word, pdf, email
+  status TEXT NOT NULL DEFAULT 'draft',
+  received_at TIMESTAMPTZ,
+  approved_at TIMESTAMPTZ,
+  raw_source_document_id UUID
+);
+
+CREATE TABLE bills_of_lading (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  shipment_id UUID NOT NULL REFERENCES shipments(id),
+  bl_no TEXT,
+  bl_type TEXT NOT NULL, -- master, house, direct, switch_first_leg, switch_second_leg
+  version_no INT NOT NULL DEFAULT 1,
+  status TEXT NOT NULL DEFAULT 'draft', -- draft, customer_approved, final, amended, cancelled
+  source_system TEXT, -- internal, liner_portal, INTTRA_future, manual
+  issue_place TEXT,
+  issue_date DATE,
+  document_id UUID,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE bl_relationships (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  parent_bl_id UUID NOT NULL REFERENCES bills_of_lading(id),
+  child_bl_id UUID NOT NULL REFERENCES bills_of_lading(id),
+  relation_type TEXT NOT NULL -- master_to_house, original_to_amended, switch_first_to_second
+);
+
+CREATE TABLE cutoff_events (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  shipment_id UUID REFERENCES shipments(id),
+  booking_id UUID REFERENCES carrier_booking_requests(id),
+  cutoff_type TEXT NOT NULL, -- SI, BL, VGM, CY_GATE, CFS, ENS, EAD
+  cutoff_at TIMESTAMPTZ NOT NULL,
+  timezone TEXT,
+  source TEXT, -- carrier_email, terminal_notice, manual, API
+  status TEXT NOT NULL DEFAULT 'open'
+);
+
+CREATE TABLE documents (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  document_type TEXT NOT NULL,
+  file_name TEXT NOT NULL,
+  storage_url TEXT NOT NULL,
+  checksum TEXT,
+  version_no INT DEFAULT 1,
+  uploaded_by UUID,
+  uploaded_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE integration_messages (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  partner_name TEXT NOT NULL, -- INTTRA, MSC, CMA, OOCL, email_parser
+  entity_type TEXT NOT NULL,
+  entity_id UUID NOT NULL,
+  direction TEXT NOT NULL, -- outbound, inbound
+  endpoint TEXT,
+  request_json JSONB,
+  response_json JSONB,
+  status TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE tracking_events (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  shipment_id UUID REFERENCES shipments(id),
+  container_id UUID,
+  source TEXT NOT NULL, -- INTTRA, carrier_portal, manual
+  event_code TEXT,
+  event_name TEXT NOT NULL,
+  event_time TIMESTAMPTZ,
+  location_text TEXT,
+  raw_event_json JSONB,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);</code></pre>
+  </section>
+
+  <section id="vocab" class="card">
+    <h2>7. Simple vocabulary</h2>
+    <table>
+      <thead><tr><th>Term</th><th>Simple meaning</th></tr></thead>
+      <tbody>
+        <tr><td>AMS</td><td>Current internal rate/customer system used by CLS.</td></tr>
+        <tr><td>Gensoft</td><td>Current internal ERP/operations system used for jobs, House BLs, costing, and documents.</td></tr>
+        <tr><td>INTTRA</td><td>External ocean execution platform/API used mainly for carrier booking, schedules, rates, and shipment tracking.</td></tr>
+        <tr><td>SI / Shipping Instructions</td><td>Shipment details given by the customer to prepare the BL.</td></tr>
+        <tr><td>BL / Bill of Lading</td><td>Main shipping document showing cargo, shipper, consignee, vessel, and terms.</td></tr>
+        <tr><td>Master BL</td><td>BL issued by the shipping line to the freight forwarder.</td></tr>
+        <tr><td>House BL</td><td>BL issued by the freight forwarder to the customer.</td></tr>
+        <tr><td>Direct BL</td><td>BL issued directly by the shipping line, usually without a separate House BL.</td></tr>
+        <tr><td>Switch BL</td><td>Replacement BL used in trading/cross-trade situations to change visible shipper/consignee information.</td></tr>
+        <tr><td>Release Order</td><td>Instruction/document allowing the customer to collect or use the container/cargo.</td></tr>
+        <tr><td>Cut-off</td><td>Deadline before which an action must be completed, such as SI submission or container gate-in.</td></tr>
+        <tr><td>VGM</td><td>Verified Gross Mass; confirmed container weight needed before loading.</td></tr>
+        <tr><td>CY / Gate cut-off</td><td>Deadline for a loaded container to enter the terminal/port.</td></tr>
+        <tr><td>CFS cut-off</td><td>Deadline for loose cargo to reach the warehouse for consolidation.</td></tr>
+        <tr><td>POL / POD</td><td>Port of Loading and Port of Discharge.</td></tr>
+        <tr><td>ETD / ETA</td><td>Estimated Time of Departure and Estimated Time of Arrival.</td></tr>
+        <tr><td>SCAC</td><td>Carrier code used to identify shipping lines in systems such as INTTRA.</td></tr>
+        <tr><td>UN/LOCODE</td><td>Standard international location/port code, such as LKCMB for Colombo.</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="card">
+    <h2>8. Implementation recommendation</h2>
+    <div class="note">
+      <strong>Best approach:</strong> Build the platform around <code>shipments</code> as the central operational record, connect all modules to it, and integrate INTTRA through an integration layer. Do not let INTTRA become the master database because it does not cover the full internal CLS process.
+    </div>
+    <p>Recommended build phases:</p>
+    <ol>
+      <li><strong>Phase 1:</strong> Customer master, inquiry tracking, rates, quotations, and shipment/job creation.</li>
+      <li><strong>Phase 2:</strong> Booking workflow, INTTRA booking integration, release orders, and cut-off reminders.</li>
+      <li><strong>Phase 3:</strong> SI web form, BL versioning, House/Master BL links, approvals, and document checklist.</li>
+      <li><strong>Phase 4:</strong> Track-and-trace, exception workflows, destination agent notifications, and dashboards.</li>
+      <li><strong>Phase 5:</strong> Finance-lite/costing/invoice integration if the operating system must fully replace Gensoft billing workflows.</li>
+    </ol>
+  </section>
+
+  <p class="small">Prepared from the provided AS-IS process mapping and INTTRA Ocean Execution API reference. This is an approximate logical schema for solution design and should be validated with operations, finance, documentation, and technical teams before implementation.</p>
+</main>
+</body>
+</html>

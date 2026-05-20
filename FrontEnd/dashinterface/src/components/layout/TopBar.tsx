@@ -46,7 +46,7 @@ export default function TopBar({ currentPageLabel }: TopBarProps) {
         </button>
 
         <div className="db-topbar-user" style={{ gap: 8 }}>
-          <div className="db-topbar-avatar" style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)' }}>
+          <div className="db-topbar-avatar" style={{ background: 'linear-gradient(135deg, #4f46e5, #7c3aed)' }}>
             NP
           </div>
           <div style={{ textAlign: 'left' }}>

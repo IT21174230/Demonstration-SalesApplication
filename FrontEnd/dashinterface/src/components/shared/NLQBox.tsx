@@ -151,7 +151,7 @@ export default function NLQBox({ inquiries, tasks, missingItems, followups }: NL
   }
 
   return (
-    <div className="db-chart-card" style={{ marginBottom: 18, borderColor: 'rgba(99,102,241,0.4)' }}>
+    <div className="db-chart-card" style={{ marginBottom: 18, borderColor: 'rgba(79,70,229,0.2)' }}>
       <div className="db-chart-head">
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <Sparkles size={16} style={{ color: 'var(--accent-light)' }} />
@@ -196,7 +196,7 @@ export default function NLQBox({ inquiries, tasks, missingItems, followups }: NL
 
       {result && (
         <div style={{
-          background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.2)',
+          background: 'rgba(79,70,229,0.03)', border: '1px solid rgba(79,70,229,0.12)',
           borderRadius: 10, padding: '12px 14px',
         }}>
           <div style={{ fontSize: 13, color: 'var(--text)', fontWeight: 600, marginBottom: result.rows ? 10 : 0 }}>
@@ -208,13 +208,13 @@ export default function NLQBox({ inquiries, tasks, missingItems, followups }: NL
                 <thead>
                   <tr style={{ textAlign: 'left', color: 'var(--text-muted)', textTransform: 'uppercase', fontSize: 10, letterSpacing: '0.06em' }}>
                     {result.columns.map(c => (
-                      <th key={c} style={{ padding: '6px 8px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>{c}</th>
+                      <th key={c} style={{ padding: '6px 8px', borderBottom: '1px solid #e2e8f0' }}>{c}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {result.rows.map((r, idx) => (
-                    <tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
+                    <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
                       {r.cells.map((c, i) => (
                         <td key={i} style={{ padding: '8px', color: i === 0 ? 'var(--text)' : 'var(--text-secondary)', fontWeight: i === 0 ? 600 : 400 }}>
                           {c}

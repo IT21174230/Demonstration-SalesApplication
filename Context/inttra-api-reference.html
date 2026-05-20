@@ -1,0 +1,1583 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>INTTRA Ocean Execution API — Reference</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700;9..144,900&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:           #fafaf7;
+    --bg-card:      #ffffff;
+    --bg-soft:      #f3f1ea;
+    --ink:          #1a1a1a;
+    --ink-soft:     #4a4a4a;
+    --ink-mute:     #8a8682;
+    --rule:         #e5e1d6;
+    --accent:       #c75233;
+    --accent-soft:  #f5e6e0;
+    --code-bg:      #1d1f21;
+    --code-ink:     #f8f8f2;
+    --code-key:     #ffb86c;
+    --code-str:     #a3d977;
+    --code-num:     #bd93f9;
+    --get:          #2a9d8f;
+    --post:         #e9985f;
+    --put:          #5d8aa8;
+    --delete:       #c75233;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: 'Inter', -apple-system, system-ui, sans-serif;
+    font-size: 15px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  .container { max-width: 1280px; margin: 0 auto; padding: 60px 40px 120px; }
+
+  /* Header */
+  .hero {
+    border-bottom: 1px solid var(--rule);
+    padding-bottom: 48px;
+    margin-bottom: 56px;
+    position: relative;
+  }
+  .eyebrow {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 18px;
+    font-weight: 500;
+  }
+  h1 {
+    font-family: 'Fraunces', Georgia, serif;
+    font-size: clamp(40px, 5.5vw, 72px);
+    font-weight: 900;
+    letter-spacing: -0.02em;
+    line-height: 1.02;
+    margin-bottom: 20px;
+  }
+  h1 em { font-style: italic; font-weight: 500; color: var(--accent); }
+  .lede {
+    font-family: 'Fraunces', Georgia, serif;
+    font-size: 20px;
+    color: var(--ink-soft);
+    max-width: 760px;
+    line-height: 1.5;
+    font-weight: 500;
+  }
+  .meta-row {
+    display: flex; gap: 32px; flex-wrap: wrap;
+    margin-top: 32px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: var(--ink-mute);
+  }
+  .meta-row span strong { color: var(--ink); font-weight: 700; }
+
+  /* Section */
+  section { margin: 80px 0; scroll-margin-top: 30px; }
+  h2 {
+    font-family: 'Fraunces', Georgia, serif;
+    font-size: 38px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    margin-bottom: 14px;
+    display: flex; align-items: baseline; gap: 16px;
+  }
+  h2 .num {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 14px;
+    color: var(--ink-mute);
+    font-weight: 500;
+  }
+  .section-desc {
+    color: var(--ink-soft);
+    max-width: 780px;
+    margin-bottom: 32px;
+    font-size: 16px;
+  }
+
+  /* TOC */
+  .toc {
+    background: var(--bg-soft);
+    border-radius: 6px;
+    padding: 28px 32px;
+    margin: 40px 0 60px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 24px;
+  }
+  .toc-col h4 {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    margin-bottom: 12px;
+    font-weight: 500;
+  }
+  .toc-col ul { list-style: none; }
+  .toc-col li { margin: 6px 0; }
+  .toc-col a {
+    color: var(--ink); text-decoration: none;
+    font-size: 14px;
+    border-bottom: 1px dotted transparent;
+    transition: border-color 0.15s;
+  }
+  .toc-col a:hover { border-bottom-color: var(--accent); }
+
+  /* Endpoint card */
+  .endpoint {
+    background: var(--bg-card);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    margin-bottom: 28px;
+    overflow: hidden;
+  }
+  .endpoint-head {
+    padding: 22px 28px 20px;
+    border-bottom: 1px solid var(--rule);
+    background: var(--bg-soft);
+  }
+  .endpoint-title {
+    font-family: 'Fraunces', Georgia, serif;
+    font-size: 22px;
+    font-weight: 700;
+    line-height: 1.25;
+    margin-bottom: 10px;
+    letter-spacing: -0.005em;
+  }
+  .endpoint-num {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--ink-mute);
+    margin-right: 10px;
+  }
+  .endpoint-desc {
+    color: var(--ink-soft);
+    font-size: 14px;
+    margin-top: 8px;
+    max-width: 900px;
+  }
+  .url-line {
+    display: flex; align-items: center; gap: 12px;
+    margin-top: 12px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    flex-wrap: wrap;
+  }
+  .method {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 3px;
+    font-weight: 700;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    color: white;
+  }
+  .method.GET { background: var(--get); }
+  .method.POST { background: var(--post); }
+  .method.PUT { background: var(--put); }
+  .method.DELETE { background: var(--delete); }
+  .url-path {
+    color: var(--ink);
+    background: var(--bg-card);
+    padding: 5px 10px;
+    border-radius: 3px;
+    border: 1px solid var(--rule);
+    word-break: break-all;
+  }
+  .url-path .var { color: var(--accent); }
+
+  .endpoint-body { padding: 26px 28px 8px; }
+  .param-group { margin-bottom: 22px; }
+  .param-group h5 {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    margin-bottom: 12px;
+    font-weight: 500;
+  }
+  table.params {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13.5px;
+  }
+  table.params th, table.params td {
+    text-align: left;
+    padding: 9px 14px 9px 0;
+    border-bottom: 1px solid var(--rule);
+    vertical-align: top;
+  }
+  table.params th {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--ink-mute);
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  table.params td.key {
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--accent);
+    width: 220px;
+    font-weight: 500;
+  }
+  table.params td.type {
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--ink-mute);
+    font-size: 12px;
+    width: 130px;
+  }
+  table.params td.req {
+    width: 80px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+  }
+  table.params td.req .y { color: var(--accent); font-weight: 600; }
+  table.params td.req .n { color: var(--ink-mute); }
+  table.params td.desc { color: var(--ink-soft); }
+
+  /* Code blocks */
+  pre.code {
+    background: var(--code-bg);
+    color: var(--code-ink);
+    padding: 18px 22px;
+    border-radius: 4px;
+    overflow-x: auto;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12.5px;
+    line-height: 1.55;
+    margin-bottom: 22px;
+  }
+  pre.code .c-key { color: var(--code-key); }
+  pre.code .c-str { color: var(--code-str); }
+  pre.code .c-num { color: var(--code-num); }
+  pre.code .c-flag { color: #ff79c6; }
+
+  /* Summary table */
+  .summary-wrap {
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    overflow: hidden;
+    background: var(--bg-card);
+    margin-top: 40px;
+  }
+  table.summary {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13.5px;
+  }
+  table.summary thead {
+    background: var(--bg-soft);
+  }
+  table.summary th {
+    text-align: left;
+    padding: 14px 18px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--ink);
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    border-bottom: 1px solid var(--rule);
+  }
+  table.summary td {
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--rule);
+    vertical-align: top;
+  }
+  table.summary tr:last-child td { border-bottom: none; }
+  table.summary td.cat { width: 130px; font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--ink-mute); }
+  table.summary td.func { width: 36%; font-weight: 500; }
+  table.summary td.ep { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--ink-soft); word-break: break-all; }
+  table.summary td.method-col { width: 80px; }
+
+  /* Footer */
+  footer {
+    margin-top: 100px;
+    padding-top: 32px;
+    border-top: 1px solid var(--rule);
+    color: var(--ink-mute);
+    font-size: 13px;
+    display: flex; justify-content: space-between; flex-wrap: wrap; gap: 16px;
+  }
+  footer a { color: var(--accent); text-decoration: none; }
+  footer a:hover { text-decoration: underline; }
+
+  /* Misc */
+  .callout {
+    background: var(--accent-soft);
+    border-left: 3px solid var(--accent);
+    padding: 16px 22px;
+    border-radius: 0 4px 4px 0;
+    margin: 24px 0;
+    font-size: 14px;
+    color: var(--ink);
+  }
+  .callout strong { color: var(--accent); }
+  .pill {
+    display: inline-block;
+    padding: 2px 8px;
+    background: var(--bg-soft);
+    border-radius: 100px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--ink-mute);
+  }
+
+  @media (max-width: 720px) {
+    .container { padding: 40px 20px 80px; }
+    h1 { font-size: 42px; }
+    .endpoint-body, .endpoint-head { padding-left: 18px; padding-right: 18px; }
+    table.params td.key { width: 160px; }
+    table.summary td { font-size: 12px; padding: 10px 12px; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <header class="hero">
+    <div class="eyebrow">API Reference · v1</div>
+    <h1>INTTRA <em>Ocean Execution</em><br>API Reference</h1>
+    <p class="lede">A consolidated reference for INTTRA by e2open's RESTful Ocean Execution APIs &mdash; covering Booking, Ocean Schedules, Rates, and Visibility (Track &amp; Trace). All endpoints, headers, parameters, and example requests in one place.</p>
+    <div class="meta-row">
+      <span>Source: <strong>apidocs.inttra.com</strong></span>
+      <span>Version: <strong>v1</strong></span>
+      <span>Protocol: <strong>HTTPS · JSON</strong></span>
+      <span>Endpoints: <strong>18</strong></span>
+    </div>
+  </header>
+
+  <!-- Conventions -->
+  <section id="conventions">
+    <h2><span class="num">00</span>Conventions</h2>
+    <p class="section-desc">All INTTRA APIs follow a common request/response style. Knowing the conventions once saves repeating them per endpoint.</p>
+    <ul style="list-style: none; padding: 0; max-width: 820px;">
+      <li style="padding: 10px 0; border-bottom: 1px solid var(--rule);">&bull; RESTful, accessible over <span class="pill">HTTPS</span> using <span class="pill">application/json</span> in both directions.</li>
+      <li style="padding: 10px 0; border-bottom: 1px solid var(--rule);">&bull; API version targeted via <span class="pill">Accept</span> header (current is <strong>v1</strong>).</li>
+      <li style="padding: 10px 0; border-bottom: 1px solid var(--rule);">&bull; All consumer-API calls require a Bearer token in the <span class="pill">Authorization</span> header.</li>
+      <li style="padding: 10px 0; border-bottom: 1px solid var(--rule);">&bull; An expired token returns <span class="pill">HTTP 401</span> &mdash; request a new one from <strong>/auth</strong>.</li>
+      <li style="padding: 10px 0;">&bull; Tokens default to a fixed timeout (<span class="pill">token_ttl: 600</span> seconds in the sample).</li>
+    </ul>
+  </section>
+
+  <!-- Authentication -->
+  <section id="auth">
+    <h2><span class="num">01</span>Authentication</h2>
+    <p class="section-desc">Before calling any consumer API the customer system must retrieve an authentication token by calling the Authentication API with the credentials provisioned by INTTRA.</p>
+
+    <div class="endpoint">
+      <div class="endpoint-head">
+        <div class="endpoint-title"><span class="endpoint-num">AUTH</span>Get access token</div>
+        <div class="url-line">
+          <span class="method GET">GET</span>
+          <span class="url-path">{BASE_URL}/auth</span>
+        </div>
+        <p class="endpoint-desc">Exchanges client credentials for a short-lived Bearer access token to be presented on subsequent calls.</p>
+      </div>
+      <div class="endpoint-body">
+        <div class="param-group">
+          <h5>Headers</h5>
+          <table class="params">
+            <thead><tr><th>Key</th><th>Required</th><th>Value / Description</th></tr></thead>
+            <tbody>
+              <tr><td class="key">client_id</td><td class="req"><span class="y">required</span></td><td class="desc">Client identifier issued during provisioning.</td></tr>
+              <tr><td class="key">client_secret</td><td class="req"><span class="y">required</span></td><td class="desc">Client secret issued during provisioning.</td></tr>
+              <tr><td class="key">grant_type</td><td class="req"><span class="y">required</span></td><td class="desc"><code>client_credentials</code></td></tr>
+              <tr><td class="key">cache-control</td><td class="req"><span class="n">optional</span></td><td class="desc"><code>no-cache</code> (recommended)</td></tr>
+              <tr><td class="key">User-Agent</td><td class="req"><span class="n">optional</span></td><td class="desc">Caller's user-agent string.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="param-group">
+          <h5>Example Request</h5>
+          <pre class="code">curl --request GET \
+  --url &#x27;{BASE_URL}/auth&#x27; \
+  --header &#x27;cache-control: no-cache&#x27; \
+  --header &#x27;client_id: ${CLIENT_ID}&#x27; \
+  --header &#x27;client_secret: ${CLIENT_SECRET}&#x27; \
+  --header &#x27;grant_type: client_credentials&#x27;</pre>
+        </div>
+        <div class="param-group">
+          <h5>Example Response</h5>
+          <pre class="code">{
+  &quot;tokenGeneratedUtc&quot;: &quot;2017-11-07 15:03:11&quot;,
+  &quot;tokenLastAccessUtc&quot;: &quot;2017-11-07 15:03:11&quot;,
+  &quot;client_id&quot;: &quot;${CLIENT_ID}&quot;,
+  &quot;access_token&quot;: &quot;token_uuid&quot;,
+  &quot;token_type&quot;: &quot;Bearer&quot;,
+  &quot;grant_type&quot;: &quot;client_credentials&quot;,
+  &quot;token_expiry_type&quot;: &quot;FixedTimeout&quot;,
+  &quot;token_ttl&quot;: 600,
+  &quot;scope&quot;: &quot;OCEANSCHEDULE_USER&quot;
+}</pre>
+        </div>
+        <div class="callout"><strong>Token reuse:</strong> The token should be reused across calls until it expires. On <code>401</code>, request a new token from this endpoint.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Summary table -->
+  <section id="summary">
+    <h2><span class="num">02</span>Quick Reference</h2>
+    <p class="section-desc">All 18 endpoints at a glance, grouped by product area. Click a row title in the cards below for full parameters.</p>
+    <div class="summary-wrap">
+      <table class="summary">
+        <thead>
+          <tr><th>Product</th><th>Method</th><th>Functionality</th><th>Endpoint</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="cat">Booking</td><td class="method-col"><span class="method POST">POST</span></td><td class="func">Confirmation-Webhook</td><td class="ep">https://api-yourcompanyurl.com/booking/webhook</td></tr>
+          <tr><td class="cat">Booking</td><td class="method-col"><span class="method GET">GET</span></td><td class="func">Booking Summary - counts of each state</td><td class="ep">/booking/search/summary</td></tr>
+          <tr><td class="cat">Booking</td><td class="method-col"><span class="method GET">GET</span></td><td class="func">Fetch a booking reecord by its INTTRA reference number</td><td class="ep">/booking/search/:inttraReferenceNumber</td></tr>
+          <tr><td class="cat">Booking</td><td class="method-col"><span class="method GET">GET</span></td><td class="func">Retrieve a booking given its INTTRA reference ID</td><td class="ep">/booking/:inttraReferenceId</td></tr>
+          <tr><td class="cat">Booking</td><td class="method-col"><span class="method POST">POST</span></td><td class="func">Submit a new booking request</td><td class="ep">/booking/request</td></tr>
+          <tr><td class="cat">Booking</td><td class="method-col"><span class="method POST">POST</span></td><td class="func">Perform a simple search</td><td class="ep">/booking/search/simple</td></tr>
+          <tr><td class="cat">Booking</td><td class="method-col"><span class="method POST">POST</span></td><td class="func">Amend a submitted booking</td><td class="ep">/booking/:inttraReferenceId/amend</td></tr>
+          <tr><td class="cat">Booking</td><td class="method-col"><span class="method POST">POST</span></td><td class="func">Cancel a submitted booking</td><td class="ep">/booking/:inttraReferenceId/cancel</td></tr>
+          <tr><td class="cat">Ocean Schedules</td><td class="method-col"><span class="method GET">GET</span></td><td class="func">Search for carrier schedules</td><td class="ep">/oceanschedules/schedule</td></tr>
+          <tr><td class="cat">Rates</td><td class="method-col"><span class="method GET">GET</span></td><td class="func">Search for contract rates by the given parameters</td><td class="ep">/rates/contract</td></tr>
+          <tr><td class="cat">Rates</td><td class="method-col"><span class="method GET">GET</span></td><td class="func">List ISO container codes available to contract rates</td><td class="ep">/rates/contract/containertype</td></tr>
+          <tr><td class="cat">Rates</td><td class="method-col"><span class="method GET">GET</span></td><td class="func">Get Spot PriceLineItem offers for provided carrier company(s)</td><td class="ep">/rates/spot</td></tr>
+          <tr><td class="cat">Rates</td><td class="method-col"><span class="method GET">GET</span></td><td class="func">Get Spot PriceLineItem offers for provided carrier INTTRA Company ID</td><td class="ep">/rates/spot/inttraCompanyId/:inttraCompanyId</td></tr>
+          <tr><td class="cat">Rates</td><td class="method-col"><span class="method GET">GET</span></td><td class="func">Get persisted Spot PriceLineItem offer by key</td><td class="ep">/rates/spot/:hashKey</td></tr>
+          <tr><td class="cat">Visibility</td><td class="method-col"><span class="method GET">GET</span></td><td class="func">Search all events using one of the following - Carrier Booking Reference,  Bill of Lading  Number, INTTRA Booking Reference, or Equipment Reference.</td><td class="ep">/visibility/track</td></tr>
+          <tr><td class="cat">Visibility</td><td class="method-col"><span class="method GET">GET</span></td><td class="func">Search events using any known shipment identifier like Carrier Booking Reference, Bill of Lading Number, INTTRA Booking Reference or Equipment Reference.</td><td class="ep">/visibility/track/:broad_search_key</td></tr>
+          <tr><td class="cat">Visibility</td><td class="method-col"><span class="method GET">GET</span></td><td class="func">Search all events using one of the following - Carrier Booking Reference,  Bill of Lading  Number, INTTRA Booking Reference, or Equipment Reference.</td><td class="ep">/visibility/v1.2/track</td></tr>
+          <tr><td class="cat">Visibility</td><td class="method-col"><span class="method GET">GET</span></td><td class="func">Search events using any known shipment identifier like Carrier Booking Reference, Bill of Lading Number, INTTRA Booking Reference or Equipment Reference.</td><td class="ep">/visibility/v1.2/track/:broad_search_key</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="booking">
+    <h2><span class="num">03</span>Booking</h2>
+    <p class="section-desc">Submission, retrieval, amendment &amp; cancellation of ocean-freight bookings.</p>
+    <div class="endpoint" id="ep-1">
+      <div class="endpoint-head">
+        <div class="endpoint-title"><span class="endpoint-num">#01</span>Confirmation-Webhook</div>
+        <div class="url-line">
+          <span class="method POST">POST</span>
+          <span class="url-path">https://api-yourcompanyurl.com/booking/webhook</span>
+        </div>
+        <p class="endpoint-desc"><span class="pill">Booking → Booking Confirmation Webhook</span></p>
+        <p class="endpoint-desc">The URL is customer&#x27;s company provided URL which will be registered with INTTRA as a Webhook Subscription. for e.g. http://api-booking-company.com/booking/webhook For Authentication purpose, the Subscription can register company provided secret key which will then be sent in the POST request as an Authorization Header. The payload for the request will be the Booking Confirmation in JSON format. An example booking confirmation payload can be viewed in this API documentation request.</p>
+      </div>
+      <div class="endpoint-body">
+        <div class="param-group">
+          <h5>Headers</h5>
+          <table class="params">
+            <thead><tr><th>Key</th><th>Required</th><th>Value / Description</th></tr></thead><tbody>
+              <tr><td class="key">Authorization</td><td class="req"><span class="n">optional</span></td><td class="desc">Customer Company token (optional) <code>&lt;your company token&gt;</code></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="param-group">
+          <h5>Example Request</h5>
+          <pre class="code">curl --request POST \
+  --url &#x27;https://api-yourcompanyurl.com/booking/webhook&#x27; \
+  --header &#x27;Authorization: Bearer &lt;access_token&gt;&#x27;</pre>
+        </div>
+      </div>
+    </div>
+    <div class="endpoint" id="ep-2">
+      <div class="endpoint-head">
+        <div class="endpoint-title"><span class="endpoint-num">#02</span>Booking Summary - counts of each state</div>
+        <div class="url-line">
+          <span class="method GET">GET</span>
+          <span class="url-path">https://api-test.inttra.com/booking/search/summary</span>
+        </div>
+        <p class="endpoint-desc"><span class="pill">Booking</span></p>
+      </div>
+      <div class="endpoint-body">
+        <div class="param-group">
+          <h5>Query Parameters</h5>
+          <table class="params">
+            <thead><tr><th>Parameter</th><th>Required</th><th>Description</th></tr></thead><tbody>
+              <tr><td class="key">rangeInDays</td><td class="req"><span class="y">required</span></td><td class="desc">—</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="param-group">
+          <h5>Headers</h5>
+          <table class="params">
+            <thead><tr><th>Key</th><th>Required</th><th>Value / Description</th></tr></thead><tbody>
+              <tr><td class="key">Authorization</td><td class="req"><span class="y">required</span></td><td class="desc"><code>&lt;string&gt;</code> <code>&lt;string&gt;</code></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="param-group">
+          <h5>Example Request</h5>
+          <pre class="code">curl --request GET \
+  --url &#x27;https://api-test.inttra.com/booking/search/summary?rangeInDays=30&#x27; \
+  --header &#x27;Authorization: Bearer &lt;access_token&gt;&#x27;</pre>
+        </div>
+      </div>
+    </div>
+    <div class="endpoint" id="ep-3">
+      <div class="endpoint-head">
+        <div class="endpoint-title"><span class="endpoint-num">#03</span>Fetch a booking reecord by its INTTRA reference number</div>
+        <div class="url-line">
+          <span class="method GET">GET</span>
+          <span class="url-path">https://api-test.inttra.com/booking/search/<span class="var">:inttraReferenceNumber</span></span>
+        </div>
+        <p class="endpoint-desc"><span class="pill">Booking</span></p>
+      </div>
+      <div class="endpoint-body">
+        <div class="param-group">
+          <h5>Path Variables</h5>
+          <table class="params">
+            <thead><tr><th>Parameter</th><th>Required</th><th>Description</th></tr></thead><tbody>
+              <tr><td class="key">:inttraReferenceNumber</td><td class="req"><span class="y">required</span></td><td class="desc">—</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="param-group">
+          <h5>Headers</h5>
+          <table class="params">
+            <thead><tr><th>Key</th><th>Required</th><th>Value / Description</th></tr></thead><tbody>
+              <tr><td class="key">Authorization</td><td class="req"><span class="y">required</span></td><td class="desc"><code>&lt;string&gt;</code> <code>&lt;string&gt;</code></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="param-group">
+          <h5>Example Request</h5>
+          <pre class="code">curl --request GET \
+  --url &#x27;https://api-test.inttra.com/booking/search/2009000755&#x27; \
+  --header &#x27;Authorization: Bearer &lt;access_token&gt;&#x27;</pre>
+        </div>
+      </div>
+    </div>
+    <div class="endpoint" id="ep-4">
+      <div class="endpoint-head">
+        <div class="endpoint-title"><span class="endpoint-num">#04</span>Retrieve a booking given its INTTRA reference ID</div>
+        <div class="url-line">
+          <span class="method GET">GET</span>
+          <span class="url-path">https://api-test.inttra.com/booking/<span class="var">:inttraReferenceId</span></span>
+        </div>
+        <p class="endpoint-desc"><span class="pill">Booking</span></p>
+      </div>
+      <div class="endpoint-body">
+        <div class="param-group">
+          <h5>Path Variables</h5>
+          <table class="params">
+            <thead><tr><th>Parameter</th><th>Required</th><th>Description</th></tr></thead><tbody>
+              <tr><td class="key">:inttraReferenceId</td><td class="req"><span class="y">required</span></td><td class="desc">—</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="param-group">
+          <h5>Headers</h5>
+          <table class="params">
+            <thead><tr><th>Key</th><th>Required</th><th>Value / Description</th></tr></thead><tbody>
+              <tr><td class="key">Authorization</td><td class="req"><span class="y">required</span></td><td class="desc">Bearer <code>&lt;string&gt;</code></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="param-group">
+          <h5>Example Request</h5>
+          <pre class="code">curl --request GET \
+  --url &#x27;https://api-test.inttra.com/booking/2009000755&#x27; \
+  --header &#x27;Authorization: Bearer &lt;access_token&gt;&#x27;</pre>
+        </div>
+      </div>
+    </div>
+    <div class="endpoint" id="ep-5">
+      <div class="endpoint-head">
+        <div class="endpoint-title"><span class="endpoint-num">#05</span>Submit a new booking request</div>
+        <div class="url-line">
+          <span class="method POST">POST</span>
+          <span class="url-path">https://api-test.inttra.com/booking/request</span>
+        </div>
+        <p class="endpoint-desc"><span class="pill">Booking</span></p>
+        <p class="endpoint-desc">INTTRA by E2open Booking API enables Shippers/Forwarders/Alliances to submit booking requests to carriers and also to receive the corresponding booking confirmations. Bookings can be submitted to Vessel Operating as well as Non Vessel Operating Common Carriers. Field Name Type Mandatory / Optional / Conditional Description bookingState string Mandatory Indicates various states of a booking. Shipper can submit the following states - REQUEST to submit a new booking request. AMEND to make changes to the booking. CANCEL to cancel the booking. Carriers can use the following states to action the boo…</p>
+      </div>
+      <div class="endpoint-body">
+        <div class="param-group">
+          <h5>Headers</h5>
+          <table class="params">
+            <thead><tr><th>Key</th><th>Required</th><th>Value / Description</th></tr></thead><tbody>
+              <tr><td class="key">Authorization</td><td class="req"><span class="y">required</span></td><td class="desc">Bearer <code>&lt;string&gt;</code></td></tr>
+              <tr><td class="key">Content-Type</td><td class="req"><span class="n">optional</span></td><td class="desc"><code>application/json</code> <code>application/json</code></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="param-group">
+          <h5>Example Request</h5>
+          <pre class="code">curl --request POST \
+  --url &#x27;https://api-test.inttra.com/booking/request&#x27; \
+  --header &#x27;Authorization: Bearer &lt;access_token&gt;&#x27; \
+  --header &#x27;Content-Type: application/json&#x27; \
+  --data &#x27;{
+  &quot;bookingState&quot;: &quot;REQUEST&quot;,
+  &quot;senderID&quot;: &quot;CU2100&quot;,
+  &quot;payloadID&quot;: &quot;Doc_ID_R001&quot;,
+  &quot;messageDate&quot;: {
+    &quot;dateValue&quot;: &quot;202203151049&quot;,
+    &quot;dateFormat&quot;: &quot;CCYYMMDDHHMM&quot;
+  },
+  &quot;creationDate&quot;: {
+    &quot;dateValue&quot;: &quot;202203151049&quot;,
+    &quot;dateFormat&quot;: &quot;CCYYMMDD&quot;
+  },
+  &quot;transactionContact&quot;: {
+    &quot;name&quot;: &quot;MeesageSenderName&quot;,
+    &quot;contactType&quot;: &quot;InformationContact&quot;,
+    &quot;emails&quot;: [
+      &quot;rupam.gogoi@e2open.com&quot;
+    ]
+  },
+  &quot;moveType&quot;: &quot;PortToPort&quot;,
+  &quot;serviceType&quot;: &quot;LCL&quot;,
+  &quot;transactionLocations&quot;: [
+    {
+      &quot;locationType&quot;: &quot;PlaceOfReceipt&quot;,
+      &quot;locationDates&quot;: [
+        {
+          &quot;type&quot;: &quot;EarliestDepartureDate&quot;,
+          &quot;dateValue&quot;: &quot;20220315&quot;,
+          &quot;dateFormat&quot;: &quot;CCYYMMDD&quot;
+        }
+      ],
+      &quot;identifierType&quot;: &quot;UNLOC&quot;,
+      &quot;identifierValue&quot;: &quot;HKHKG&quot;
+    },
+    {
+      &quot;locationType&quot;: &quot;PlaceOfDelivery&quot;,
+      &quot;identifierType&quot;: &quot;UNLOC&quot;,
+      &quot;identifierValue&quot;: &quot;HKHKC&quot;
+    }
+  ],
+  &quot;parties&quot;: [
+    {
+      &quot;partyRole&quot;: &quot;Carrier&quot;,
+      &quot;partyINTTRACompanyId&quot;: &quot;909091&quot;
+    },
+    {
+      &quot;partyRole&quot;: &quot;Booker&quot;,
+      &quot;partyINTTRACompanyId&quot;: &quot;802442&quot;
+    },
+    {
+      &quot;partyRole&quot;: &quot;Shipper&quot;,
+      &quot;partyINTTRACompanyId&quot;: &quot;909093&quot;,
+      &quot;address&quot;: {
+        &quot;unstructuredAddress01&quot;: &quot;2 GRAHAM STREET AUCKLAND CENTRAL&quot;,
+        &quot;city&quot;: &quot;AUCKLAND&quot;,
+        &quot;postalCode&quot;: &quot;1010&quot;,
+        &quot;country&quot;: {
+          &quot;countryCodeType&quot;: &quot;ISO&quot;,
+          &quot;countryCodeValue&quot;: &quot;NZ&quot;
+        }
+      }
+    }
+  ],
+  &quot;packageDetails&quot;: [
+    {
+      &quot;packageType&quot;: &quot;OUTER&quot;,
+      &quot;lineNumber&quot;: &quot;1&quot;,
+      &quot;count&quot;: &quot;3401&quot;,
+      &quot;typeCode&quot;: &quot;EDI&quot;,
+      &quot;typeValue&quot;: &quot;CT&quot;,
+      &quot;goodsDescription&quot;: &quot;This is the Goods/Commodity Description&quot;,
+      &quot;outOfGaugeDetails&quot;: {
+        &quot;length&quot;: {
+          &quot;type&quot;: &quot;Meter&quot;,
+          &quot;value&quot;: &quot;100&quot;
+        },
+        &quot;width&quot;: {
+          &quot;type&quot;: &quot;Meter&quot;,
+          &quot;value&quot;: &quot;200&quot;
+        },
+        &quot;height&quot;: {
+          &quot;type&quot;: &quot;Meter&quot;,
+          &quot;value&quot;: &quot;300&quot;
+        },
+        &quot;numberOfTransportableUnits&quot;: &quot;21&quot;
+      }
+    },
+    {
+      &quot;packageType&quot;: &quot;OUTER&quot;,
+      &quot;lineNumber&quot;: &quot;2&quot;,
+      &quot;count&quot;: &quot;3402&quot;,
+      &quot;typeCode&quot;: &quot;EDI&quot;,
+      &quot;typeValue&quot;: &quot;BX&quot;,
+      &quot;goodsDescription&quot;: &quot;This is the Goods/Commodity Description&quot;,
+      
+  ...
+  [truncated for brevity — see full schema in API docs]
+}&#x27;</pre>
+        </div>
+        <div class="param-group">
+          <h5>Request Body (JSON)</h5>
+          <pre class="code">{
+  &quot;bookingState&quot;: &quot;REQUEST&quot;,
+  &quot;senderID&quot;: &quot;CU2100&quot;,
+  &quot;payloadID&quot;: &quot;Doc_ID_R001&quot;,
+  &quot;messageDate&quot;: {
+    &quot;dateValue&quot;: &quot;202203151049&quot;,
+    &quot;dateFormat&quot;: &quot;CCYYMMDDHHMM&quot;
+  },
+  &quot;creationDate&quot;: {
+    &quot;dateValue&quot;: &quot;202203151049&quot;,
+    &quot;dateFormat&quot;: &quot;CCYYMMDD&quot;
+  },
+  &quot;transactionContact&quot;: {
+    &quot;name&quot;: &quot;MeesageSenderName&quot;,
+    &quot;contactType&quot;: &quot;InformationContact&quot;,
+    &quot;emails&quot;: [
+      &quot;rupam.gogoi@e2open.com&quot;
+    ]
+  },
+  &quot;moveType&quot;: &quot;PortToPort&quot;,
+  &quot;serviceType&quot;: &quot;LCL&quot;,
+  &quot;transactionLocations&quot;: [
+    {
+      &quot;locationType&quot;: &quot;PlaceOfReceipt&quot;,
+      &quot;locationDates&quot;: [
+        {
+          &quot;type&quot;: &quot;EarliestDepartureDate&quot;,
+          &quot;dateValue&quot;: &quot;20220315&quot;,
+          &quot;dateFormat&quot;: &quot;CCYYMMDD&quot;
+        }
+      ],
+      &quot;identifierType&quot;: &quot;UNLOC&quot;,
+      &quot;identifierValue&quot;: &quot;HKHKG&quot;
+    },
+    {
+      &quot;locationType&quot;: &quot;PlaceOfDelivery&quot;,
+      &quot;identifierType&quot;: &quot;UNLOC&quot;,
+      &quot;identifierValue&quot;: &quot;HKHKC&quot;
+    }
+  ],
+  &quot;parties&quot;: [
+    {
+      &quot;partyRole&quot;: &quot;Carrier&quot;,
+      &quot;partyINTTRACompanyId&quot;: &quot;909091&quot;
+    },
+    {
+      &quot;partyRole&quot;: &quot;Booker&quot;,
+      &quot;partyINTTRACompanyId&quot;: &quot;802442&quot;
+    },
+    {
+      &quot;partyRole&quot;: &quot;Shipper&quot;,
+      &quot;partyINTTRACompanyId&quot;: &quot;909093&quot;,
+      &quot;address&quot;: {
+        &quot;unstructuredAddress01&quot;: &quot;2 GRAHAM STREET AUCKLAND CENTRAL&quot;,
+        &quot;city&quot;: &quot;AUCKLAND&quot;,
+        &quot;postalCode&quot;: &quot;1010&quot;,
+        &quot;country&quot;: {
+          &quot;countryCodeType&quot;: &quot;ISO&quot;,
+          &quot;countryCodeValue&quot;: &quot;NZ&quot;
+        }
+      }
+    }
+  ],
+  &quot;packageDetails&quot;: [
+    {
+      &quot;packageType&quot;: &quot;OUTER&quot;,
+      &quot;lineNumber&quot;: &quot;1&quot;,
+      &quot;count&quot;: &quot;3401&quot;,
+      &quot;typeCode&quot;: &quot;EDI&quot;,
+      &quot;typeValue&quot;: &quot;CT&quot;,
+      &quot;goodsDescription&quot;: &quot;This is the Goods/Commodity Description&quot;,
+      &quot;outOfGaugeDetails&quot;: {
+        &quot;length&quot;: {
+          &quot;type&quot;: &quot;Meter&quot;,
+          &quot;value&quot;: &quot;100&quot;
+        },
+        &quot;width&quot;: {
+          &quot;type&quot;: &quot;Meter&quot;,
+          &quot;value&quot;: &quot;200&quot;
+        },
+        &quot;height&quot;: {
+          &quot;type&quot;: &quot;Meter&quot;,
+          &quot;value&quot;: &quot;300&quot;
+        },
+        &quot;numberOfTransportableUnits&quot;: &quot;21&quot;
+      }
+    },
+    {
+      &quot;packageType&quot;: &quot;OUTER&quot;,
+      &quot;lineNumber&quot;: &quot;2&quot;,
+      &quot;count&quot;: &quot;3402&quot;,
+      &quot;typeCode&quot;: &quot;EDI&quot;,
+      &quot;typeValue&quot;: &quot;BX&quot;,
+      &quot;goodsDescription&quot;: &quot;This is the Goods/Commodity Description&quot;,
+      
+  ...
+  [truncated for brevity — see full schema in API docs]
+}</pre>
+        </div>
+      </div>
+    </div>
+    <div class="endpoint" id="ep-6">
+      <div class="endpoint-head">
+        <div class="endpoint-title"><span class="endpoint-num">#06</span>Perform a simple search</div>
+        <div class="url-line">
+          <span class="method POST">POST</span>
+          <span class="url-path">https://api-test.inttra.com/booking/search/simple</span>
+        </div>
+        <p class="endpoint-desc"><span class="pill">Booking</span></p>
+      </div>
+      <div class="endpoint-body">
+        <div class="param-group">
+          <h5>Headers</h5>
+          <table class="params">
+            <thead><tr><th>Key</th><th>Required</th><th>Value / Description</th></tr></thead><tbody>
+              <tr><td class="key">Authorization</td><td class="req"><span class="y">required</span></td><td class="desc"><code>&lt;string&gt;</code> <code>&lt;string&gt;</code></td></tr>
+              <tr><td class="key">Content-Type</td><td class="req"><span class="n">optional</span></td><td class="desc"><code>application/json</code> <code>application/json</code></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="param-group">
+          <h5>Example Request</h5>
+          <pre class="code">curl --request POST \
+  --url &#x27;https://api-test.inttra.com/booking/search/simple&#x27; \
+  --header &#x27;Authorization: Bearer &lt;access_token&gt;&#x27; \
+  --header &#x27;Content-Type: application/json&#x27; \
+  --data &#x27;{
+  &quot;from&quot;: &quot;&lt;long&gt;&quot;,
+  &quot;size&quot;: &quot;&lt;long&gt;&quot;,
+  &quot;sort&quot;: [
+    {
+      &quot;field&quot;: &quot;&lt;string&gt;&quot;,
+      &quot;sortOrder&quot;: &quot;&lt;string&gt;&quot;
+    },
+    {
+      &quot;field&quot;: &quot;&lt;string&gt;&quot;,
+      &quot;sortOrder&quot;: &quot;&lt;string&gt;&quot;
+    }
+  ],
+  &quot;filters&quot;: {
+    &quot;state&quot;: [
+      &quot;&lt;string&gt;&quot;,
+      &quot;&lt;string&gt;&quot;
+    ],
+    &quot;stateMode&quot;: &quot;&lt;string&gt;&quot;,
+    &quot;carrierId&quot;: [
+      &quot;&lt;string&gt;&quot;,
+      &quot;&lt;string&gt;&quot;
+    ],
+    &quot;carrierIdMode&quot;: &quot;&lt;string&gt;&quot;,
+    &quot;lastModifiedDateUtc&quot;: &quot;&lt;string&gt;&quot;,
+    &quot;createdBy&quot;: [
+      &quot;&lt;string&gt;&quot;,
+      &quot;&lt;string&gt;&quot;
+    ],
+    &quot;createdByMode&quot;: &quot;&lt;string&gt;&quot;
+  },
+  &quot;query&quot;: &quot;&lt;string&gt;&quot;
+}&#x27;</pre>
+        </div>
+        <div class="param-group">
+          <h5>Request Body (JSON)</h5>
+          <pre class="code">{
+  &quot;from&quot;: &quot;&lt;long&gt;&quot;,
+  &quot;size&quot;: &quot;&lt;long&gt;&quot;,
+  &quot;sort&quot;: [
+    {
+      &quot;field&quot;: &quot;&lt;string&gt;&quot;,
+      &quot;sortOrder&quot;: &quot;&lt;string&gt;&quot;
+    },
+    {
+      &quot;field&quot;: &quot;&lt;string&gt;&quot;,
+      &quot;sortOrder&quot;: &quot;&lt;string&gt;&quot;
+    }
+  ],
+  &quot;filters&quot;: {
+    &quot;state&quot;: [
+      &quot;&lt;string&gt;&quot;,
+      &quot;&lt;string&gt;&quot;
+    ],
+    &quot;stateMode&quot;: &quot;&lt;string&gt;&quot;,
+    &quot;carrierId&quot;: [
+      &quot;&lt;string&gt;&quot;,
+      &quot;&lt;string&gt;&quot;
+    ],
+    &quot;carrierIdMode&quot;: &quot;&lt;string&gt;&quot;,
+    &quot;lastModifiedDateUtc&quot;: &quot;&lt;string&gt;&quot;,
+    &quot;createdBy&quot;: [
+      &quot;&lt;string&gt;&quot;,
+      &quot;&lt;string&gt;&quot;
+    ],
+    &quot;createdByMode&quot;: &quot;&lt;string&gt;&quot;
+  },
+  &quot;query&quot;: &quot;&lt;string&gt;&quot;
+}</pre>
+        </div>
+      </div>
+    </div>
+    <div class="endpoint" id="ep-7">
+      <div class="endpoint-head">
+        <div class="endpoint-title"><span class="endpoint-num">#07</span>Amend a submitted booking</div>
+        <div class="url-line">
+          <span class="method POST">POST</span>
+          <span class="url-path">https://api-test.inttra.com/booking/<span class="var">:inttraReferenceId</span>/amend</span>
+        </div>
+        <p class="endpoint-desc"><span class="pill">Booking</span></p>
+        <p class="endpoint-desc">Amend an existing Pending/Confirmed Booking. Refer to description in Submit a new Booking Request.</p>
+      </div>
+      <div class="endpoint-body">
+        <div class="param-group">
+          <h5>Path Variables</h5>
+          <table class="params">
+            <thead><tr><th>Parameter</th><th>Required</th><th>Description</th></tr></thead><tbody>
+              <tr><td class="key">:inttraReferenceId</td><td class="req"><span class="y">required</span></td><td class="desc">—</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="param-group">
+          <h5>Headers</h5>
+          <table class="params">
+            <thead><tr><th>Key</th><th>Required</th><th>Value / Description</th></tr></thead><tbody>
+              <tr><td class="key">Authorization</td><td class="req"><span class="y">required</span></td><td class="desc">Bearer <code>&lt;string&gt;</code></td></tr>
+              <tr><td class="key">Content-Type</td><td class="req"><span class="n">optional</span></td><td class="desc"><code>application/json</code> <code>application/json</code></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="param-group">
+          <h5>Example Request</h5>
+          <pre class="code">curl --request POST \
+  --url &#x27;https://api-test.inttra.com/booking/2009000755/amend&#x27; \
+  --header &#x27;Authorization: Bearer &lt;access_token&gt;&#x27; \
+  --header &#x27;Content-Type: application/json&#x27; \
+  --data &#x27;{
+  &quot;moveType&quot;: &quot;&lt;string&gt;&quot;,
+  &quot;bookingState&quot;: &quot;&lt;string&gt;&quot;,
+  &quot;senderID&quot;: &quot;&lt;string&gt;&quot;,
+  &quot;payloadID&quot;: &quot;&lt;string&gt;&quot;,
+  &quot;messageDate&quot;: {
+    &quot;dateValue&quot;: &quot;&lt;string&gt;&quot;,
+    &quot;dateFormat&quot;: &quot;&lt;string&gt;&quot;
+  },
+  &quot;creationDate&quot;: {
+    &quot;dateValue&quot;: &quot;&lt;string&gt;&quot;,
+    &quot;dateFormat&quot;: &quot;&lt;string&gt;&quot;
+  },
+  &quot;carrierReferenceNumber&quot;: &quot;&lt;string&gt;&quot;,
+  &quot;shipmentId&quot;: &quot;&lt;string&gt;&quot;,
+  &quot;transactionContact&quot;: {
+    &quot;contactType&quot;: &quot;&lt;string&gt;&quot;,
+    &quot;name&quot;: &quot;&lt;string&gt;&quot;,
+    &quot;phones&quot;: [
+      &quot;&lt;string&gt;&quot;,
+      &quot;&lt;string&gt;&quot;
+    ],
+    &quot;faxes&quot;: [
+      &quot;&lt;string&gt;&quot;,
+      &quot;&lt;string&gt;&quot;
+    ],
+    &quot;emails&quot;: [
+      &quot;&lt;string&gt;&quot;,
+      &quot;&lt;string&gt;&quot;
+    ]
+  },
+  &quot;contractVersion&quot;: &quot;&lt;string&gt;&quot;,
+  &quot;totalEquipmentCount&quot;: &quot;&lt;integer&gt;&quot;,
+  &quot;totalPackageCount&quot;: &quot;&lt;integer&gt;&quot;,
+  &quot;totalGrossWeight&quot;: {
+    &quot;weightType&quot;: &quot;&lt;string&gt;&quot;,
+    &quot;weightValue&quot;: &quot;&lt;string&gt;&quot;
+  },
+  &quot;totalGrossVolume&quot;: {
+    &quot;volumeType&quot;: &quot;&lt;string&gt;&quot;,
+    &quot;volumeValue&quot;: &quot;&lt;string&gt;&quot;
+  },
+  &quot;cargoHazardousIndicator&quot;: &quot;&lt;boolean&gt;&quot;,
+  &quot;cargoControlledEnvironmentIndicator&quot;: &quot;&lt;boolean&gt;&quot;,
+  &quot;cargoEnvironmentalPollutantIndicator&quot;: &quot;&lt;boolean&gt;&quot;,
+  &quot;cargoOutofGaugeIndicator&quot;: &quot;&lt;boolean&gt;&quot;,
+  &quot;serviceType&quot;: &quot;&lt;string&gt;&quot;,
+  &quot;complianceDetails&quot;: {
+    &quot;filer&quot;: &quot;&lt;string&gt;&quot;,
+    &quot;filerID&quot;: &quot;&lt;string&gt;&quot;
+  },
+  &quot;generalComments&quot;: [
+    &quot;&lt;string&gt;&quot;,
+    &quot;&lt;string&gt;&quot;
+  ],
+  &quot;customerChangeSummary&quot;: [
+    &quot;&lt;string&gt;&quot;,
+    &quot;&lt;string&gt;&quot;
+  ],
+  &quot;transactionLocations&quot;: [
+    {
+      &quot;locationType&quot;: &quot;&lt;string&gt;&quot;,
+      &quot;identifierType&quot;: &quot;&lt;string&gt;&quot;,
+      &quot;identifierValue&quot;: &quot;&lt;string&gt;&quot;,
+      &quot;city&quot;: &quot;&lt;string&gt;&quot;,
+      &quot;subdivision&quot;: &quot;&lt;string&gt;&quot;,
+      &quot;country&quot;: {
+        &quot;countryCodeType&quot;: &quot;&lt;string&gt;&quot;,
+        &quot;countryCodeValue&quot;: &quot;&lt;string&gt;&quot;,
+        &quot;countryName&quot;: &quot;&lt;string&gt;&quot;
+      },
+      &quot;locationSystemLiteral&quot;: &quot;&lt;string&gt;&quot;,
+      &quot;locationDates&quot;: [
+        {
+          &quot;dateValue&quot;: &quot;&lt;string&gt;&quot;,
+          &quot;dateFormat&quot;: &quot;&lt;string&gt;&quot;,
+          &quot;type&quot;: &quot;&lt;string&gt;&quot;
+        },
+        {
+          &quot;dateValue&quot;: &quot;&lt;string&gt;&quot;,
+          &quot;dateFormat&quot;: &quot;&lt;string&gt;&quot;,
+          &quot;type&quot;: &quot;&lt;string&gt;&quot;
+        }
+      ],
+      &quot;locationResolvedAlias&quot;: &quot;&lt;string&gt;&quot;
+    },
+    {
+      &quot;locationType&quot;: &quot;&lt;string&gt;&quot;,
+      &quot;identifierType&quot;: &quot;&lt;string&gt;&quot;,
+      &quot;identifierValue&quot;: &quot;&lt;string&gt;&quot;,
+      &quot;city&quot;: &quot;&lt;string&gt;&quot;,
+      &quot;subdivision&quot;: &quot;&lt;string&gt;&quot;,
+     
+  ...
+  [truncated for brevity — see full schema in API docs]
+}&#x27;</pre>
+        </div>
+        <div class="param-group">
+          <h5>Request Body (JSON)</h5>
+          <pre class="code">{
+  &quot;moveType&quot;: &quot;&lt;string&gt;&quot;,
+  &quot;bookingState&quot;: &quot;&lt;string&gt;&quot;,
+  &quot;senderID&quot;: &quot;&lt;string&gt;&quot;,
+  &quot;payloadID&quot;: &quot;&lt;string&gt;&quot;,
+  &quot;messageDate&quot;: {
+    &quot;dateValue&quot;: &quot;&lt;string&gt;&quot;,
+    &quot;dateFormat&quot;: &quot;&lt;string&gt;&quot;
+  },
+  &quot;creationDate&quot;: {
+    &quot;dateValue&quot;: &quot;&lt;string&gt;&quot;,
+    &quot;dateFormat&quot;: &quot;&lt;string&gt;&quot;
+  },
+  &quot;carrierReferenceNumber&quot;: &quot;&lt;string&gt;&quot;,
+  &quot;shipmentId&quot;: &quot;&lt;string&gt;&quot;,
+  &quot;transactionContact&quot;: {
+    &quot;contactType&quot;: &quot;&lt;string&gt;&quot;,
+    &quot;name&quot;: &quot;&lt;string&gt;&quot;,
+    &quot;phones&quot;: [
+      &quot;&lt;string&gt;&quot;,
+      &quot;&lt;string&gt;&quot;
+    ],
+    &quot;faxes&quot;: [
+      &quot;&lt;string&gt;&quot;,
+      &quot;&lt;string&gt;&quot;
+    ],
+    &quot;emails&quot;: [
+      &quot;&lt;string&gt;&quot;,
+      &quot;&lt;string&gt;&quot;
+    ]
+  },
+  &quot;contractVersion&quot;: &quot;&lt;string&gt;&quot;,
+  &quot;totalEquipmentCount&quot;: &quot;&lt;integer&gt;&quot;,
+  &quot;totalPackageCount&quot;: &quot;&lt;integer&gt;&quot;,
+  &quot;totalGrossWeight&quot;: {
+    &quot;weightType&quot;: &quot;&lt;string&gt;&quot;,
+    &quot;weightValue&quot;: &quot;&lt;string&gt;&quot;
+  },
+  &quot;totalGrossVolume&quot;: {
+    &quot;volumeType&quot;: &quot;&lt;string&gt;&quot;,
+    &quot;volumeValue&quot;: &quot;&lt;string&gt;&quot;
+  },
+  &quot;cargoHazardousIndicator&quot;: &quot;&lt;boolean&gt;&quot;,
+  &quot;cargoControlledEnvironmentIndicator&quot;: &quot;&lt;boolean&gt;&quot;,
+  &quot;cargoEnvironmentalPollutantIndicator&quot;: &quot;&lt;boolean&gt;&quot;,
+  &quot;cargoOutofGaugeIndicator&quot;: &quot;&lt;boolean&gt;&quot;,
+  &quot;serviceType&quot;: &quot;&lt;string&gt;&quot;,
+  &quot;complianceDetails&quot;: {
+    &quot;filer&quot;: &quot;&lt;string&gt;&quot;,
+    &quot;filerID&quot;: &quot;&lt;string&gt;&quot;
+  },
+  &quot;generalComments&quot;: [
+    &quot;&lt;string&gt;&quot;,
+    &quot;&lt;string&gt;&quot;
+  ],
+  &quot;customerChangeSummary&quot;: [
+    &quot;&lt;string&gt;&quot;,
+    &quot;&lt;string&gt;&quot;
+  ],
+  &quot;transactionLocations&quot;: [
+    {
+      &quot;locationType&quot;: &quot;&lt;string&gt;&quot;,
+      &quot;identifierType&quot;: &quot;&lt;string&gt;&quot;,
+      &quot;identifierValue&quot;: &quot;&lt;string&gt;&quot;,
+      &quot;city&quot;: &quot;&lt;string&gt;&quot;,
+      &quot;subdivision&quot;: &quot;&lt;string&gt;&quot;,
+      &quot;country&quot;: {
+        &quot;countryCodeType&quot;: &quot;&lt;string&gt;&quot;,
+        &quot;countryCodeValue&quot;: &quot;&lt;string&gt;&quot;,
+        &quot;countryName&quot;: &quot;&lt;string&gt;&quot;
+      },
+      &quot;locationSystemLiteral&quot;: &quot;&lt;string&gt;&quot;,
+      &quot;locationDates&quot;: [
+        {
+          &quot;dateValue&quot;: &quot;&lt;string&gt;&quot;,
+          &quot;dateFormat&quot;: &quot;&lt;string&gt;&quot;,
+          &quot;type&quot;: &quot;&lt;string&gt;&quot;
+        },
+        {
+          &quot;dateValue&quot;: &quot;&lt;string&gt;&quot;,
+          &quot;dateFormat&quot;: &quot;&lt;string&gt;&quot;,
+          &quot;type&quot;: &quot;&lt;string&gt;&quot;
+        }
+      ],
+      &quot;locationResolvedAlias&quot;: &quot;&lt;string&gt;&quot;
+    },
+    {
+      &quot;locationType&quot;: &quot;&lt;string&gt;&quot;,
+      &quot;identifierType&quot;: &quot;&lt;string&gt;&quot;,
+      &quot;identifierValue&quot;: &quot;&lt;string&gt;&quot;,
+      &quot;city&quot;: &quot;&lt;string&gt;&quot;,
+      &quot;subdivision&quot;: &quot;&lt;string&gt;&quot;,
+     
+  ...
+  [truncated for brevity — see full schema in API docs]
+}</pre>
+        </div>
+      </div>
+    </div>
+    <div class="endpoint" id="ep-8">
+      <div class="endpoint-head">
+        <div class="endpoint-title"><span class="endpoint-num">#08</span>Cancel a submitted booking</div>
+        <div class="url-line">
+          <span class="method POST">POST</span>
+          <span class="url-path">https://api-test.inttra.com/booking/<span class="var">:inttraReferenceId</span>/cancel</span>
+        </div>
+        <p class="endpoint-desc"><span class="pill">Booking</span></p>
+      </div>
+      <div class="endpoint-body">
+        <div class="param-group">
+          <h5>Path Variables</h5>
+          <table class="params">
+            <thead><tr><th>Parameter</th><th>Required</th><th>Description</th></tr></thead><tbody>
+              <tr><td class="key">:inttraReferenceId</td><td class="req"><span class="y">required</span></td><td class="desc">—</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="param-group">
+          <h5>Headers</h5>
+          <table class="params">
+            <thead><tr><th>Key</th><th>Required</th><th>Value / Description</th></tr></thead><tbody>
+              <tr><td class="key">Authorization</td><td class="req"><span class="y">required</span></td><td class="desc">Bearer <code>&lt;string&gt;</code></td></tr>
+              <tr><td class="key">Content-Type</td><td class="req"><span class="n">optional</span></td><td class="desc"><code>application/json</code> <code>application/json</code></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="param-group">
+          <h5>Example Request</h5>
+          <pre class="code">curl --request POST \
+  --url &#x27;https://api-test.inttra.com/booking/2009000755/cancel&#x27; \
+  --header &#x27;Authorization: Bearer &lt;access_token&gt;&#x27; \
+  --header &#x27;Content-Type: application/json&#x27; \
+  --data &#x27;{
+  &quot;generalComments&quot;: &quot;&lt;string&gt;&quot;
+}&#x27;</pre>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="ocean-schedules">
+    <h2><span class="num">04</span>Ocean Schedules</h2>
+    <p class="section-desc">Search vessel schedules across carriers between origin/destination ports.</p>
+    <div class="endpoint" id="ep-9">
+      <div class="endpoint-head">
+        <div class="endpoint-title"><span class="endpoint-num">#09</span>Search for carrier schedules</div>
+        <div class="url-line">
+          <span class="method GET">GET</span>
+          <span class="url-path">https://api.inttra.com/oceanschedules/schedule</span>
+        </div>
+        <p class="endpoint-desc"><span class="pill">Ocean Schedules</span></p>
+      </div>
+      <div class="endpoint-body">
+        <div class="param-group">
+          <h5>Query Parameters</h5>
+          <table class="params">
+            <thead><tr><th>Parameter</th><th>Required</th><th>Description</th></tr></thead><tbody>
+              <tr><td class="key">scacs</td><td class="req"><span class="n">optional</span></td><td class="desc">—</td></tr>
+              <tr><td class="key">searchDate</td><td class="req"><span class="n">optional</span></td><td class="desc">—</td></tr>
+              <tr><td class="key">searchDateType</td><td class="req"><span class="n">optional</span></td><td class="desc">—</td></tr>
+              <tr><td class="key">originPort</td><td class="req"><span class="n">optional</span></td><td class="desc">—</td></tr>
+              <tr><td class="key">destinationPort</td><td class="req"><span class="n">optional</span></td><td class="desc">—</td></tr>
+              <tr><td class="key">weeksOut</td><td class="req"><span class="n">optional</span></td><td class="desc">—</td></tr>
+              <tr><td class="key">directOnly</td><td class="req"><span class="n">optional</span></td><td class="desc">—</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="param-group">
+          <h5>Headers</h5>
+          <table class="params">
+            <thead><tr><th>Key</th><th>Required</th><th>Value / Description</th></tr></thead><tbody>
+              <tr><td class="key">Authorization</td><td class="req"><span class="n">optional</span></td><td class="desc"><code>&lt;your company token&gt;</code> <code>&lt;your company token&gt;</code></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="param-group">
+          <h5>Example Request</h5>
+          <pre class="code">curl --request GET \
+  --url &#x27;https://api.inttra.com/oceanschedules/schedule?scacs=value,value&amp;searchDate=value&amp;searchDateType=value&amp;originPort=value&amp;destinationPort=value&amp;weeksOut=30&amp;directOnly=false&#x27; \
+  --header &#x27;Authorization: Bearer &lt;access_token&gt;&#x27;</pre>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="rates">
+    <h2><span class="num">05</span>Rates</h2>
+    <p class="section-desc">Contract and spot rate lookups for ocean freight.</p>
+    <div class="endpoint" id="ep-10">
+      <div class="endpoint-head">
+        <div class="endpoint-title"><span class="endpoint-num">#10</span>Search for contract rates by the given parameters</div>
+        <div class="url-line">
+          <span class="method GET">GET</span>
+          <span class="url-path">https://api-test.inttra.com/rates/contract</span>
+        </div>
+        <p class="endpoint-desc"><span class="pill">Rates → contract</span></p>
+      </div>
+      <div class="endpoint-body">
+        <div class="param-group">
+          <h5>Query Parameters</h5>
+          <table class="params">
+            <thead><tr><th>Parameter</th><th>Required</th><th>Description</th></tr></thead><tbody>
+              <tr><td class="key">commodity</td><td class="req"><span class="n">optional</span></td><td class="desc">Commodity keyword. Keywords are space delimited. If more than one keyword is provided, only the first one will be used.</td></tr>
+              <tr><td class="key">containers</td><td class="req"><span class="y">required</span></td><td class="desc">Quantity &#x27;x&#x27; ISO container type. Multiple containers ( qty &#x27;x&#x27; iso type) can be sent, separated by a comma</td></tr>
+              <tr><td class="key">origin</td><td class="req"><span class="y">required</span></td><td class="desc">UNECE Location Code of Origin Port</td></tr>
+              <tr><td class="key">destination</td><td class="req"><span class="y">required</span></td><td class="desc">UNECE Location Code of Destination Port</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="param-group">
+          <h5>Headers</h5>
+          <table class="params">
+            <thead><tr><th>Key</th><th>Required</th><th>Value / Description</th></tr></thead><tbody>
+              <tr><td class="key">Authorization</td><td class="req"><span class="y">required</span></td><td class="desc"><code>&lt;string&gt;</code> <code>&lt;string&gt;</code></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="param-group">
+          <h5>Example Request</h5>
+          <pre class="code">curl --request GET \
+  --url &#x27;https://api-test.inttra.com/rates/contract?commodity=value&amp;containers=value&amp;origin=value&amp;destination=value&#x27; \
+  --header &#x27;Authorization: Bearer &lt;access_token&gt;&#x27;</pre>
+        </div>
+      </div>
+    </div>
+    <div class="endpoint" id="ep-11">
+      <div class="endpoint-head">
+        <div class="endpoint-title"><span class="endpoint-num">#11</span>List ISO container codes available to contract rates</div>
+        <div class="url-line">
+          <span class="method GET">GET</span>
+          <span class="url-path">https://api-test.inttra.com/rates/contract/containertype</span>
+        </div>
+        <p class="endpoint-desc"><span class="pill">Rates → contract</span></p>
+      </div>
+      <div class="endpoint-body">
+        <div class="param-group">
+          <h5>Headers</h5>
+          <table class="params">
+            <thead><tr><th>Key</th><th>Required</th><th>Value / Description</th></tr></thead><tbody>
+              <tr><td class="key">Authorization</td><td class="req"><span class="y">required</span></td><td class="desc"><code>&lt;string&gt;</code> <code>&lt;string&gt;</code></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="param-group">
+          <h5>Example Request</h5>
+          <pre class="code">curl --request GET \
+  --url &#x27;https://api-test.inttra.com/rates/contract/containertype&#x27; \
+  --header &#x27;Authorization: Bearer &lt;access_token&gt;&#x27;</pre>
+        </div>
+      </div>
+    </div>
+    <div class="endpoint" id="ep-12">
+      <div class="endpoint-head">
+        <div class="endpoint-title"><span class="endpoint-num">#12</span>Get Spot PriceLineItem offers for provided carrier company(s)</div>
+        <div class="url-line">
+          <span class="method GET">GET</span>
+          <span class="url-path">https://api-test.inttra.com/rates/spot</span>
+        </div>
+        <p class="endpoint-desc"><span class="pill">Rates → spot</span></p>
+      </div>
+      <div class="endpoint-body">
+        <div class="param-group">
+          <h5>Query Parameters</h5>
+          <table class="params">
+            <thead><tr><th>Parameter</th><th>Required</th><th>Description</th></tr></thead><tbody>
+              <tr><td class="key">carrierScacs</td><td class="req"><span class="n">optional</span></td><td class="desc">—</td></tr>
+              <tr><td class="key">originUnloc</td><td class="req"><span class="n">optional</span></td><td class="desc">—</td></tr>
+              <tr><td class="key">departureDate</td><td class="req"><span class="n">optional</span></td><td class="desc">—</td></tr>
+              <tr><td class="key">destinationUnloc</td><td class="req"><span class="n">optional</span></td><td class="desc">—</td></tr>
+              <tr><td class="key">containers</td><td class="req"><span class="n">optional</span></td><td class="desc">—</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="param-group">
+          <h5>Headers</h5>
+          <table class="params">
+            <thead><tr><th>Key</th><th>Required</th><th>Value / Description</th></tr></thead><tbody>
+              <tr><td class="key">Authorization</td><td class="req"><span class="y">required</span></td><td class="desc"><code>&lt;string&gt;</code> <code>&lt;string&gt;</code></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="param-group">
+          <h5>Example Request</h5>
+          <pre class="code">curl --request GET \
+  --url &#x27;https://api-test.inttra.com/rates/spot?carrierScacs=value&amp;originUnloc=value&amp;departureDate=value&amp;destinationUnloc=value&amp;containers=value&#x27; \
+  --header &#x27;Authorization: Bearer &lt;access_token&gt;&#x27;</pre>
+        </div>
+      </div>
+    </div>
+    <div class="endpoint" id="ep-13">
+      <div class="endpoint-head">
+        <div class="endpoint-title"><span class="endpoint-num">#13</span>Get Spot PriceLineItem offers for provided carrier INTTRA Company ID</div>
+        <div class="url-line">
+          <span class="method GET">GET</span>
+          <span class="url-path">https://api-test.inttra.com/rates/spot/inttraCompanyId/<span class="var">:inttraCompanyId</span></span>
+        </div>
+        <p class="endpoint-desc"><span class="pill">Rates → spot</span></p>
+      </div>
+      <div class="endpoint-body">
+        <div class="param-group">
+          <h5>Path Variables</h5>
+          <table class="params">
+            <thead><tr><th>Parameter</th><th>Required</th><th>Description</th></tr></thead><tbody>
+              <tr><td class="key">:inttraCompanyId</td><td class="req"><span class="y">required</span></td><td class="desc">INTTRA Company Id of the carrier offering spot rates</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="param-group">
+          <h5>Query Parameters</h5>
+          <table class="params">
+            <thead><tr><th>Parameter</th><th>Required</th><th>Description</th></tr></thead><tbody>
+              <tr><td class="key">originUnloc</td><td class="req"><span class="y">required</span></td><td class="desc">UNECE location code of Origin location</td></tr>
+              <tr><td class="key">departureDate</td><td class="req"><span class="y">required</span></td><td class="desc">Date of departure from Origin location)</td></tr>
+              <tr><td class="key">destinationUnloc</td><td class="req"><span class="y">required</span></td><td class="desc">UNECE location code of Destination location</td></tr>
+              <tr><td class="key">containers</td><td class="req"><span class="y">required</span></td><td class="desc">Quantity &#x27;x&#x27; ISO container type. Multiple containers ( qty &#x27;x&#x27; iso type) can be sent, separated by a comma</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="param-group">
+          <h5>Headers</h5>
+          <table class="params">
+            <thead><tr><th>Key</th><th>Required</th><th>Value / Description</th></tr></thead><tbody>
+              <tr><td class="key">Authorization</td><td class="req"><span class="y">required</span></td><td class="desc"><code>&lt;string&gt;</code> <code>&lt;string&gt;</code></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="param-group">
+          <h5>Example Request</h5>
+          <pre class="code">curl --request GET \
+  --url &#x27;https://api-test.inttra.com/rates/spot/inttraCompanyId/909091?originUnloc=value&amp;departureDate=value&amp;destinationUnloc=value&amp;containers=value&#x27; \
+  --header &#x27;Authorization: Bearer &lt;access_token&gt;&#x27;</pre>
+        </div>
+      </div>
+    </div>
+    <div class="endpoint" id="ep-14">
+      <div class="endpoint-head">
+        <div class="endpoint-title"><span class="endpoint-num">#14</span>Get persisted Spot PriceLineItem offer by key</div>
+        <div class="url-line">
+          <span class="method GET">GET</span>
+          <span class="url-path">https://api-test.inttra.com/rates/spot/<span class="var">:hashKey</span></span>
+        </div>
+        <p class="endpoint-desc"><span class="pill">Rates → spot</span></p>
+      </div>
+      <div class="endpoint-body">
+        <div class="param-group">
+          <h5>Path Variables</h5>
+          <table class="params">
+            <thead><tr><th>Parameter</th><th>Required</th><th>Description</th></tr></thead><tbody>
+              <tr><td class="key">:hashKey</td><td class="req"><span class="y">required</span></td><td class="desc">Unique identifier of persisted spot rates</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="param-group">
+          <h5>Headers</h5>
+          <table class="params">
+            <thead><tr><th>Key</th><th>Required</th><th>Value / Description</th></tr></thead><tbody>
+              <tr><td class="key">Authorization</td><td class="req"><span class="y">required</span></td><td class="desc"><code>&lt;string&gt;</code> <code>&lt;string&gt;</code></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="param-group">
+          <h5>Example Request</h5>
+          <pre class="code">curl --request GET \
+  --url &#x27;https://api-test.inttra.com/rates/spot/abc123hashkey&#x27; \
+  --header &#x27;Authorization: Bearer &lt;access_token&gt;&#x27;</pre>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="visibility">
+    <h2><span class="num">06</span>Visibility</h2>
+    <p class="section-desc">Track &amp; trace events for shipments using booking, B/L or equipment references.</p>
+    <div class="endpoint" id="ep-15">
+      <div class="endpoint-head">
+        <div class="endpoint-title"><span class="endpoint-num">#15</span>Search all events using one of the following - Carrier Booking Reference,  Bill of Lading  Number, INTTRA Booking Reference, or Equipment Reference.</div>
+        <div class="url-line">
+          <span class="method GET">GET</span>
+          <span class="url-path">https://api.inttra.com/visibility/track</span>
+        </div>
+        <p class="endpoint-desc"><span class="pill">Visibility → Version 1</span></p>
+        <p class="endpoint-desc">Notes: Search can be performed using only one parameter at a time. Search by Equipment Reference gets all milestone events associated with the equiment. Only events related to the shipment of the last event processed will be returned. Search by Carrier Booking Reference gets all milestone events associated with all equipments associated with the booking identified by the requested carrier booking reference. Search by Bill of Lading Number gets all milestone events associated with all equipments associated by the requested bill of lading number. Search by INTTRA Booking Reference gets all miles…</p>
+      </div>
+      <div class="endpoint-body">
+        <div class="param-group">
+          <h5>Query Parameters</h5>
+          <table class="params">
+            <thead><tr><th>Parameter</th><th>Required</th><th>Description</th></tr></thead><tbody>
+              <tr><td class="key">inttra_booking_reference</td><td class="req"><span class="n">optional</span></td><td class="desc">—</td></tr>
+              <tr><td class="key">carrier_booking_reference</td><td class="req"><span class="n">optional</span></td><td class="desc">—</td></tr>
+              <tr><td class="key">bill_of_lading_number</td><td class="req"><span class="n">optional</span></td><td class="desc">—</td></tr>
+              <tr><td class="key">equipment_reference</td><td class="req"><span class="n">optional</span></td><td class="desc">—</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="param-group">
+          <h5>Headers</h5>
+          <table class="params">
+            <thead><tr><th>Key</th><th>Required</th><th>Value / Description</th></tr></thead><tbody>
+              <tr><td class="key">Authorization</td><td class="req"><span class="y">required</span></td><td class="desc"><code>&lt;string&gt;</code> <code>&lt;string&gt;</code></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="param-group">
+          <h5>Example Request</h5>
+          <pre class="code">curl --request GET \
+  --url &#x27;https://api.inttra.com/visibility/track?inttra_booking_reference=value&amp;carrier_booking_reference=value&amp;bill_of_lading_number=value&amp;equipment_reference=value&#x27; \
+  --header &#x27;Authorization: Bearer &lt;access_token&gt;&#x27;</pre>
+        </div>
+      </div>
+    </div>
+    <div class="endpoint" id="ep-16">
+      <div class="endpoint-head">
+        <div class="endpoint-title"><span class="endpoint-num">#16</span>Search events using any known shipment identifier like Carrier Booking Reference, Bill of Lading Number, INTTRA Booking Reference or Equipment Reference.</div>
+        <div class="url-line">
+          <span class="method GET">GET</span>
+          <span class="url-path">https://api.inttra.com/visibility/track/<span class="var">:broad_search_key</span></span>
+        </div>
+        <p class="endpoint-desc"><span class="pill">Visibility → Version 1</span></p>
+        <p class="endpoint-desc">Search events using any known shipment identifier like Carrier Booking Reference, Bill of Lading Number, INTTRA Booking Reference or Equipment Reference.</p>
+      </div>
+      <div class="endpoint-body">
+        <div class="param-group">
+          <h5>Path Variables</h5>
+          <table class="params">
+            <thead><tr><th>Parameter</th><th>Required</th><th>Description</th></tr></thead><tbody>
+              <tr><td class="key">:broad_search_key</td><td class="req"><span class="n">optional</span></td><td class="desc">—</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="param-group">
+          <h5>Headers</h5>
+          <table class="params">
+            <thead><tr><th>Key</th><th>Required</th><th>Value / Description</th></tr></thead><tbody>
+              <tr><td class="key">Authorization</td><td class="req"><span class="y">required</span></td><td class="desc"><code>&lt;string&gt;</code> <code>&lt;string&gt;</code></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="param-group">
+          <h5>Example Request</h5>
+          <pre class="code">curl --request GET \
+  --url &#x27;https://api.inttra.com/visibility/track/HLCUANR123456&#x27; \
+  --header &#x27;Authorization: Bearer &lt;access_token&gt;&#x27;</pre>
+        </div>
+      </div>
+    </div>
+    <div class="endpoint" id="ep-17">
+      <div class="endpoint-head">
+        <div class="endpoint-title"><span class="endpoint-num">#17</span>Search all events using one of the following - Carrier Booking Reference,  Bill of Lading  Number, INTTRA Booking Reference, or Equipment Reference.</div>
+        <div class="url-line">
+          <span class="method GET">GET</span>
+          <span class="url-path">https://api.inttra.com/visibility/v1.2/track</span>
+        </div>
+        <p class="endpoint-desc"><span class="pill">Visibility → Version 1.2</span></p>
+        <p class="endpoint-desc">Notes: Search can be performed using only one parameter at a time. Search by Equipment Reference gets all milestone events associated with the equiment. Only events related to the shipment of the last event processed will be returned. Search by Carrier Booking Reference gets all milestone events associated with all equipments associated with the booking identified by the requested carrier booking reference. Search by Bill of Lading Number gets all milestone events associated with all equipments associated by the requested bill of lading number. Search by INTTRA Booking Reference gets all miles…</p>
+      </div>
+      <div class="endpoint-body">
+        <div class="param-group">
+          <h5>Query Parameters</h5>
+          <table class="params">
+            <thead><tr><th>Parameter</th><th>Required</th><th>Description</th></tr></thead><tbody>
+              <tr><td class="key">inttra_booking_reference</td><td class="req"><span class="n">optional</span></td><td class="desc">—</td></tr>
+              <tr><td class="key">carrier_booking_reference</td><td class="req"><span class="n">optional</span></td><td class="desc">—</td></tr>
+              <tr><td class="key">bill_of_lading_number</td><td class="req"><span class="n">optional</span></td><td class="desc">—</td></tr>
+              <tr><td class="key">equipment_reference</td><td class="req"><span class="n">optional</span></td><td class="desc">—</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="param-group">
+          <h5>Headers</h5>
+          <table class="params">
+            <thead><tr><th>Key</th><th>Required</th><th>Value / Description</th></tr></thead><tbody>
+              <tr><td class="key">Authorization</td><td class="req"><span class="y">required</span></td><td class="desc"><code>&lt;string&gt;</code> <code>&lt;string&gt;</code></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="param-group">
+          <h5>Example Request</h5>
+          <pre class="code">curl --request GET \
+  --url &#x27;https://api.inttra.com/visibility/v1.2/track?inttra_booking_reference=value&amp;carrier_booking_reference=value&amp;bill_of_lading_number=value&amp;equipment_reference=value&#x27; \
+  --header &#x27;Authorization: Bearer &lt;access_token&gt;&#x27;</pre>
+        </div>
+      </div>
+    </div>
+    <div class="endpoint" id="ep-18">
+      <div class="endpoint-head">
+        <div class="endpoint-title"><span class="endpoint-num">#18</span>Search events using any known shipment identifier like Carrier Booking Reference, Bill of Lading Number, INTTRA Booking Reference or Equipment Reference.</div>
+        <div class="url-line">
+          <span class="method GET">GET</span>
+          <span class="url-path">https://api.inttra.com/visibility/v1.2/track/<span class="var">:broad_search_key</span></span>
+        </div>
+        <p class="endpoint-desc"><span class="pill">Visibility → Version 1.2</span></p>
+        <p class="endpoint-desc">Search events using any known shipment identifier like Carrier Booking Reference, Bill of Lading Number, INTTRA Booking Reference or Equipment Reference.</p>
+      </div>
+      <div class="endpoint-body">
+        <div class="param-group">
+          <h5>Path Variables</h5>
+          <table class="params">
+            <thead><tr><th>Parameter</th><th>Required</th><th>Description</th></tr></thead><tbody>
+              <tr><td class="key">:broad_search_key</td><td class="req"><span class="n">optional</span></td><td class="desc">—</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="param-group">
+          <h5>Headers</h5>
+          <table class="params">
+            <thead><tr><th>Key</th><th>Required</th><th>Value / Description</th></tr></thead><tbody>
+              <tr><td class="key">Authorization</td><td class="req"><span class="y">required</span></td><td class="desc"><code>&lt;string&gt;</code> <code>&lt;string&gt;</code></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="param-group">
+          <h5>Example Request</h5>
+          <pre class="code">curl --request GET \
+  --url &#x27;https://api.inttra.com/visibility/v1.2/track/HLCUANR123456&#x27; \
+  --header &#x27;Authorization: Bearer &lt;access_token&gt;&#x27;</pre>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <div>Compiled from <a href="https://apidocs.inttra.com/">apidocs.inttra.com</a> &mdash; INTTRA by e2open Ocean Execution APIs (v1).</div>
+    <div>Reference document &mdash; not affiliated with INTTRA / e2open.</div>
+  </footer>
+
+</div>
+</body>
+</html>

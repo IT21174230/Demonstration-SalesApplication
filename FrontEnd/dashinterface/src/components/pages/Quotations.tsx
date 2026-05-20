@@ -136,7 +136,7 @@ export default function Quotations({
                 key={q.id}
                 style={{
                   padding: '14px 16px',
-                  background: 'rgba(255,255,255,0.02)',
+                  background: '#ffffff',
                   border: '1px solid var(--border)',
                   borderRadius: 10,
                 }}
@@ -155,7 +155,7 @@ export default function Quotations({
                       {q.inquiry_id && <> · linked to <span style={{ fontFamily: 'monospace' }}>{q.inquiry_id}</span></>}
                     </div>
                     {q.approval_reason && (
-                      <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 4, fontWeight: 600 }}>
+                      <div style={{ fontSize: 11, color: '#d97706', marginTop: 4, fontWeight: 600 }}>
                         ⚠ Awaiting approval — {q.approval_reason}
                       </div>
                     )}
@@ -183,7 +183,7 @@ export default function Quotations({
                     </thead>
                     <tbody>
                       {q.lines.map(l => (
-                        <tr key={l.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
+                        <tr key={l.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
                           <td style={{ padding: '6px 6px', color: 'var(--text)', fontWeight: 600 }}>{l.shipping_line}</td>
                           <td style={{ padding: '6px 6px' }}>
                             <span className="db-badge muted">{l.rate_type}</span>
@@ -319,7 +319,7 @@ function SendQuotationModal({
         {/* Quote summary */}
         <div style={{
           padding: '10px 14px', marginBottom: 14,
-          background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.18)',
+          background: 'rgba(79,70,229,0.03)', border: '1px solid rgba(79,70,229,0.12)',
           borderRadius: 8, fontSize: 12, color: 'var(--text-secondary)',
         }}>
           <span style={{ fontFamily: 'monospace', fontSize: 11 }}>{quote.id}</span>
@@ -470,8 +470,8 @@ function QuoteBuilderModal({
             {cust && (
               <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 4 }}>
                 {cust.tier} · {cust.payment_terms} · floor {cust.min_margin_pct}%
-                {cust.blacklisted && <span style={{ color: '#ef4444', marginLeft: 6 }}>· blacklisted</span>}
-                {cust.credit_hold && <span style={{ color: '#f59e0b', marginLeft: 6 }}>· credit hold</span>}
+                {cust.blacklisted && <span style={{ color: '#dc2626', marginLeft: 6 }}>· blacklisted</span>}
+                {cust.credit_hold && <span style={{ color: '#d97706', marginLeft: 6 }}>· credit hold</span>}
               </div>
             )}
           </div>
@@ -492,7 +492,7 @@ function QuoteBuilderModal({
         </div>
 
         {/* Big Schedule stub hint (Phase 7.1) */}
-        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8, padding: '6px 10px', background: 'rgba(99,102,241,0.05)', border: '1px solid rgba(99,102,241,0.2)', borderRadius: 6 }}>
+        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8, padding: '6px 10px', background: 'rgba(79,70,229,0.03)', border: '1px solid rgba(79,70,229,0.12)', borderRadius: 6 }}>
           📡 Big Schedule lines available for this route: {BIG_SCHEDULE_LINES.join(', ')} (stub data — real integration in Phase 2)
         </div>
 
@@ -569,7 +569,7 @@ function QuoteBuilderModal({
               {EMPLOYEES.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
             </select>
           </div>
-          <div style={{ background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.18)', borderRadius: 8, padding: '10px 14px' }}>
+          <div style={{ background: 'rgba(79,70,229,0.03)', border: '1px solid rgba(79,70,229,0.12)', borderRadius: 8, padding: '10px 14px' }}>
             <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Quote total</div>
             <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--text)' }}>${sell.toLocaleString()}</div>
             <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>cost ${cost.toLocaleString()} + {margin}%</div>
@@ -578,7 +578,7 @@ function QuoteBuilderModal({
 
         {/* Approval banner if margin under floor */}
         {willNeedApproval && (
-          <div style={{ padding: '10px 14px', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.4)', borderRadius: 8, marginBottom: 12, fontSize: 12, color: '#f59e0b', fontWeight: 600 }}>
+          <div style={{ padding: '10px 14px', background: 'rgba(217,119,6,0.05)', border: '1px solid rgba(217,119,6,0.2)', borderRadius: 8, marginBottom: 12, fontSize: 12, color: '#b45309', fontWeight: 600 }}>
             ⚠ This quote will be flagged Awaiting Approval — margin {margin}% is below {cust!.name}'s floor of {minMargin}%.
           </div>
         )}
