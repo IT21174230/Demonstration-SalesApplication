@@ -1,11 +1,14 @@
 import { useState } from 'react'
-import { Ship, MapPin, Anchor, CheckCircle2, ChevronRight, Plane, Package, Clock } from 'lucide-react'
+import { Ship, MapPin, Anchor, CheckCircle2, ChevronRight, Plane, Package, Clock, AlertTriangle } from 'lucide-react'
 import {
-  type Shipment, type ShipmentStatus, type ShipmentLeg,
+  EMPLOYEES,
+  type Shipment, type ShipmentStatus, type ShipmentLeg, type Booking, type BookingStatus,
 } from '../../mockData'
+import { useRole } from '../../RoleContext'
 
 interface ShipmentsProps {
   shipments: Shipment[]
+  bookings: Booking[]
   onAdvanceLeg: (shipmentId: string, legId: string) => void
   onRecordPOD: (shipmentId: string) => void
 }
@@ -32,7 +35,17 @@ const LEG_STATUS_COLOR: Record<ShipmentLeg['status'], string> = {
   Delayed: '#dc2626',
 }
 
-export default function Shipments({ shipments, onAdvanceLeg, onRecordPOD }: ShipmentsProps) {
+const BOOKING_STATUS_BADGE: Record<BookingStatus, string> = {
+  'Pending Liner':  'db-badge warning',
+  'Liner Confirmed':'db-badge accent',
+  'Released':       'db-badge success',
+  'Cancelled':      'db-badge danger',
+}
+
+export default function Shipments({ shipments, bookings, onAdvanceLeg, onRecordPOD }: ShipmentsProps) {
+  const { hasPermission } = useRole()
+  const canAdvanceLeg = hasPermission('shipment:advance-leg')
+  const canRecordPOD = hasPermission('shipment:record-pod')
   const [statusFilter, setStatusFilter] = useState<ShipmentStatus | 'all'>('all')
   const [customerFilter, setCustomerFilter] = useState('')
 
@@ -96,6 +109,104 @@ export default function Shipments({ shipments, onAdvanceLeg, onRecordPOD }: Ship
         </div>
       )}
 
+      {/* Bookings Pipeline */}
+      {bookings.length > 0 && (
+        <div className="db-chart-card" style={{ marginBottom: 18 }}>
+          <div className="db-chart-head">
+            <div>
+              <div className="db-chart-title">Bookings Pipeline</div>
+              <div className="db-chart-sub">
+                {bookings.filter(b => b.status === 'Pending Liner').length} pending liner
+                {' · '}{bookings.filter(b => b.status === 'Liner Confirmed').length} confirmed
+                {' · '}{bookings.filter(b => b.status === 'Released').length} released
+                {bookings.some(b => b.is_urgent && !b.procurement_notified) && (
+                  <span style={{ color: '#dc2626', fontWeight: 700 }}>
+                    {' · '}{bookings.filter(b => b.is_urgent && !b.procurement_notified).length} urgent — procurement not notified
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {bookings.map(b => {
+              const bookedByName = EMPLOYEES.find(e => e.id === b.booked_by)?.name ?? '—'
+              const confirmedByName = b.confirmed_by ? (EMPLOYEES.find(e => e.id === b.confirmed_by)?.name ?? '—') : null
+              return (
+                <div key={b.id} style={{ padding: '12px 14px', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                    <Anchor size={14} style={{ color: 'var(--accent-light)' }} />
+                    <span style={{ fontFamily: 'monospace', fontSize: 11, color: 'var(--text-muted)' }}>{b.id}</span>
+                    <span style={{ color: 'var(--text)', fontWeight: 700, fontSize: 13 }}>{b.customer_name}</span>
+                    <span className={BOOKING_STATUS_BADGE[b.status]}>{b.status}</span>
+                    {b.is_urgent && (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 10, color: '#dc2626', fontWeight: 700 }}>
+                        <AlertTriangle size={11} /> URGENT
+                      </span>
+                    )}
+                    {b.is_urgent && !b.procurement_notified && (
+                      <span style={{ fontSize: 10, color: '#dc2626', background: 'rgba(220,38,38,0.08)', padding: '2px 6px', borderRadius: 4 }}>
+                        Procurement not notified
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                    {b.origin} → {b.destination} · {b.shipping_line} · {b.container_type} × {b.quantity}
+                    {' · quote '}<span style={{ fontFamily: 'monospace' }}>{b.quote_id}</span>
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                    Booked by {bookedByName} on {b.created_at}
+                    {confirmedByName && <> · confirmed by {confirmedByName} on {b.confirmed_at}</>}
+                    {b.released_at && <> · released {b.released_at}</>}
+                    {b.vessel_name && <> · vessel {b.vessel_name}</>}
+                    {b.voyage_number && <> ({b.voyage_number})</>}
+                  </div>
+                  {/* Workflow progress indicator */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 0, marginTop: 10 }}>
+                    {(['Pending Liner', 'Liner Confirmed', 'Released'] as BookingStatus[]).map((step, idx) => {
+                      const statuses: BookingStatus[] = ['Pending Liner', 'Liner Confirmed', 'Released']
+                      const currentIdx = statuses.indexOf(b.status)
+                      const stepIdx = idx
+                      const done = b.status === 'Cancelled' ? false : stepIdx <= currentIdx
+                      const active = stepIdx === currentIdx && b.status !== 'Cancelled'
+                      const labels = ['CS Created', 'Liner Confirmed', 'Released to Customer']
+                      return (
+                        <div key={step} style={{ display: 'flex', alignItems: 'center', flex: 1, minWidth: 0 }}>
+                          <div style={{
+                            flex: 1,
+                            padding: '6px 10px',
+                            borderRadius: 6,
+                            fontSize: 10,
+                            fontWeight: active ? 700 : 500,
+                            color: done ? '#fff' : 'var(--text-muted)',
+                            background: done
+                              ? (active ? 'var(--accent)' : 'rgba(79,70,229,0.5)')
+                              : 'rgba(0,0,0,0.04)',
+                            textAlign: 'center',
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                          }}>
+                            {labels[idx]}
+                          </div>
+                          {idx < 2 && (
+                            <ChevronRight size={12} style={{ color: 'var(--text-muted)', opacity: 0.4, flexShrink: 0 }} />
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                  {b.notes && (
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6, fontStyle: 'italic' }}>
+                      {b.notes}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Filters */}
       <div className="db-chart-card" style={{ marginBottom: 18 }}>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
@@ -150,8 +261,10 @@ export default function Shipments({ shipments, onAdvanceLeg, onRecordPOD }: Ship
                 {s.status !== 'Delivered' && (
                   <button
                     className="db-btn primary"
-                    onClick={() => onRecordPOD(s.id)}
-                    style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, whiteSpace: 'nowrap' }}
+                    onClick={() => canRecordPOD && onRecordPOD(s.id)}
+                    disabled={!canRecordPOD}
+                    title={canRecordPOD ? 'Record proof of delivery' : 'Restricted — requires Admin role'}
+                    style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, whiteSpace: 'nowrap', opacity: canRecordPOD ? 1 : 0.4, cursor: canRecordPOD ? 'pointer' : 'not-allowed' }}
                   >
                     <Package size={11} /> Record POD
                   </button>
@@ -186,9 +299,10 @@ export default function Shipments({ shipments, onAdvanceLeg, onRecordPOD }: Ship
                         {leg.status !== 'Departed' && (leg.type !== 'Destination' || leg.status !== 'Arrived') && (
                           <button
                             className="lt-icon-btn"
-                            title={leg.status === 'Pending' ? 'Mark Arrived' : 'Mark Departed'}
-                            onClick={() => onAdvanceLeg(s.id, leg.id)}
-                            style={{ padding: '2px 6px', height: 20, width: 'auto', fontSize: 9, gap: 2 }}
+                            title={canAdvanceLeg ? (leg.status === 'Pending' ? 'Mark Arrived' : 'Mark Departed') : 'Restricted — requires Admin role'}
+                            onClick={() => canAdvanceLeg && onAdvanceLeg(s.id, leg.id)}
+                            disabled={!canAdvanceLeg}
+                            style={{ padding: '2px 6px', height: 20, width: 'auto', fontSize: 9, gap: 2, opacity: canAdvanceLeg ? 1 : 0.4, cursor: canAdvanceLeg ? 'pointer' : 'not-allowed' }}
                           >
                             <ChevronRight size={10} />
                           </button>

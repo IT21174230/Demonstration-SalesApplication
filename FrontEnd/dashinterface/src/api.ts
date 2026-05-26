@@ -6,8 +6,9 @@
  * mock_data.json in the background.
  */
 import type {
-  Inquiry, Customer, Task, MissingItem, Followup, Quote, Shipment, Employee,
-  QuoteStatus, CustomerTier, PaymentTerms, SBU, QuoteLine,
+  Inquiry, Customer, Task, MissingItem, Followup, Quote, Shipment, Employee, Booking,
+  QuoteStatus, CustomerTier, PaymentTerms, SBU, QuoteLine, ActivityEntry, KycStatus, RateRecord,
+  InttraSpotRate,
 } from './mockData'
 
 const BASE = import.meta.env.VITE_API_BASE || '/api'
@@ -55,6 +56,8 @@ export interface DashboardInit {
   quotes: Quote[]
   shipments: Shipment[]
   employees: Employee[]
+  bookings: Booking[]
+  activity_log: ActivityEntry[]
 }
 
 export function fetchDashboardInit(): Promise<DashboardInit> {
@@ -84,6 +87,10 @@ export function apiCompleteInquiry(feId: string): Promise<{ success: boolean }> 
 
 export function apiReopenInquiry(customerName: string, note: string): Promise<{ success: boolean }> {
   return post<{ success: boolean }>('/inquiries/reopen', { customer_name: customerName, note })
+}
+
+export function apiAdvanceWorkflow(feId: string, stage: string): Promise<{ success: boolean }> {
+  return patch<{ success: boolean }>(`/inquiries/${encodeURIComponent(feId)}/workflow-stage`, { stage })
 }
 
 // ---------------------------------------------------------------------------
@@ -120,6 +127,7 @@ export function apiUpdateCustomer(name: string, patch_data: {
   credit_hold?: boolean
   min_margin_pct?: number
   notes?: string
+  kyc_status?: KycStatus
 }): Promise<{ success: boolean }> {
   return patch<{ success: boolean }>(`/customers/${encodeURIComponent(name)}`, patch_data)
 }
@@ -192,4 +200,115 @@ export function apiSendQuotation(data: {
   quotation_content: string
 }): Promise<{ success: boolean; message: string }> {
   return post<{ success: boolean; message: string }>('/send-quotation', data)
+}
+
+// ---------------------------------------------------------------------------
+// Bookings
+// ---------------------------------------------------------------------------
+
+export function apiCreateBooking(data: {
+  customer_name: string
+  quote_id: string
+  shipping_line?: string
+  container_type?: string
+  quantity?: number
+  is_urgent?: boolean
+  booked_by?: number
+}): Promise<Booking> {
+  return post<Booking>('/bookings', data)
+}
+
+export function apiConfirmBooking(bookingId: string, data: {
+  vessel_name?: string
+  voyage_number?: string
+  confirmed_by?: number
+}): Promise<Booking> {
+  return patch<Booking>(`/bookings/${encodeURIComponent(bookingId)}/confirm`, data)
+}
+
+export function apiReleaseBooking(bookingId: string, data: {
+  note?: string
+  released_by?: number
+}): Promise<Booking> {
+  return patch<Booking>(`/bookings/${encodeURIComponent(bookingId)}/release`, data)
+}
+
+export function apiNotifyProcurement(bookingId: string): Promise<{ success: boolean }> {
+  return patch<{ success: boolean }>(`/bookings/${encodeURIComponent(bookingId)}/notify`)
+}
+
+// ---------------------------------------------------------------------------
+// Rate Search (AMS)
+// ---------------------------------------------------------------------------
+
+export function apiSearchRates(params: {
+  origin?: string
+  destination?: string
+  container_type?: string
+  liner_name?: string
+  rate_type?: string
+}): Promise<RateRecord[]> {
+  const qs = new URLSearchParams()
+  if (params.origin) qs.set('origin', params.origin)
+  if (params.destination) qs.set('destination', params.destination)
+  if (params.container_type) qs.set('container_type', params.container_type)
+  if (params.liner_name) qs.set('liner_name', params.liner_name)
+  if (params.rate_type) qs.set('rate_type', params.rate_type)
+  return get<RateRecord[]>(`/rates/search?${qs.toString()}`)
+}
+
+// ---------------------------------------------------------------------------
+// InttraAPI Spot Rates (simulated)
+// ---------------------------------------------------------------------------
+
+export function apiCheckInttraRates(data: {
+  origin: string
+  destination: string
+  container_type?: string
+}): Promise<InttraSpotRate[]> {
+  return post<InttraSpotRate[]>('/inttra/spot-rates', data)
+}
+
+export interface InttraBookingResult {
+  success: boolean
+  booking_reference: string
+  vessel_name: string
+  voyage_number: string
+  shipping_line: string
+  origin: string
+  destination: string
+  container_type: string
+  quantity: number
+  etd: string
+  eta: string
+  status: string
+  message: string
+}
+
+export function apiBookInttra(data: {
+  booking_id: string
+  shipping_line: string
+  origin: string
+  destination: string
+  container_type?: string
+  quantity?: number
+}): Promise<InttraBookingResult> {
+  return post<InttraBookingResult>('/inttra/book', data)
+}
+
+// ---------------------------------------------------------------------------
+// Activity Log
+// ---------------------------------------------------------------------------
+
+export function apiCreateActivity(data: {
+  actor_role: string
+  actor_id: number
+  action: string
+  ref_type: string
+  ref_id: string
+  customer_name: string
+  pushed_to: string
+  notes?: string
+}): Promise<ActivityEntry> {
+  return post<ActivityEntry>('/activity-log', data)
 }

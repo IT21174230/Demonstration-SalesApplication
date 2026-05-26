@@ -1,7 +1,8 @@
-// ==================== LOGISTICS INQUIRY TRACKER ====================
+// ==================== FREIGHTOS ====================
 export type PageId =
   | 'dashboard'
   | 'chat'
+  | 'workspace'
   | 'inquiry-list'
   | 'quotations'
   | 'shipments'
@@ -11,7 +12,8 @@ export type PageId =
 
 export const PAGE_LABELS: Record<PageId, string> = {
   dashboard: 'Dashboard',
-  chat: 'Chat Assistant',
+  chat: 'Command Center',
+  workspace: 'Workspace',
   'inquiry-list': 'Inquiry List',
   quotations: 'Quotations',
   shipments: 'Shipments',
@@ -19,6 +21,145 @@ export const PAGE_LABELS: Record<PageId, string> = {
   customers: 'Customers',
   kyc: 'KYC Form',
 }
+
+// ==================== IAM / ROLE DEFINITIONS ====================
+
+export type UserRole = 'CS' | 'Sales' | 'Finance' | 'Procurement' | 'Admin'
+
+export const ROLE_LABELS: Record<UserRole, string> = {
+  CS:          'Customer Service',
+  Sales:       'Sales Executive',
+  Finance:     'Finance',
+  Procurement: 'Procurement',
+  Admin:       'Admin (All Access)',
+}
+
+export const ROLE_COLORS: Record<UserRole, string> = {
+  CS:          '#0891b2',
+  Sales:       '#4f46e5',
+  Finance:     '#16a34a',
+  Procurement: '#d97706',
+  Admin:       '#7c3aed',
+}
+
+export const ROLE_PAGE_ACCESS: Record<UserRole, PageId[]> = {
+  CS:          ['dashboard', 'chat', 'workspace', 'inquiry-list', 'followups', 'customers', 'kyc'],
+  Sales:       ['dashboard', 'chat', 'workspace', 'inquiry-list', 'quotations', 'followups', 'customers'],
+  Finance:     ['dashboard', 'chat', 'workspace', 'customers', 'kyc', 'quotations'],
+  Procurement: ['dashboard', 'chat', 'workspace', 'inquiry-list', 'followups'],
+  Admin:       ['dashboard', 'chat', 'workspace', 'inquiry-list', 'quotations', 'shipments', 'followups', 'customers', 'kyc'],
+}
+
+export const ROLE_QUICK_COMMANDS: Record<UserRole, string[]> = {
+  CS:          ['new-customer', 'new-inquiry', 'follow-up', 'new-task', 'lookup', 'complete', 'new-booking', 'release-booking'],
+  Sales:       ['new-inquiry', 'follow-up', 'new-task', 'quote', 'lookup', 'complete'],
+  Finance:     ['lookup', 'blacklist', 'credit-hold', 'change-tier'],
+  Procurement: ['follow-up', 'new-task', 'lookup', 'confirm-booking'],
+  Admin:       ['new-customer', 'new-inquiry', 'follow-up', 'new-task', 'quote', 'lookup', 'blacklist', 'credit-hold', 'change-tier', 'complete', 'new-booking', 'confirm-booking', 'release-booking'],
+}
+
+export type ActionId =
+  | 'inquiry:create'
+  | 'inquiry:complete'
+  | 'inquiry:view'
+  | 'followup:create'
+  | 'followup:view'
+  | 'task:create'
+  | 'task:complete'
+  | 'quote:create'
+  | 'quote:approve'
+  | 'quote:send'
+  | 'quote:confirm'
+  | 'quote:reject'
+  | 'shipment:advance-leg'
+  | 'shipment:record-pod'
+  | 'customer:create'
+  | 'customer:edit-flags'
+  | 'customer:edit-tier'
+  | 'kyc:send'
+  | 'kyc:verify'
+  | 'booking:create'
+  | 'booking:confirm'
+  | 'booking:release'
+  | 'booking:view'
+
+export const ROLE_ACTIONS: Record<UserRole, ActionId[]> = {
+  CS: [
+    'inquiry:create', 'inquiry:complete', 'inquiry:view',
+    'followup:create', 'followup:view',
+    'task:create', 'task:complete',
+    'customer:create',
+    'kyc:send',
+    'quote:send',
+    'booking:create', 'booking:release', 'booking:view',
+  ],
+  Sales: [
+    'inquiry:create', 'inquiry:complete', 'inquiry:view',
+    'followup:create', 'followup:view',
+    'task:create', 'task:complete',
+    'quote:create', 'quote:send', 'quote:confirm', 'quote:reject',
+    'booking:view',
+  ],
+  Finance: [
+    'inquiry:view', 'followup:view',
+    'quote:approve', 'quote:reject',
+    'customer:edit-flags', 'customer:edit-tier',
+    'kyc:verify',
+  ],
+  Procurement: [
+    'inquiry:view', 'followup:view',
+    'followup:create',
+    'task:create', 'task:complete',
+    'booking:confirm', 'booking:view',
+  ],
+  Admin: [
+    'inquiry:create', 'inquiry:complete', 'inquiry:view',
+    'followup:create', 'followup:view',
+    'task:create', 'task:complete',
+    'quote:create', 'quote:approve', 'quote:send', 'quote:confirm', 'quote:reject',
+    'shipment:advance-leg', 'shipment:record-pod',
+    'customer:create', 'customer:edit-flags', 'customer:edit-tier',
+    'kyc:send', 'kyc:verify',
+    'booking:create', 'booking:confirm', 'booking:release', 'booking:view',
+  ],
+}
+
+export const EMPLOYEE_ROLE_MAP: Record<number, UserRole> = {
+  1: 'Sales',
+  2: 'CS',
+  3: 'Sales',
+  4: 'Finance',
+  5: 'Procurement',
+}
+
+// ==================== WORKFLOW STAGES ====================
+
+export type WorkflowStage =
+  | 'inquiry-received'
+  | 'customer-check'
+  | 'kyc-pending'
+  | 'kyc-verification'
+  | 'rate-check'
+  | 'procurement-request'
+  | 'quotation-prep'
+  | 'quotation-sent'
+  | 'customer-response'
+  | 'booking-request'
+  | 'completed'
+
+export const WORKFLOW_STAGES: { id: WorkflowStage; label: string; role: UserRole; step: number }[] = [
+  { id: 'inquiry-received',    label: 'Inquiry Received',      role: 'CS',          step: 1 },
+  { id: 'customer-check',      label: 'Customer Verification', role: 'CS',          step: 2 },
+  { id: 'kyc-pending',         label: 'KYC Initialization',    role: 'CS',          step: 3 },
+  { id: 'kyc-verification',    label: 'KYC Clearance',         role: 'Finance',     step: 4 },
+  { id: 'rate-check',          label: 'Rate Check (AMS)',      role: 'CS',          step: 5 },
+  { id: 'procurement-request', label: 'Procurement Rate',      role: 'Procurement', step: 6 },
+  { id: 'quotation-prep',      label: 'Quotation Prep',        role: 'Sales',       step: 7 },
+  { id: 'quotation-sent',      label: 'Quote Sent',            role: 'CS',          step: 8 },
+  { id: 'customer-response',   label: 'Customer Response',     role: 'CS',          step: 9 },
+  { id: 'booking-request',     label: 'Booking Request',       role: 'CS',          step: 10 },
+  { id: 'completed',           label: 'Completed',             role: 'CS',          step: 11 },
+]
 
 // Heuristic for "this inquiry is time-critical" — used by Operations page urgency
 // section. Spot rates have ~15-min validity windows (per the Friday meeting).
@@ -48,6 +189,7 @@ export interface Inquiry {
   created_at: string
   completed_at?: string
   followup_note?: string
+  workflow_stage?: WorkflowStage
 }
 
 // ==================== CUSTOMER MASTER ====================
@@ -56,6 +198,8 @@ export interface Inquiry {
 // Walk-in     = ad-hoc / one-off (highest margin floor, cash only).
 export type CustomerTier = 'Key Account' | 'Regular' | 'Walk-in'
 export type PaymentTerms = 'Pay Upfront' | '30-Day Credit' | '60-Day Credit'
+
+export type KycStatus = 'not_started' | 'pending_customer' | 'approved'
 
 export interface Customer {
   id: string
@@ -67,16 +211,19 @@ export interface Customer {
   credit_hold: boolean
   min_margin_pct: number   // floor used by quote-builder margin checks
   notes?: string
+  kyc_status?: KycStatus   // onboarding KYC status — new customers start as 'not_started'
+  contact_email?: string
+  contact_phone?: string
 }
 
 export const SEED_CUSTOMERS: Customer[] = [
-  { id: 'CUS-001', name: 'Hayleys Logistics', location: 'Colombo, Sri Lanka', tier: 'Key Account', payment_terms: '30-Day Credit', blacklisted: false, credit_hold: false, min_margin_pct: 5 },
-  { id: 'CUS-002', name: 'Brandix Apparel',   location: 'Colombo, Sri Lanka', tier: 'Key Account', payment_terms: '30-Day Credit', blacklisted: false, credit_hold: false, min_margin_pct: 5 },
-  { id: 'CUS-003', name: 'Customer ABC',      location: 'Colombo, Sri Lanka', tier: 'Regular',     payment_terms: 'Pay Upfront',   blacklisted: false, credit_hold: false, min_margin_pct: 7 },
-  { id: 'CUS-004', name: 'MAS Holdings',      location: 'Colombo, Sri Lanka', tier: 'Key Account', payment_terms: '60-Day Credit', blacklisted: false, credit_hold: false, min_margin_pct: 4, notes: 'Strategic account — large monthly volume' },
-  { id: 'CUS-005', name: 'Dilmah Tea',        location: 'Peliyagoda, Sri Lanka', tier: 'Key Account', payment_terms: '30-Day Credit', blacklisted: false, credit_hold: true,  min_margin_pct: 5, notes: 'Credit hold — finance to clear before next quote' },
-  { id: 'CUS-006', name: 'Hela Apparel',      location: 'Katunayake, Sri Lanka', tier: 'Regular',  payment_terms: 'Pay Upfront',   blacklisted: false, credit_hold: false, min_margin_pct: 7 },
-  { id: 'CUS-007', name: 'Vanguard Shippers', location: 'Karachi, Pakistan',  tier: 'Walk-in',     payment_terms: 'Pay Upfront',   blacklisted: true,  credit_hold: false, min_margin_pct: 10, notes: 'Blacklisted — repeated payment defaults in 2025' },
+  { id: 'CUS-001', name: 'Hayleys Logistics', location: 'Colombo, Sri Lanka', tier: 'Key Account', payment_terms: '30-Day Credit', blacklisted: false, credit_hold: false, min_margin_pct: 5, kyc_status: 'approved', contact_email: 'shipping@hayleys.lk', contact_phone: '+94112345001' },
+  { id: 'CUS-002', name: 'Brandix Apparel',   location: 'Colombo, Sri Lanka', tier: 'Key Account', payment_terms: '30-Day Credit', blacklisted: false, credit_hold: false, min_margin_pct: 5, kyc_status: 'approved', contact_email: 'logistics@brandix.com', contact_phone: '+94112345002' },
+  { id: 'CUS-003', name: 'Customer ABC',      location: 'Colombo, Sri Lanka', tier: 'Regular',     payment_terms: 'Pay Upfront',   blacklisted: false, credit_hold: false, min_margin_pct: 7, kyc_status: 'approved', contact_email: 'contact@customerabc.com', contact_phone: '+94112345003' },
+  { id: 'CUS-004', name: 'MAS Holdings',      location: 'Colombo, Sri Lanka', tier: 'Key Account', payment_terms: '60-Day Credit', blacklisted: false, credit_hold: false, min_margin_pct: 4, kyc_status: 'approved', notes: 'Strategic account — large monthly volume', contact_email: 'shipping@masholdings.com', contact_phone: '+94112345004' },
+  { id: 'CUS-005', name: 'Dilmah Tea',        location: 'Peliyagoda, Sri Lanka', tier: 'Key Account', payment_terms: '30-Day Credit', blacklisted: false, credit_hold: true,  min_margin_pct: 5, kyc_status: 'approved', notes: 'Credit hold — finance to clear before next quote', contact_email: 'exports@dilmahtea.com', contact_phone: '+94112345005' },
+  { id: 'CUS-006', name: 'Hela Apparel',      location: 'Katunayake, Sri Lanka', tier: 'Regular',  payment_terms: 'Pay Upfront',   blacklisted: false, credit_hold: false, min_margin_pct: 7, kyc_status: 'pending_customer', contact_email: 'info@helaapparel.lk', contact_phone: '+94112345006' },
+  { id: 'CUS-007', name: 'Vanguard Shippers', location: 'Karachi, Pakistan',  tier: 'Walk-in',     payment_terms: 'Pay Upfront',   blacklisted: true,  credit_hold: false, min_margin_pct: 10, kyc_status: 'approved', notes: 'Blacklisted — repeated payment defaults in 2025', contact_email: 'ops@vanguardshippers.pk', contact_phone: '+92213456789' },
 ]
 
 export function findCustomer(name: string, customers: Customer[]): Customer | undefined {
@@ -99,9 +246,11 @@ export interface Employee {
 }
 
 export const EMPLOYEES: Employee[] = [
-  { id: 1, name: 'Nimal Perera', role: 'Sales Executive' },
-  { id: 2, name: 'Anjali Silva', role: 'Customer Manager' },
-  { id: 3, name: 'Rohan Fernando', role: 'Operations' },
+  { id: 1, name: 'Nimal Perera',       role: 'Sales Executive' },
+  { id: 2, name: 'Anjali Silva',       role: 'Customer Service' },
+  { id: 3, name: 'Rohan Fernando',     role: 'Sales Executive' },
+  { id: 4, name: 'Priya Jayawardena',  role: 'Finance' },
+  { id: 5, name: 'Kamal Dissanayake',  role: 'Procurement' },
 ]
 
 // ==================== SEED DATA ====================
@@ -118,6 +267,7 @@ export const SEED_INQUIRIES: Inquiry[] = [
     employee_id: 2,
     status: 'pending',
     created_at: '2026-05-02 09:14',
+    workflow_stage: 'rate-check',
   },
   {
     id: 'INQ-1040',
@@ -131,6 +281,7 @@ export const SEED_INQUIRIES: Inquiry[] = [
     employee_id: 1,
     status: 'pending',
     created_at: '2026-05-02 08:42',
+    workflow_stage: 'quotation-prep',
   },
   {
     id: 'INQ-1039',
@@ -146,6 +297,7 @@ export const SEED_INQUIRIES: Inquiry[] = [
     created_at: '2026-05-01 14:08',
     completed_at: '2026-05-01 17:22',
     followup_note: 'Quoted, booking confirmed.',
+    workflow_stage: 'completed',
   },
   {
     id: 'INQ-1038',
@@ -161,6 +313,7 @@ export const SEED_INQUIRIES: Inquiry[] = [
     created_at: '2026-05-01 10:20',
     completed_at: '2026-05-01 16:05',
     followup_note: 'Rate sent, awaiting PO.',
+    workflow_stage: 'completed',
   },
   {
     id: 'INQ-1037',
@@ -176,6 +329,7 @@ export const SEED_INQUIRIES: Inquiry[] = [
     created_at: '2026-04-30 11:45',
     completed_at: '2026-04-30 15:10',
     followup_note: 'Space confirmed.',
+    workflow_stage: 'completed',
   },
   {
     id: 'INQ-1036',
@@ -189,6 +343,7 @@ export const SEED_INQUIRIES: Inquiry[] = [
     employee_id: 1,
     status: 'pending',
     created_at: '2026-04-30 09:02',
+    workflow_stage: 'procurement-request',
   },
 ]
 
@@ -229,6 +384,39 @@ export const SEED_MISSING_ITEMS: MissingItem[] = [
   { id: 'MIS-303', customer_name: 'Hela Apparel',      missing_item: 'PO not received',      since: '2026-04-30', cutoff_date: '2026-05-01', employee_id: 1 },
   { id: 'MIS-304', customer_name: 'Hayleys Logistics', missing_item: 'B/L draft approval',   since: '2026-05-02', cutoff_date: '2026-05-06', employee_id: 2 },
 ]
+
+// ==================== RATE RECORD (from AMS) ====================
+export interface RateRecord {
+  id: number
+  liner_name: string
+  origin: string
+  destination: string
+  container_type: string
+  rate_type: string       // 'monthly' | 'contracted' | 'spot'
+  amount: number
+  currency: string
+  valid_from: string
+  valid_to: string
+  source_system: string
+}
+
+export interface InttraSpotRate {
+  id: number
+  liner_name: string
+  liner_code: string
+  origin: string
+  destination: string
+  container_type: string
+  rate_type: 'Spot'
+  amount: number
+  currency: string
+  transit_days: number
+  valid_from: string
+  valid_to: string
+  booking_cutoff: string
+  source: 'InttraAPI'
+  free_time_days: number
+}
 
 // ==================== QUOTATIONS ====================
 export type RateType = 'Spot' | 'Contractual' | 'NAC' | 'Convoy'
@@ -355,6 +543,192 @@ export const SEED_SHIPMENTS: Shipment[] = [
       { id: 'SL-4', port: 'Singapore', type: 'Transshipment', expected_at: '2026-05-08', actual_at: '2026-05-09', status: 'Arrived' },
       { id: 'SL-5', port: 'Rotterdam', type: 'Destination',   expected_at: '2026-05-26',                          status: 'Pending' },
     ],
+  },
+]
+
+// ==================== BOOKINGS ====================
+export type BookingStatus = 'Pending Liner' | 'Liner Confirmed' | 'Released' | 'Cancelled'
+
+export interface Booking {
+  id: string
+  quote_id: string
+  customer_name: string
+  origin: string
+  destination: string
+  shipping_line: string
+  vessel_name: string
+  voyage_number: string
+  container_type: string
+  quantity: number
+  status: BookingStatus
+  is_urgent: boolean
+  booked_by: number
+  confirmed_by: number | null
+  released_by: number | null
+  created_at: string
+  confirmed_at: string | null
+  released_at: string | null
+  procurement_notified: boolean
+  notes: string
+}
+
+export const SEED_BOOKINGS: Booking[] = [
+  {
+    id: 'BKG-901',
+    quote_id: 'QUO-501',
+    customer_name: 'Customer ABC',
+    origin: 'Chennai',
+    destination: 'Colombo',
+    shipping_line: 'Hapag-Lloyd',
+    vessel_name: 'Stuttgart Express',
+    voyage_number: 'VOY-2026-038',
+    container_type: "20'GP",
+    quantity: 5,
+    status: 'Liner Confirmed',
+    is_urgent: false,
+    booked_by: 2,
+    confirmed_by: 5,
+    released_by: null,
+    created_at: '2026-05-15 10:30',
+    confirmed_at: '2026-05-16 14:00',
+    released_at: null,
+    procurement_notified: true,
+    notes: '',
+  },
+  {
+    id: 'BKG-900',
+    quote_id: 'QUO-500',
+    customer_name: 'MAS Holdings',
+    origin: 'Colombo',
+    destination: 'Rotterdam',
+    shipping_line: 'Maersk',
+    vessel_name: 'Maersk Seletar',
+    voyage_number: 'VOY-2026-031',
+    container_type: "40'HC",
+    quantity: 2,
+    status: 'Released',
+    is_urgent: true,
+    booked_by: 2,
+    confirmed_by: 2,
+    released_by: 2,
+    created_at: '2026-05-10 08:15',
+    confirmed_at: '2026-05-10 08:15',
+    released_at: '2026-05-11 09:00',
+    procurement_notified: true,
+    notes: 'Urgent spot rate — CS booked directly with Maersk. Procurement notified post-booking.',
+  },
+]
+
+// ==================== ACTIVITY LOG ====================
+export interface ActivityEntry {
+  id: string
+  timestamp: string
+  actor_role: UserRole
+  actor_id: number
+  action: string
+  ref_type: 'inquiry' | 'quote' | 'booking'
+  ref_id: string
+  customer_name: string
+  pushed_to: UserRole
+  notes: string
+}
+
+export const SEED_ACTIVITY_LOG: ActivityEntry[] = [
+  {
+    id: 'ACT-001',
+    timestamp: '2026-05-02 09:20',
+    actor_role: 'CS',
+    actor_id: 2,
+    action: 'Received inquiry and verified existing customer',
+    ref_type: 'inquiry',
+    ref_id: 'INQ-1041',
+    customer_name: 'Hayleys Logistics',
+    pushed_to: 'CS',
+    notes: 'Key Account, 30-Day Credit. No KYC needed.',
+  },
+  {
+    id: 'ACT-002',
+    timestamp: '2026-05-02 09:45',
+    actor_role: 'CS',
+    actor_id: 2,
+    action: 'Customer verified. Now checking AMS for available rates.',
+    ref_type: 'inquiry',
+    ref_id: 'INQ-1041',
+    customer_name: 'Hayleys Logistics',
+    pushed_to: 'CS',
+    notes: '12 reefer containers Colombo to Hamburg. Checking rate availability.',
+  },
+  {
+    id: 'ACT-003',
+    timestamp: '2026-05-02 08:50',
+    actor_role: 'CS',
+    actor_id: 1,
+    action: 'Received inquiry and verified existing customer',
+    ref_type: 'inquiry',
+    ref_id: 'INQ-1040',
+    customer_name: 'Brandix Apparel',
+    pushed_to: 'CS',
+    notes: 'Key Account verified. Rates available in AMS.',
+  },
+  {
+    id: 'ACT-004',
+    timestamp: '2026-05-02 10:15',
+    actor_role: 'CS',
+    actor_id: 1,
+    action: 'Rate checked and confirmed. Pushed to Sales for quotation preparation.',
+    ref_type: 'inquiry',
+    ref_id: 'INQ-1040',
+    customer_name: 'Brandix Apparel',
+    pushed_to: 'Sales',
+    notes: '4x40ft Colombo to Singapore. Contractual rate available from Maersk.',
+  },
+  {
+    id: 'ACT-005',
+    timestamp: '2026-04-30 09:10',
+    actor_role: 'CS',
+    actor_id: 1,
+    action: 'Received inquiry and verified customer. Rate not in AMS — pushed to Procurement.',
+    ref_type: 'inquiry',
+    ref_id: 'INQ-1036',
+    customer_name: 'Hela Apparel',
+    pushed_to: 'Procurement',
+    notes: '3x20ft Colombo to Mumbai. No rate in system.',
+  },
+  {
+    id: 'ACT-006',
+    timestamp: '2026-05-15 10:35',
+    actor_role: 'CS',
+    actor_id: 2,
+    action: 'Created booking from confirmed quote QUO-501',
+    ref_type: 'booking',
+    ref_id: 'BKG-901',
+    customer_name: 'Customer ABC',
+    pushed_to: 'Procurement',
+    notes: "5x 20'GP Chennai to Colombo via Hapag-Lloyd. Waiting for liner confirmation.",
+  },
+  {
+    id: 'ACT-007',
+    timestamp: '2026-05-16 14:05',
+    actor_role: 'Procurement',
+    actor_id: 5,
+    action: 'Liner confirmed. Vessel: Stuttgart Express, Voyage: VOY-2026-038',
+    ref_type: 'booking',
+    ref_id: 'BKG-901',
+    customer_name: 'Customer ABC',
+    pushed_to: 'CS',
+    notes: 'Hapag-Lloyd confirmed space. Ready for CS to release to customer.',
+  },
+  {
+    id: 'ACT-008',
+    timestamp: '2026-05-10 08:20',
+    actor_role: 'CS',
+    actor_id: 2,
+    action: 'Urgent booking created. CS booked directly with Maersk.',
+    ref_type: 'booking',
+    ref_id: 'BKG-900',
+    customer_name: 'MAS Holdings',
+    pushed_to: 'Procurement',
+    notes: "Spot rate urgent. Procurement must acknowledge. 2x 40'HC Colombo to Rotterdam.",
   },
 ]
 

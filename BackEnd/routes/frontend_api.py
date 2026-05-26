@@ -17,12 +17,17 @@ resend.api_key = os.getenv("RESEND_API", "")
 from Utils.DB_Query.frontend_queries import (
     get_fe_customers, get_fe_inquiries, get_fe_tasks,
     get_fe_missing_items, get_fe_followups, get_fe_quotes,
-    get_fe_shipments, get_fe_employees,
+    get_fe_shipments, get_fe_employees, get_fe_bookings,
     create_fe_inquiry, create_fe_followup, complete_fe_inquiry,
     reopen_fe_inquiry, create_fe_customer, update_fe_customer,
     create_fe_quote, update_fe_quote_status,
     create_fe_task, complete_fe_task,
     advance_fe_shipment_leg, record_fe_shipment_pod,
+    create_fe_booking, confirm_fe_booking, release_fe_booking,
+    notify_procurement_fe_booking,
+    get_fe_activity_log, create_fe_activity,
+    search_fe_rates, simulate_inttra_spot_rates, simulate_inttra_booking,
+    update_fe_inquiry_stage,
 )
 
 router = APIRouter(prefix="/api")
@@ -43,6 +48,8 @@ def dashboard_init():
         "quotes": get_fe_quotes(),
         "shipments": get_fe_shipments(),
         "employees": get_fe_employees(),
+        "bookings": get_fe_bookings(),
+        "activity_log": get_fe_activity_log(),
     }
 
 
@@ -72,6 +79,18 @@ def complete_inquiry(fe_id: str):
     if not result:
         raise HTTPException(404, "Inquiry not found or already completed")
     return result
+
+
+class WorkflowStagePatch(BaseModel):
+    stage: str
+
+
+@router.patch("/inquiries/{fe_id}/workflow-stage")
+def patch_workflow_stage(fe_id: str, body: WorkflowStagePatch):
+    ok = update_fe_inquiry_stage(fe_id, body.stage)
+    if not ok:
+        raise HTTPException(404, f"Inquiry '{fe_id}' not found")
+    return {"success": True}
 
 
 class ReopenBody(BaseModel):
@@ -127,6 +146,7 @@ class CustomerPatch(BaseModel):
     credit_hold: bool | None = None
     min_margin_pct: int | None = None
     notes: str | None = None
+    kyc_status: str | None = None
 
 
 @router.patch("/customers/{name}")
@@ -138,6 +158,65 @@ def patch_customer(name: str, body: CustomerPatch):
     if not ok:
         raise HTTPException(404, f"Customer '{name}' not found")
     return {"success": True}
+
+
+# ---------------------------------------------------------------------------
+# Rate Search
+# ---------------------------------------------------------------------------
+
+@router.get("/rates/search")
+def rate_search(
+    origin: str | None = None,
+    destination: str | None = None,
+    container_type: str | None = None,
+    liner_name: str | None = None,
+    rate_type: str | None = None,
+):
+    return search_fe_rates(
+        origin=origin, destination=destination,
+        container_type=container_type, liner_name=liner_name,
+        rate_type=rate_type,
+    )
+
+
+# ---------------------------------------------------------------------------
+# InttraAPI Spot Rates (simulated)
+# ---------------------------------------------------------------------------
+
+class InttraRateRequest(BaseModel):
+    origin: str = ""
+    destination: str = ""
+    container_type: str = "20'GP"
+
+
+@router.post("/inttra/spot-rates")
+def inttra_spot_rates(body: InttraRateRequest):
+    return simulate_inttra_spot_rates(
+        origin=body.origin,
+        destination=body.destination,
+        container_type=body.container_type,
+    )
+
+
+class InttraBookingRequest(BaseModel):
+    booking_id: str = ""
+    shipping_line: str = ""
+    origin: str = ""
+    destination: str = ""
+    container_type: str = "20'GP"
+    quantity: int = 1
+
+
+@router.post("/inttra/book")
+def inttra_book(body: InttraBookingRequest):
+    return simulate_inttra_booking(
+        booking_id=body.booking_id,
+        shipping_line=body.shipping_line,
+        origin=body.origin,
+        destination=body.destination,
+        container_type=body.container_type,
+        quantity=body.quantity,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -227,6 +306,80 @@ def patch_record_pod(shipment_id: str):
     if not ok:
         raise HTTPException(404, f"Shipment '{shipment_id}' not found")
     return {"success": True}
+
+
+# ---------------------------------------------------------------------------
+# Bookings
+# ---------------------------------------------------------------------------
+
+class BookingCreate(BaseModel):
+    customer_name: str
+    quote_id: str
+    shipping_line: str = ""
+    container_type: str = "20'GP"
+    quantity: int = 1
+    is_urgent: bool = False
+    booked_by: int = 2
+
+
+@router.post("/bookings")
+def create_booking(body: BookingCreate):
+    return create_fe_booking(body.model_dump())
+
+
+class BookingConfirm(BaseModel):
+    vessel_name: str = ""
+    voyage_number: str = ""
+    confirmed_by: int = 5
+
+
+@router.patch("/bookings/{booking_id}/confirm")
+def patch_confirm_booking(booking_id: str, body: BookingConfirm):
+    result = confirm_fe_booking(booking_id, body.vessel_name, body.voyage_number, body.confirmed_by)
+    if not result:
+        raise HTTPException(404, f"Booking '{booking_id}' not found")
+    return result
+
+
+class BookingRelease(BaseModel):
+    note: str = ""
+    released_by: int = 2
+
+
+@router.patch("/bookings/{booking_id}/release")
+def patch_release_booking(booking_id: str, body: BookingRelease):
+    result = release_fe_booking(booking_id, body.note, body.released_by)
+    if not result:
+        raise HTTPException(404, f"Booking '{booking_id}' not found")
+    return result
+
+
+@router.patch("/bookings/{booking_id}/notify")
+def patch_notify_procurement(booking_id: str):
+    ok = notify_procurement_fe_booking(booking_id)
+    if not ok:
+        raise HTTPException(404, f"Booking '{booking_id}' not found")
+    return {"success": True}
+
+
+# ---------------------------------------------------------------------------
+# Activity Log
+# ---------------------------------------------------------------------------
+
+class ActivityCreate(BaseModel):
+    actor_role: str = "CS"
+    actor_id: int = 1
+    action: str = ""
+    ref_type: str = "inquiry"
+    ref_id: str = ""
+    customer_name: str = ""
+    pushed_to: str = "CS"
+    notes: str = ""
+
+
+@router.post("/activity-log")
+def post_activity(body: ActivityCreate):
+    return create_fe_activity(body.model_dump())
 
 
 # ---------------------------------------------------------------------------

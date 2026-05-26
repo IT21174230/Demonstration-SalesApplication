@@ -122,6 +122,9 @@ def get_fe_customers() -> list[dict]:
             "credit_hold": c.get("credit_hold", False),
             "min_margin_pct": c.get("min_margin_pct", 10),
             "notes": c.get("notes"),
+            "kyc_status": c.get("kyc_status", "approved"),
+            "contact_email": c.get("contact_email"),
+            "contact_phone": c.get("contact_phone"),
         })
     return result
 
@@ -151,6 +154,7 @@ def get_fe_inquiries() -> list[dict]:
             "employee_id": i.get("received_by_party_id", 1),
             "status": fe_status,
             "created_at": created_at,
+            "workflow_stage": i.get("workflow_stage", "inquiry-received"),
         }
         # Add completion fields for completed inquiries
         if fe_status == "completed":
@@ -293,6 +297,12 @@ def create_fe_inquiry(payload: dict) -> dict:
     next_id = max((i["id"] for i in inquiries), default=5000) + 1
     now = _now_iso()
 
+    # Existing customers (KYC approved) go to CS for AMS rate check first
+    if cust and cust.get("kyc_status") == "approved":
+        initial_stage = "rate-check"
+    else:
+        initial_stage = "inquiry-received"
+
     new_inq = {
         "id": next_id,
         "customer_id": customer_id,
@@ -308,6 +318,7 @@ def create_fe_inquiry(payload: dict) -> dict:
         "inquiry_text": payload.get("inquiry_text", ""),
         "request": payload.get("request", ""),
         "sbu": payload.get("sbu", "Ocean Exports"),
+        "workflow_stage": initial_stage,
     }
     inquiries.insert(0, new_inq)
     _save_data(data)
@@ -326,6 +337,7 @@ def create_fe_inquiry(payload: dict) -> dict:
         "employee_id": new_inq["received_by_party_id"],
         "status": "pending",
         "created_at": _now_stamp(),
+        "workflow_stage": initial_stage,
     }
 
 
@@ -464,6 +476,19 @@ def reopen_fe_inquiry(customer_name: str, note: str) -> bool:
     return True
 
 
+def update_fe_inquiry_stage(fe_id: str, stage: str) -> bool:
+    """Update the workflow_stage of an inquiry by its frontend ID."""
+    data = _load_data()
+    backend_id = _inquiry_backend_id_from_data(fe_id, data)
+    inquiries = data.get("inquiries", [])
+    target = next((i for i in inquiries if i["id"] == backend_id), None) if backend_id else None
+    if not target:
+        return False
+    target["workflow_stage"] = stage
+    _save_data(data)
+    return True
+
+
 def create_fe_customer(payload: dict) -> dict:
     """
     Create a new customer with frontend fields.
@@ -516,7 +541,7 @@ def update_fe_customer(name: str, patch: dict) -> bool:
         return False
 
     # Apply patch — only allow known fields
-    allowed = {"tier", "payment_terms", "location", "blacklisted", "credit_hold", "min_margin_pct", "notes"}
+    allowed = {"tier", "payment_terms", "location", "blacklisted", "credit_hold", "min_margin_pct", "notes", "kyc_status"}
     for k, v in patch.items():
         if k in allowed:
             target[k] = v
@@ -695,3 +720,354 @@ def record_fe_shipment_pod(shipment_id: str) -> bool:
     target["pod_received"] = _now_stamp()
     _save_data(data)
     return True
+
+
+# ---------------------------------------------------------------------------
+# Bookings
+# ---------------------------------------------------------------------------
+
+def get_fe_bookings() -> list[dict]:
+    """Read from bookings table — resolve customer_name."""
+    data = _load_data()
+    names = _customer_name_map(data)
+    result = []
+    for b in data.get("bookings", []):
+        rec = {**b}
+        rec["customer_name"] = names.get(b.get("customer_id", 0), "Unknown")
+        rec.pop("customer_id", None)
+        result.append(rec)
+    return result
+
+
+def create_fe_booking(payload: dict) -> dict:
+    """
+    Create a booking from a confirmed quote.
+    payload: { customer_name, quote_id, shipping_line, container_type, quantity, is_urgent, booked_by }
+    If is_urgent=True, status starts at 'Liner Confirmed' and procurement_notified=False.
+    Otherwise status starts at 'Pending Liner'.
+    """
+    data = _load_data()
+    bookings = data.setdefault("bookings", [])
+    customers = data.get("customers", [])
+
+    customer_name = payload.get("customer_name", "")
+    cust = next((c for c in customers if c["name"].lower() == customer_name.lower()), None)
+    customer_id = cust["id"] if cust else 0
+
+    is_urgent = payload.get("is_urgent", False)
+    now = _now_stamp()
+
+    # Generate next booking ID
+    existing_nums = []
+    for b in bookings:
+        try:
+            existing_nums.append(int(b["id"].split("-")[1]))
+        except (ValueError, IndexError):
+            pass
+    next_num = max(existing_nums, default=899) + 1
+    booking_id = f"BKG-{next_num}"
+
+    # Resolve quote details for origin/destination
+    quote_id = payload.get("quote_id", "")
+    fe_quotes = data.get("fe_quotes", [])
+    quote = next((q for q in fe_quotes if q["id"] == quote_id), None)
+
+    new_booking = {
+        "id": booking_id,
+        "quote_id": quote_id,
+        "customer_id": customer_id,
+        "origin": quote["origin"] if quote else payload.get("origin", ""),
+        "destination": quote["destination"] if quote else payload.get("destination", ""),
+        "shipping_line": payload.get("shipping_line", ""),
+        "vessel_name": "",
+        "voyage_number": "",
+        "container_type": payload.get("container_type", "20'GP"),
+        "quantity": payload.get("quantity", 1),
+        "status": "Liner Confirmed" if is_urgent else "Pending Liner",
+        "is_urgent": is_urgent,
+        "booked_by": payload.get("booked_by", 2),
+        "confirmed_by": payload.get("booked_by", 2) if is_urgent else None,
+        "released_by": None,
+        "created_at": now,
+        "confirmed_at": now if is_urgent else None,
+        "released_at": None,
+        "procurement_notified": not is_urgent,
+        "notes": "Urgent booking — CS booked directly with liner" if is_urgent else "",
+    }
+    bookings.insert(0, new_booking)
+    _save_data(data)
+
+    names = _customer_name_map(data)
+    result = {**new_booking}
+    result["customer_name"] = names.get(customer_id, customer_name)
+    result.pop("customer_id", None)
+    return result
+
+
+def confirm_fe_booking(booking_id: str, vessel_name: str = "", voyage_number: str = "", confirmed_by: int = 5) -> dict | None:
+    """Procurement confirms liner space for a booking."""
+    data = _load_data()
+    bookings = data.get("bookings", [])
+    target = next((b for b in bookings if b["id"] == booking_id), None)
+    if not target:
+        return None
+
+    target["status"] = "Liner Confirmed"
+    target["confirmed_at"] = _now_stamp()
+    target["confirmed_by"] = confirmed_by
+    if vessel_name:
+        target["vessel_name"] = vessel_name
+    if voyage_number:
+        target["voyage_number"] = voyage_number
+    _save_data(data)
+
+    names = _customer_name_map(data)
+    result = {**target}
+    result["customer_name"] = names.get(target.get("customer_id", 0), "Unknown")
+    result.pop("customer_id", None)
+    return result
+
+
+def release_fe_booking(booking_id: str, note: str = "", released_by: int = 2) -> dict | None:
+    """CS releases container/instructions to the customer."""
+    data = _load_data()
+    bookings = data.get("bookings", [])
+    target = next((b for b in bookings if b["id"] == booking_id), None)
+    if not target:
+        return None
+
+    target["status"] = "Released"
+    target["released_at"] = _now_stamp()
+    target["released_by"] = released_by
+    if note:
+        target["notes"] = note
+    _save_data(data)
+
+    names = _customer_name_map(data)
+    result = {**target}
+    result["customer_name"] = names.get(target.get("customer_id", 0), "Unknown")
+    result.pop("customer_id", None)
+    return result
+
+
+def notify_procurement_fe_booking(booking_id: str) -> bool:
+    """Mark an urgent booking as procurement-notified."""
+    data = _load_data()
+    bookings = data.get("bookings", [])
+    target = next((b for b in bookings if b["id"] == booking_id), None)
+    if not target:
+        return False
+    target["procurement_notified"] = True
+    _save_data(data)
+    return True
+
+
+# ---------------------------------------------------------------------------
+# Activity Log
+# ---------------------------------------------------------------------------
+
+def get_fe_activity_log() -> list[dict]:
+    """Read activity_log entries — already in frontend shape."""
+    data = _load_data()
+    result = []
+    for a in data.get("activity_log", []):
+        result.append({
+            "id": f"ACT-{a['id']:03d}",
+            "timestamp": a.get("timestamp", ""),
+            "actor_role": a.get("actor_role", "CS"),
+            "actor_id": a.get("actor_id", 1),
+            "action": a.get("action", ""),
+            "ref_type": a.get("ref_type", "inquiry"),
+            "ref_id": a.get("ref_id", ""),
+            "customer_name": a.get("customer_name", ""),
+            "pushed_to": a.get("pushed_to", "CS"),
+            "notes": a.get("notes", ""),
+        })
+    return result
+
+
+def create_fe_activity(payload: dict) -> dict:
+    """Create a new activity log entry."""
+    data = _load_data()
+    log = data.setdefault("activity_log", [])
+    next_id = max((a["id"] for a in log), default=0) + 1
+    now = _now_stamp()
+
+    new_entry = {
+        "id": next_id,
+        "timestamp": now,
+        "actor_role": payload.get("actor_role", "CS"),
+        "actor_id": payload.get("actor_id", 1),
+        "action": payload.get("action", ""),
+        "ref_type": payload.get("ref_type", "inquiry"),
+        "ref_id": payload.get("ref_id", ""),
+        "customer_name": payload.get("customer_name", ""),
+        "pushed_to": payload.get("pushed_to", "CS"),
+        "notes": payload.get("notes", ""),
+    }
+    log.insert(0, new_entry)
+    _save_data(data)
+
+    return {
+        "id": f"ACT-{next_id:03d}",
+        "timestamp": now,
+        "actor_role": new_entry["actor_role"],
+        "actor_id": new_entry["actor_id"],
+        "action": new_entry["action"],
+        "ref_type": new_entry["ref_type"],
+        "ref_id": new_entry["ref_id"],
+        "customer_name": new_entry["customer_name"],
+        "pushed_to": new_entry["pushed_to"],
+        "notes": new_entry["notes"],
+    }
+
+
+# ---------------------------------------------------------------------------
+# Rate Search
+# ---------------------------------------------------------------------------
+
+def search_fe_rates(
+    origin: str | None = None,
+    destination: str | None = None,
+    container_type: str | None = None,
+    liner_name: str | None = None,
+    rate_type: str | None = None,
+) -> list[dict]:
+    """Search rates table and return frontend-shaped results."""
+    from .queries import search_rates
+    results = search_rates(
+        origin=origin, destination=destination,
+        container_type=container_type, liner_name=liner_name,
+        rate_type=rate_type,
+    )
+    return [{
+        "id": r["id"],
+        "liner_name": r.get("liner_name", ""),
+        "origin": r.get("origin", ""),
+        "destination": r.get("destination", ""),
+        "container_type": r.get("container_type", ""),
+        "rate_type": r.get("rate_type", ""),
+        "amount": r.get("amount", 0),
+        "currency": r.get("currency", "USD"),
+        "valid_from": r.get("valid_from", ""),
+        "valid_to": r.get("valid_to", ""),
+        "source_system": r.get("source_system", ""),
+    } for r in results]
+
+
+# ---------------------------------------------------------------------------
+# InttraAPI Simulation
+# ---------------------------------------------------------------------------
+
+def simulate_inttra_spot_rates(
+    origin: str | None = None,
+    destination: str | None = None,
+    container_type: str | None = None,
+) -> list[dict]:
+    """
+    Simulate an InttraAPI spot rate lookup.
+    Returns 2-4 mock spot rate offers with realistic freight data.
+    Uses a hash of the route as seed so results are deterministic per route.
+    """
+    import hashlib
+    from datetime import timedelta
+
+    seed = hashlib.md5(f"{origin or ''}{destination or ''}".encode()).hexdigest()
+    seed_int = int(seed[:8], 16)
+
+    liners = [
+        ("Maersk Line", "MAEU"),
+        ("MSC", "MSCU"),
+        ("CMA CGM", "CMDU"),
+        ("Hapag-Lloyd", "HLCU"),
+        ("ONE", "ONEY"),
+        ("Evergreen", "EGLV"),
+        ("COSCO Shipping", "COSU"),
+    ]
+
+    ct = container_type or "20'GP"
+    base_rate = 800 + (seed_int % 1200)
+
+    results = []
+    num_results = 2 + (seed_int % 3)  # 2-4 results
+
+    for i in range(num_results):
+        liner_idx = (seed_int + i * 3) % len(liners)
+        liner_name, liner_code = liners[liner_idx]
+        variance = -150 + (seed_int + i * 7) % 400
+        amount = base_rate + variance
+
+        transit = 7 + (seed_int + i * 5) % 21
+        now = datetime.now()
+        valid_from = now.strftime("%Y-%m-%d")
+        valid_to = (now + timedelta(days=3 + i)).strftime("%Y-%m-%d")
+        booking_cutoff = (now + timedelta(days=1 + i)).strftime("%Y-%m-%d")
+
+        results.append({
+            "id": i + 1,
+            "liner_name": liner_name,
+            "liner_code": liner_code,
+            "origin": origin or "N/A",
+            "destination": destination or "N/A",
+            "container_type": ct,
+            "rate_type": "Spot",
+            "amount": amount,
+            "currency": "USD",
+            "transit_days": transit,
+            "valid_from": valid_from,
+            "valid_to": valid_to,
+            "booking_cutoff": booking_cutoff,
+            "source": "InttraAPI",
+            "free_time_days": 7 + (seed_int + i) % 7,
+        })
+
+    return results
+
+
+def simulate_inttra_booking(
+    booking_id: str = "",
+    shipping_line: str = "",
+    origin: str = "",
+    destination: str = "",
+    container_type: str = "20'GP",
+    quantity: int = 1,
+) -> dict:
+    """
+    Simulate an InttraAPI booking request.
+    Returns a mock booking confirmation with vessel, voyage, and reference numbers.
+    Uses deterministic hashing so the same inputs always produce the same result.
+    """
+    import hashlib
+
+    seed = hashlib.md5(f"{booking_id}{shipping_line}{origin}{destination}".encode()).hexdigest()
+    seed_int = int(seed[:8], 16)
+
+    vessels = [
+        "Maersk Seletar", "MSC Gulsun", "CMA CGM Marco Polo", "Ever Ace",
+        "COSCO Universe", "ONE Commitment", "Hapag Colombo Express",
+        "Madrid Maersk", "MSC Isabella", "CMA CGM Palais Royal",
+    ]
+    vessel = vessels[seed_int % len(vessels)]
+    voyage = f"VOY-{2026}-{(seed_int % 900) + 100}"
+    booking_ref = f"INTR-{seed[:8].upper()}"
+
+    now = datetime.now()
+    from datetime import timedelta
+    etd = now + timedelta(days=3 + seed_int % 10)
+    eta = etd + timedelta(days=7 + seed_int % 21)
+
+    return {
+        "success": True,
+        "booking_reference": booking_ref,
+        "vessel_name": vessel,
+        "voyage_number": voyage,
+        "shipping_line": shipping_line or "Maersk Line",
+        "origin": origin,
+        "destination": destination,
+        "container_type": container_type,
+        "quantity": quantity,
+        "etd": etd.strftime("%Y-%m-%d"),
+        "eta": eta.strftime("%Y-%m-%d"),
+        "status": "Confirmed",
+        "message": f"Booking confirmed with {shipping_line or 'carrier'}. Vessel {vessel}, Voyage {voyage}. ETD {etd.strftime('%Y-%m-%d')}, ETA {eta.strftime('%Y-%m-%d')}.",
+    }

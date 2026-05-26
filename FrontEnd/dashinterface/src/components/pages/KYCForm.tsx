@@ -1,6 +1,7 @@
 import { useState } from 'react'
-import { Printer, Send, Loader2 } from 'lucide-react'
+import { Printer, Send, Loader2, ShieldCheck } from 'lucide-react'
 import type { Customer } from '../../mockData'
+import { useRole } from '../../RoleContext'
 import { apiSendKyc } from '../../api'
 
 interface KYCFormProps {
@@ -9,6 +10,9 @@ interface KYCFormProps {
 }
 
 export default function KYCForm({ customers, onFlash }: KYCFormProps) {
+  const { hasPermission } = useRole()
+  const canSendKyc = hasPermission('kyc:send')
+  const canVerifyKyc = hasPermission('kyc:verify')
   const today = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
 
   const [customerName, setCustomerName] = useState('')
@@ -96,18 +100,28 @@ export default function KYCForm({ customers, onFlash }: KYCFormProps) {
           </div>
           <button
             className="db-btn primary"
-            onClick={handleSendKyc}
-            disabled={!canSend || sending}
+            onClick={() => canSendKyc && handleSendKyc()}
+            disabled={!canSend || sending || !canSendKyc}
+            title={canSendKyc ? 'Send KYC form via email' : 'Restricted — requires CS role'}
             style={{
               display: 'flex', alignItems: 'center', gap: 6,
-              opacity: canSend && !sending ? 1 : 0.5,
-              cursor: canSend && !sending ? 'pointer' : 'not-allowed',
+              opacity: canSend && !sending && canSendKyc ? 1 : 0.4,
+              cursor: canSend && !sending && canSendKyc ? 'pointer' : 'not-allowed',
               marginBottom: 1,
             }}
           >
             {sending ? <Loader2 size={14} className="spin" /> : <Send size={14} />}
             {sending ? 'Sending...' : 'Send KYC'}
           </button>
+          {canVerifyKyc && (
+            <button
+              className="db-btn primary"
+              onClick={() => onFlash('KYC verified — customer cleared for quotation')}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 1, background: '#16a34a' }}
+            >
+              <ShieldCheck size={14} /> Verify KYC
+            </button>
+          )}
         </div>
       </div>
 

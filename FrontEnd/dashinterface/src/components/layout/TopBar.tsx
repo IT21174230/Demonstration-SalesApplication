@@ -1,12 +1,21 @@
-import { Bell, Settings, RotateCcw } from 'lucide-react'
+import { Bell, Settings, RotateCcw, ChevronDown } from 'lucide-react'
 import { resetPersistentDemo } from '../../hooks'
+import { EMPLOYEES, EMPLOYEE_ROLE_MAP, ROLE_LABELS, ROLE_COLORS, type UserRole, type Employee } from '../../mockData'
 
 interface TopBarProps {
   currentPageLabel: string
+  activeEmployee: Employee
+  activeRole: UserRole
+  onSwitchEmployee: (id: number) => void
 }
 
-export default function TopBar({ currentPageLabel }: TopBarProps) {
+function getInitials(name: string): string {
+  return name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2)
+}
+
+export default function TopBar({ currentPageLabel, activeEmployee, activeRole, onSwitchEmployee }: TopBarProps) {
   const today = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+  const roleColor = ROLE_COLORS[activeRole]
 
   const handleReset = () => {
     if (!confirm('Reset the demo? This wipes all inquiries, customers, quotes, shipments, and chat history back to the seed data.')) return
@@ -17,8 +26,8 @@ export default function TopBar({ currentPageLabel }: TopBarProps) {
   return (
     <header className="db-topbar">
       <div className="db-topbar-brand">
-        <div className="db-topbar-brand-icon">L</div>
-        <span>Logistics Tracker</span>
+        <div className="db-topbar-brand-icon">F</div>
+        <span>FreightOS</span>
       </div>
 
       <div className="db-topbar-sep" />
@@ -27,6 +36,34 @@ export default function TopBar({ currentPageLabel }: TopBarProps) {
 
       <div className="db-topbar-right">
         <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{today}</span>
+
+        {/* Role badge */}
+        <span
+          className="db-topbar-role-pill"
+          style={{
+            background: roleColor + '12',
+            color: roleColor,
+            border: `1px solid ${roleColor}30`,
+          }}
+        >
+          {ROLE_LABELS[activeRole]}
+        </span>
+
+        {/* Role switcher */}
+        <div className="db-topbar-role-switch">
+          <select
+            value={activeEmployee.id}
+            onChange={e => onSwitchEmployee(Number(e.target.value))}
+            className="db-topbar-role-select"
+          >
+            {EMPLOYEES.map(emp => (
+              <option key={emp.id} value={emp.id}>
+                {emp.name} ({ROLE_LABELS[EMPLOYEE_ROLE_MAP[emp.id]]})
+              </option>
+            ))}
+          </select>
+          <ChevronDown size={10} className="db-topbar-role-chevron" />
+        </div>
 
         <button
           className="db-topbar-icon-btn"
@@ -46,12 +83,15 @@ export default function TopBar({ currentPageLabel }: TopBarProps) {
         </button>
 
         <div className="db-topbar-user" style={{ gap: 8 }}>
-          <div className="db-topbar-avatar" style={{ background: 'linear-gradient(135deg, #4f46e5, #7c3aed)' }}>
-            NP
+          <div
+            className="db-topbar-avatar"
+            style={{ background: `linear-gradient(135deg, ${roleColor}, ${roleColor}cc)` }}
+          >
+            {getInitials(activeEmployee.name)}
           </div>
           <div style={{ textAlign: 'left' }}>
-            <div className="db-topbar-username">Nimal Perera</div>
-            <div className="db-topbar-role">Sales Executive</div>
+            <div className="db-topbar-username">{activeEmployee.name}</div>
+            <div className="db-topbar-role">{activeEmployee.role}</div>
           </div>
         </div>
       </div>

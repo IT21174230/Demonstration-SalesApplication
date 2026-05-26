@@ -14,7 +14,8 @@ tools = [
                             "quotations", "process_instances", "step_executions",
                             "step_state_history", "main_processes", "process_steps",
                             "activity_types", "responsible_parties", "documents_systems",
-                            "step_responsible_parties", "step_notified_parties", "step_documents"
+                            "step_responsible_parties", "step_notified_parties", "step_documents",
+                            "bookings"
                         ],
                         "description": "The table to retrieve all records from."
                     }
@@ -241,7 +242,8 @@ tools = [
                             "customers", "inquiries", "rates", "rate_requests",
                             "quotations", "process_instances", "step_executions",
                             "step_state_history", "main_processes", "process_steps",
-                            "activity_types", "responsible_parties", "documents_systems"
+                            "activity_types", "responsible_parties", "documents_systems",
+                            "bookings"
                         ],
                         "description": "The table to look up."
                     },
@@ -682,6 +684,124 @@ tools = [
                     }
                 },
                 "required": ["customer_id"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_booking",
+            "description": "Create a new booking from a confirmed quotation. Normal flow: status starts at 'Pending Liner' (Procurement must confirm space). Urgent flow (is_urgent=true): status starts at 'Liner Confirmed' (CS books directly, must notify Procurement later).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "customer_id": {
+                        "type": "integer",
+                        "description": "The customer ID."
+                    },
+                    "quote_id": {
+                        "type": "string",
+                        "description": "The confirmed quote ID, e.g. QUO-501."
+                    },
+                    "shipping_line": {
+                        "type": "string",
+                        "description": "Shipping line name, e.g. Maersk, Hapag-Lloyd."
+                    },
+                    "container_type": {
+                        "type": "string",
+                        "description": "Container type, e.g. 20'GP, 40'HC."
+                    },
+                    "quantity": {
+                        "type": "integer",
+                        "description": "Number of containers."
+                    },
+                    "is_urgent": {
+                        "type": "boolean",
+                        "description": "If true, CS books directly with liner (bypasses Procurement). Defaults to false."
+                    }
+                },
+                "required": ["customer_id", "quote_id", "shipping_line"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "update_booking_status",
+            "description": "Update a booking's status. Use 'confirm' to mark liner-confirmed (with vessel details), 'release' to release to customer, or 'cancel' to cancel.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "booking_id": {
+                        "type": "string",
+                        "description": "The booking ID, e.g. BKG-901."
+                    },
+                    "action": {
+                        "type": "string",
+                        "enum": ["confirm", "release", "cancel"],
+                        "description": "Action to perform on the booking."
+                    },
+                    "vessel_name": {
+                        "type": "string",
+                        "description": "Vessel name (only for confirm action)."
+                    },
+                    "voyage_number": {
+                        "type": "string",
+                        "description": "Voyage number (only for confirm action)."
+                    },
+                    "notes": {
+                        "type": "string",
+                        "description": "Optional notes, e.g. release instructions for the customer."
+                    }
+                },
+                "required": ["booking_id", "action"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_bookings",
+            "description": "Search for bookings by customer, quote, status, or urgency.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "customer_id": {
+                        "type": "integer",
+                        "description": "Filter by customer ID."
+                    },
+                    "quote_id": {
+                        "type": "string",
+                        "description": "Filter by quote ID (partial match)."
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": ["Pending Liner", "Liner Confirmed", "Released", "Cancelled"],
+                        "description": "Filter by booking status."
+                    },
+                    "is_urgent": {
+                        "type": "boolean",
+                        "description": "Filter by urgency flag."
+                    }
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "notify_procurement",
+            "description": "Mark an urgent booking as procurement-notified. Use this after CS books directly with a liner to inform Procurement.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "booking_id": {
+                        "type": "string",
+                        "description": "The booking ID to notify procurement about."
+                    }
+                },
+                "required": ["booking_id"]
             }
         }
     },

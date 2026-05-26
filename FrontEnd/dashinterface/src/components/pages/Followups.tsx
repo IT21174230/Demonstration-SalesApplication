@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react'
-import { CheckCircle2, AlertTriangle, ListPlus, History, Phone, Zap } from 'lucide-react'
+import { CheckCircle2, AlertTriangle, ListPlus, History, Phone, Zap, Lock } from 'lucide-react'
 import {
   EMPLOYEES, isOverdue, daysOverdue, todayISO, isSpotInquiry,
   type Inquiry, type Task, type MissingItem, type Followup,
 } from '../../mockData'
+import { useRole } from '../../RoleContext'
 
 interface FollowupsProps {
   inquiries: Inquiry[]
@@ -19,6 +20,10 @@ export default function Followups({
   inquiries, tasks, missingItems, followups,
   onAddFollowup, onAddTask, onCompleteTask,
 }: FollowupsProps) {
+  const { hasPermission } = useRole()
+  const canCreateFollowup = hasPermission('followup:create')
+  const canCreateTask = hasPermission('task:create')
+  const canCompleteTask = hasPermission('task:complete')
   const [followupCustomer, setFollowupCustomer] = useState('')
   const [followupNote, setFollowupNote] = useState('')
   const [followupEmployee, setFollowupEmployee] = useState<number>(1)
@@ -221,10 +226,12 @@ export default function Followups({
           </select>
           <button
             className="db-btn primary"
-            onClick={handleLogFollowup}
-            style={{ display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}
+            onClick={() => canCreateFollowup && handleLogFollowup()}
+            disabled={!canCreateFollowup}
+            title={canCreateFollowup ? 'Log follow-up' : 'Restricted — requires CS, Sales, or Procurement role'}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap', opacity: canCreateFollowup ? 1 : 0.4, cursor: canCreateFollowup ? 'pointer' : 'not-allowed' }}
           >
-            <CheckCircle2 size={12} /> Log Follow-up
+            {canCreateFollowup ? <CheckCircle2 size={12} /> : <Lock size={10} />} Log Follow-up
           </button>
         </div>
 
@@ -319,11 +326,12 @@ export default function Followups({
           </select>
           <button
             className="db-btn primary"
-            onClick={handleAddTask}
-            disabled={!taskCustomer.trim() || !taskText.trim()}
-            style={{ display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap', opacity: taskCustomer.trim() && taskText.trim() ? 1 : 0.5 }}
+            onClick={() => canCreateTask && handleAddTask()}
+            disabled={!canCreateTask || !taskCustomer.trim() || !taskText.trim()}
+            title={canCreateTask ? 'Add task' : 'Restricted — requires CS, Sales, or Procurement role'}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap', opacity: canCreateTask && taskCustomer.trim() && taskText.trim() ? 1 : 0.4, cursor: canCreateTask ? 'pointer' : 'not-allowed' }}
           >
-            <ListPlus size={12} /> Add Task
+            {canCreateTask ? <ListPlus size={12} /> : <Lock size={10} />} Add Task
           </button>
         </div>
 
@@ -359,7 +367,13 @@ export default function Followups({
                     <td style={{ padding: '12px 8px', color: 'var(--text-secondary)' }}>{empName(t.employee_id)}</td>
                     <td style={{ padding: '12px 8px' }}>
                       {isPending && (
-                        <button className="lt-icon-btn" title="Complete task" onClick={() => onCompleteTask(t.id)}>
+                        <button
+                          className="lt-icon-btn"
+                          title={canCompleteTask ? 'Complete task' : 'Restricted — requires CS, Sales, or Procurement role'}
+                          onClick={() => canCompleteTask && onCompleteTask(t.id)}
+                          disabled={!canCompleteTask}
+                          style={{ opacity: canCompleteTask ? 1 : 0.4, cursor: canCompleteTask ? 'pointer' : 'not-allowed' }}
+                        >
                           <CheckCircle2 size={12} />
                         </button>
                       )}

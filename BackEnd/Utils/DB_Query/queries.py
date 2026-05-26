@@ -186,3 +186,18 @@ def get_state_history_for_execution(step_execution_id: int) -> list[dict]:
         sh for sh in get_all("step_state_history")
         if sh.get("step_execution_id") == step_execution_id
     ]
+
+
+def search_bookings(
+    customer_id: int | None = None,
+    quote_id: str | None = None,
+    status: str | None = None,
+    is_urgent: bool | None = None,
+) -> list[dict]:
+    return [
+        b for b in get_all("bookings")
+        if _matches_exact(b.get("customer_id"), customer_id)
+        and _matches_str(b.get("quote_id"), quote_id)
+        and _matches_exact(b.get("status"), status)
+        and (is_urgent is None or b.get("is_urgent") == is_urgent)
+    ]

@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react'
-import { FileText, Plus, ShieldCheck, X, Send, Trash2, CheckCircle2, Loader2 } from 'lucide-react'
+import { FileText, Plus, ShieldCheck, X, Send, Trash2, CheckCircle2, Loader2, Lock } from 'lucide-react'
 import {
-  EMPLOYEES, findCustomer,
+  EMPLOYEES, findCustomer, ROLE_LABELS,
   type Quote, type QuoteLine, type QuoteStatus, type QuoteType, type RateType,
   type Customer, type Inquiry,
 } from '../../mockData'
+import { useRole } from '../../RoleContext'
 import { apiSendQuotation } from '../../api'
 
 interface QuotationsProps {
@@ -37,6 +38,12 @@ const BIG_SCHEDULE_LINES = ['Maersk', 'CMA CGM', 'MSC', 'Hapag-Lloyd', 'ONE', 'E
 export default function Quotations({
   quotes, customers, inquiries, onAddQuote, onSetQuoteStatus, onFlash, preFillCustomer, onPreFillConsumed,
 }: QuotationsProps) {
+  const { hasPermission, activeRole } = useRole()
+  const canCreate = hasPermission('quote:create')
+  const canApprove = hasPermission('quote:approve')
+  const canSendQuote = hasPermission('quote:send')
+  const canConfirm = hasPermission('quote:confirm')
+  const canReject = hasPermission('quote:reject')
   const [statusFilter, setStatusFilter] = useState<QuoteStatus | 'all'>('all')
   const [customerFilter, setCustomerFilter] = useState('')
   const [showBuilder, setShowBuilder] = useState(!!preFillCustomer)
@@ -81,8 +88,14 @@ export default function Quotations({
               {quotes.length} quotes · {counts['Awaiting Approval'] ?? 0} pending approval · {counts['Confirmed'] ?? 0} confirmed
             </div>
           </div>
-          <button className="db-btn primary" onClick={() => setShowBuilder(true)} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <Plus size={12} /> New Quote
+          <button
+            className="db-btn primary"
+            onClick={() => canCreate && setShowBuilder(true)}
+            disabled={!canCreate}
+            title={canCreate ? 'Create a new quotation' : `Restricted — requires Sales role`}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, opacity: canCreate ? 1 : 0.4, cursor: canCreate ? 'pointer' : 'not-allowed' }}
+          >
+            {canCreate ? <Plus size={12} /> : <Lock size={10} />} New Quote
           </button>
         </div>
       </div>
@@ -199,27 +212,60 @@ export default function Quotations({
                   </table>
                 </div>
 
-                {/* Action row — status transitions */}
+                {/* Action row — status transitions (role-gated) */}
                 <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
                   {q.status === 'Awaiting Approval' && (
                     <>
-                      <button className="db-btn primary" onClick={() => onSetQuoteStatus(q.id, 'Approved')} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                        <ShieldCheck size={11} /> Approve
+                      <button
+                        className="db-btn primary"
+                        onClick={() => canApprove && onSetQuoteStatus(q.id, 'Approved')}
+                        disabled={!canApprove}
+                        title={canApprove ? 'Approve this quote' : 'Restricted — requires Finance role'}
+                        style={{ display: 'flex', alignItems: 'center', gap: 4, opacity: canApprove ? 1 : 0.4, cursor: canApprove ? 'pointer' : 'not-allowed' }}
+                      >
+                        {canApprove ? <ShieldCheck size={11} /> : <Lock size={9} />} Approve
                       </button>
-                      <button className="db-btn secondary" onClick={() => onSetQuoteStatus(q.id, 'Lost')}>Reject</button>
+                      <button
+                        className="db-btn secondary"
+                        onClick={() => canReject && onSetQuoteStatus(q.id, 'Lost')}
+                        disabled={!canReject}
+                        title={canReject ? 'Reject this quote' : 'Restricted — requires Finance role'}
+                        style={{ opacity: canReject ? 1 : 0.4, cursor: canReject ? 'pointer' : 'not-allowed' }}
+                      >
+                        Reject
+                      </button>
                     </>
                   )}
                   {(q.status === 'Draft' || q.status === 'Approved') && (
-                    <button className="db-btn primary" onClick={() => handleSendClick(q)} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                      <Send size={11} /> Send to Customer
+                    <button
+                      className="db-btn primary"
+                      onClick={() => canSendQuote && handleSendClick(q)}
+                      disabled={!canSendQuote}
+                      title={canSendQuote ? 'Send quotation to customer' : 'Restricted — requires CS or Sales role'}
+                      style={{ display: 'flex', alignItems: 'center', gap: 4, opacity: canSendQuote ? 1 : 0.4, cursor: canSendQuote ? 'pointer' : 'not-allowed' }}
+                    >
+                      {canSendQuote ? <Send size={11} /> : <Lock size={9} />} Send to Customer
                     </button>
                   )}
                   {q.status === 'Sent' && (
                     <>
-                      <button className="db-btn primary" onClick={() => onSetQuoteStatus(q.id, 'Confirmed')} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                        <CheckCircle2 size={11} /> Mark Confirmed
+                      <button
+                        className="db-btn primary"
+                        onClick={() => canConfirm && onSetQuoteStatus(q.id, 'Confirmed')}
+                        disabled={!canConfirm}
+                        title={canConfirm ? 'Mark confirmed' : 'Restricted — requires Sales role'}
+                        style={{ display: 'flex', alignItems: 'center', gap: 4, opacity: canConfirm ? 1 : 0.4, cursor: canConfirm ? 'pointer' : 'not-allowed' }}
+                      >
+                        {canConfirm ? <CheckCircle2 size={11} /> : <Lock size={9} />} Mark Confirmed
                       </button>
-                      <button className="db-btn secondary" onClick={() => onSetQuoteStatus(q.id, 'Lost')}>Mark Lost</button>
+                      <button
+                        className="db-btn secondary"
+                        onClick={() => canReject && onSetQuoteStatus(q.id, 'Lost')}
+                        disabled={!canReject}
+                        style={{ opacity: canReject ? 1 : 0.4, cursor: canReject ? 'pointer' : 'not-allowed' }}
+                      >
+                        Mark Lost
+                      </button>
                     </>
                   )}
                 </div>

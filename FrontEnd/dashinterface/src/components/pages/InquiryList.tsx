@@ -1,10 +1,12 @@
 import { useMemo, useState } from 'react'
 import { Eye, CheckCircle2, MessageSquarePlus, X } from 'lucide-react'
 import {
-  EMPLOYEES, SBUS, findCustomer,
+  EMPLOYEES, SBUS, findCustomer, WORKFLOW_STAGES, ROLE_LABELS, ROLE_COLORS,
   type Inquiry, type InquiryStatus, type Followup, type Customer, type SBU, type CustomerTier,
-  type Quote, type QuoteStatus,
+  type Quote, type QuoteStatus, type WorkflowStage,
 } from '../../mockData'
+import { useRole } from '../../RoleContext'
+import WorkflowStepper from '../shared/WorkflowStepper'
 
 interface InquiryListProps {
   inquiries: Inquiry[]
@@ -12,6 +14,7 @@ interface InquiryListProps {
   customers: Customer[]
   quotes: Quote[]
   onCompleteById: (id: string) => void
+  onAdvanceWorkflow: (inquiryId: string, nextStage: WorkflowStage) => void
 }
 
 const QUOTE_STATUS_BADGE: Record<QuoteStatus, string> = {
@@ -32,7 +35,10 @@ const TIER_BADGE: Record<CustomerTier, string> = {
   'Walk-in':     'db-badge purple',
 }
 
-export default function InquiryList({ inquiries, followups, customers, quotes, onCompleteById }: InquiryListProps) {
+export default function InquiryList({ inquiries, followups, customers, quotes, onCompleteById, onAdvanceWorkflow }: InquiryListProps) {
+  const { hasPermission, activeRole } = useRole()
+  const canComplete = hasPermission('inquiry:complete')
+  const canFollowup = hasPermission('followup:create')
   // Map inquiry_id → most recent quote linked to it (for the Quote Status column).
   const quoteByInquiry = new Map<string, Quote>()
   for (const q of quotes) {
@@ -214,14 +220,20 @@ export default function InquiryList({ inquiries, followups, customers, quotes, o
                         </button>
                         <button
                           className="lt-icon-btn"
-                          title="Mark Complete"
-                          onClick={() => onCompleteById(i.id)}
-                          disabled={!isPending}
-                          style={{ opacity: isPending ? 1 : 0.4, cursor: isPending ? 'pointer' : 'not-allowed' }}
+                          title={canComplete ? 'Mark Complete' : 'Restricted — requires CS or Sales role'}
+                          onClick={() => canComplete && onCompleteById(i.id)}
+                          disabled={!isPending || !canComplete}
+                          style={{ opacity: isPending && canComplete ? 1 : 0.4, cursor: isPending && canComplete ? 'pointer' : 'not-allowed' }}
                         >
                           <CheckCircle2 size={12} />
                         </button>
-                        <button className="lt-icon-btn" title="Add Follow-up" onClick={() => setViewing(i)}>
+                        <button
+                          className="lt-icon-btn"
+                          title={canFollowup ? 'Add Follow-up' : 'Restricted — requires CS, Sales, or Procurement role'}
+                          onClick={() => canFollowup && setViewing(i)}
+                          disabled={!canFollowup}
+                          style={{ opacity: canFollowup ? 1 : 0.4, cursor: canFollowup ? 'pointer' : 'not-allowed' }}
+                        >
                           <MessageSquarePlus size={12} />
                         </button>
                       </div>
@@ -274,6 +286,22 @@ export default function InquiryList({ inquiries, followups, customers, quotes, o
                 </div>
               ))}
             </div>
+
+            {/* Workflow stepper */}
+            {viewing.workflow_stage && (
+              <div style={{ marginTop: 14 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
+                  Workflow Progress
+                </div>
+                <WorkflowStepper
+                  currentStage={viewing.workflow_stage}
+                  onAdvance={(nextStage) => {
+                    onAdvanceWorkflow(viewing.id, nextStage)
+                    setViewing({ ...viewing, workflow_stage: nextStage })
+                  }}
+                />
+              </div>
+            )}
 
             {(() => {
               const inquiryFollowups = followups.filter(f => f.inquiry_id === viewing.id || f.customer_name.toLowerCase() === viewing.customer_name.toLowerCase())

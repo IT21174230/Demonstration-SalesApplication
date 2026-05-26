@@ -14,6 +14,7 @@ from Utils.DB_Query.queries import (
     search_rate_requests,
     get_step_executions_for_instance,
     get_state_history_for_execution,
+    search_bookings,
 )
 
 
@@ -236,6 +237,112 @@ def _dispatch(name: str, args: dict):
                 "email_body": message,
             }
         }
+
+    # --- Bookings ---
+    if name == "create_booking":
+        is_urgent = args.get("is_urgent", False)
+        record = {
+            "id": None,  # will be set by _next_id via create()
+            "quote_id": args["quote_id"],
+            "customer_id": args["customer_id"],
+            "shipping_line": args["shipping_line"],
+            "vessel_name": "",
+            "voyage_number": "",
+            "container_type": args.get("container_type", "20'GP"),
+            "quantity": args.get("quantity", 1),
+            "status": "Liner Confirmed" if is_urgent else "Pending Liner",
+            "is_urgent": is_urgent,
+            "booked_by": 2,  # CS
+            "confirmed_by": 2 if is_urgent else None,
+            "released_by": None,
+            "created_at": now,
+            "confirmed_at": now if is_urgent else None,
+            "released_at": None,
+            "procurement_notified": not is_urgent,
+            "notes": "Urgent booking — CS booked directly with liner" if is_urgent else "",
+        }
+        # Use string-based ID like the frontend bookings
+        data_all = get_all("bookings")
+        existing_nums = []
+        for b in data_all:
+            try:
+                existing_nums.append(int(str(b.get("id", "")).split("-")[1]))
+            except (ValueError, IndexError):
+                pass
+        next_num = max(existing_nums, default=899) + 1
+        record["id"] = f"BKG-{next_num}"
+        # Manual insert since we use string IDs
+        import json
+        from pathlib import Path
+        data_file = Path(__file__).resolve().parent.parent.parent / "Data" / "mock_data.json"
+        with open(data_file, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        data.setdefault("bookings", []).insert(0, record)
+        with open(data_file, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+        return record
+
+    if name == "update_booking_status":
+        booking_id = args["booking_id"]
+        action = args["action"]
+        # Find the booking
+        all_bookings = get_all("bookings")
+        target = next((b for b in all_bookings if b.get("id") == booking_id), None)
+        if not target:
+            return {"error": f"Booking {booking_id} not found"}
+
+        import json
+        from pathlib import Path
+        data_file = Path(__file__).resolve().parent.parent.parent / "Data" / "mock_data.json"
+        with open(data_file, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        booking = next((b for b in data.get("bookings", []) if b.get("id") == booking_id), None)
+        if not booking:
+            return {"error": f"Booking {booking_id} not found"}
+
+        if action == "confirm":
+            booking["status"] = "Liner Confirmed"
+            booking["confirmed_at"] = now
+            booking["confirmed_by"] = 4  # Procurement
+            if args.get("vessel_name"):
+                booking["vessel_name"] = args["vessel_name"]
+            if args.get("voyage_number"):
+                booking["voyage_number"] = args["voyage_number"]
+        elif action == "release":
+            booking["status"] = "Released"
+            booking["released_at"] = now
+            booking["released_by"] = 2  # CS
+            if args.get("notes"):
+                booking["notes"] = args["notes"]
+        elif action == "cancel":
+            booking["status"] = "Cancelled"
+
+        with open(data_file, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+        return booking
+
+    if name == "search_bookings":
+        return search_bookings(**args)
+
+    if name == "notify_procurement":
+        booking_id = args["booking_id"]
+        all_bookings = get_all("bookings")
+        target = next((b for b in all_bookings if b.get("id") == booking_id), None)
+        if not target:
+            return {"error": f"Booking {booking_id} not found"}
+
+        import json
+        from pathlib import Path
+        data_file = Path(__file__).resolve().parent.parent.parent / "Data" / "mock_data.json"
+        with open(data_file, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        booking = next((b for b in data.get("bookings", []) if b.get("id") == booking_id), None)
+        if booking:
+            booking["procurement_notified"] = True
+            with open(data_file, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+            return {"success": True, "message": f"Procurement notified about booking {booking_id}"}
+        return {"error": f"Booking {booking_id} not found"}
 
     # --- Delete ---
     if name == "delete_record":
