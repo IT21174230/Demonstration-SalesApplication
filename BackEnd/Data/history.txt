@@ -96,3 +96,9 @@
 {"role": "assistant", "content": "Logged inquiry for Lanka Textiles (Pvt) Ltd: 10 gp, Colombo \u2192 Hamburg."}
 {"role": "user", "content": "[ROLE: Customer Service | User: Anjali Silva] what are pending KYCs/"}
 {"role": "assistant", "content": "Pending KYC: Hela Apparel."}
+{"role": "user", "content": "[ROLE: Sales Executive | User: Nimal Perera] [CMD /new inquiry] customer=Lanka Textiles (Pvt) Ltd | request=12 reefer containers of garments | origin=Colombo | destination=Hamburg | channel=Email | sbu=Ocean Imports"}
+{"role": "user", "content": "[ROLE: Sales Executive | User: Nimal Perera] [CMD /new inquiry] customer=Arya | request=100 reefer containers of garments | origin=kadawatha | destination=dubai | channel=Email | sbu=Ocean Imports"}
+{"role": "user", "content": "[ROLE: Sales Executive | User: Nimal Perera] [CMD /new inquiry] customer=Arya | request=100 reefer containers of garments | origin=kadawatha | destination=dubai | channel=Email | sbu=Ocean Imports"}
+{"role": "assistant", "content": "Customer Arya not found."}
+{"role": "user", "content": "[ROLE: Sales Executive | User: Nimal Perera] [CMD /new inquiry] customer=Lanka Textiles (Pvt) Ltd | request=100 reefer containers of garments | origin=kadawatha | destination=dubai | channel=Email | sbu=Ocean Exports"}
+{"role": "assistant", "content": "Logged inquiry for Lanka Textiles (Pvt) Ltd: 100 reefer containers of garments, Kadawatha \u2192 Dubai."}

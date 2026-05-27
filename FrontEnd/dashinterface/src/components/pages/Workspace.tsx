@@ -10,6 +10,7 @@ import {
   type Inquiry, type Booking, type Quote, type Customer,
   type ActivityEntry, type UserRole, type WorkflowStage,
   type QuoteStatus, type KycStatus, type RateRecord, type InttraSpotRate,
+  toInttraCard,
 } from '../../mockData'
 import { useRole } from '../../RoleContext'
 import { apiSendKyc, apiSearchRates, apiCheckInttraRates, apiSendQuotation, apiBookInttra, type InttraBookingResult } from '../../api'
@@ -101,13 +102,17 @@ export default function Workspace({
   const [inttraResults, setInttraResults] = useState<InttraSpotRate[]>([])
   const [inttraLoading, setInttraLoading] = useState(false)
   const [inttraSearched, setInttraSearched] = useState(false)
-  const [selectedInttraIds, setSelectedInttraIds] = useState<Set<number>>(new Set())
+  const [selectedInttraIds, setSelectedInttraIds] = useState<Set<string>>(new Set())
   // Manual rate entry state (when InttraAPI has no results)
   const [manualLiner, setManualLiner] = useState('')
+  const [manualScac, setManualScac] = useState('')
   const [manualAmount, setManualAmount] = useState('')
   const [manualTransit, setManualTransit] = useState('')
   const [manualContainer, setManualContainer] = useState("20'GP")
   const [manualFreeTime, setManualFreeTime] = useState('')
+  const [manualValidFrom, setManualValidFrom] = useState('')
+  const [manualValidTo, setManualValidTo] = useState('')
+  const [manualCutoff, setManualCutoff] = useState('')
   const [manualAttachment, setManualAttachment] = useState<string>('')
   // Quotation prep state (Sales edits document)
   const [quotationContent, setQuotationContent] = useState('')
@@ -451,10 +456,14 @@ export default function Workspace({
         setInttraSearched(false)
         setInttraLoading(true)
         setManualLiner('')
+        setManualScac('')
         setManualAmount('')
         setManualTransit('')
         setManualContainer("20'GP")
         setManualFreeTime('')
+        setManualValidFrom('')
+        setManualValidTo('')
+        setManualCutoff('')
         setManualAttachment('')
         setActionModal(item)
         const { inquiry: inttraInq } = item.sourceData
@@ -704,9 +713,12 @@ ABC Logistics (Pvt) Ltd`
 
         if (selectedInttraIds.size > 0) {
           // InttraAPI rates selected
-          const selectedRates = inttraResults.filter(r => selectedInttraIds.has(r.id))
+          const selectedRates = inttraResults.filter(r => selectedInttraIds.has(r.spotRateId))
           const ratesSummary = selectedRates
-            .map(r => `${r.liner_name} $${r.amount} ${r.container_type} ${r.transit_days}d (valid ${r.valid_from}→${r.valid_to})`)
+            .map(r => {
+              const c = toInttraCard(r)
+              return `${c.carrierName} $${c.totalPriceUSD} ${c.containerType} ${c.transitTimeInDays}d (valid ${c.validFromDate}→${c.validToDate})`
+            })
             .join('; ')
           onAdvanceWorkflow(inquiry.id, 'quotation-prep')
           onLogActivity({
@@ -724,7 +736,17 @@ ABC Logistics (Pvt) Ltd`
           onFlash(`${inquiry.id} → Rate brief sent to Sales`)
         } else {
           // Manual rate entry (no InttraAPI results)
-          const manualSummary = `${manualLiner || 'Custom'} $${manualAmount || '0'} ${manualContainer} ${manualTransit || '?'}d transit, Free time: ${manualFreeTime || '?'}d`
+          const manualSummary = [
+            `carrierName=${manualLiner || 'Custom'}`,
+            `carrierScac=${manualScac || '?'}`,
+            `totalPriceUSD=${manualAmount || '0'}`,
+            `containerType=${manualContainer}`,
+            `transitTimeInDays=${manualTransit || '?'}`,
+            `freeTimeInDays=${manualFreeTime || '?'}`,
+            `validFromDate=${manualValidFrom || '?'}`,
+            `validToDate=${manualValidTo || '?'}`,
+            `bookingCutoffDate=${manualCutoff || '?'}`,
+          ].join(', ')
           onAdvanceWorkflow(inquiry.id, 'quotation-prep')
           onLogActivity({
             actor_role: activeRole,
@@ -1792,11 +1814,12 @@ ABC Logistics (Pvt) Ltd`
                       {inttraResults.length} spot rate(s) from InttraAPI — select rates to include in the brief
                     </div>
                     <div style={{ maxHeight: 220, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
-                      {inttraResults.map(rate => {
-                        const selected = selectedInttraIds.has(rate.id)
+                      {inttraResults.map(offer => {
+                        const card = toInttraCard(offer)
+                        const selected = selectedInttraIds.has(card.spotRateId)
                         return (
                           <label
-                            key={rate.id}
+                            key={card.spotRateId}
                             className="ws-rate-row"
                             style={{
                               display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px',
@@ -1811,27 +1834,27 @@ ABC Logistics (Pvt) Ltd`
                               onChange={() => {
                                 setSelectedInttraIds(prev => {
                                   const next = new Set(prev)
-                                  if (next.has(rate.id)) next.delete(rate.id)
-                                  else next.add(rate.id)
+                                  if (next.has(card.spotRateId)) next.delete(card.spotRateId)
+                                  else next.add(card.spotRateId)
                                   return next
                                 })
                               }}
                             />
                             <div style={{ flex: 1, minWidth: 0 }}>
                               <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>
-                                {rate.liner_name}
-                                <span style={{ fontWeight: 400, color: 'var(--text-muted)', marginLeft: 6, fontSize: 11 }}>{rate.liner_code}</span>
-                                <span style={{ fontWeight: 400, color: 'var(--text-secondary)', marginLeft: 8 }}>{rate.container_type}</span>
+                                {card.carrierName}
+                                <span style={{ fontWeight: 400, color: 'var(--text-muted)', marginLeft: 6, fontSize: 11 }}>{card.carrierScac}</span>
+                                <span style={{ fontWeight: 400, color: 'var(--text-secondary)', marginLeft: 8 }}>{card.containerType}</span>
                               </div>
                               <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
-                                {rate.transit_days}d transit · Free time: {rate.free_time_days}d · Cut-off: {rate.booking_cutoff}
+                                {card.transitTimeInDays}d transit · Free time: {card.freeTimeInDays}d · Cut-off: {card.bookingCutoffDate}
                               </div>
                               <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                                Valid: {rate.valid_from} → {rate.valid_to}
+                                Valid: {card.validFromDate} → {card.validToDate}
                               </div>
                             </div>
                             <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', whiteSpace: 'nowrap' }}>
-                              ${rate.amount.toLocaleString()} <span style={{ fontSize: 10, fontWeight: 400, color: 'var(--text-muted)' }}>{rate.currency}</span>
+                              ${card.totalPriceUSD.toLocaleString()} <span style={{ fontSize: 10, fontWeight: 400, color: 'var(--text-muted)' }}>USD</span>
                             </div>
                           </label>
                         )
@@ -1840,7 +1863,9 @@ ABC Logistics (Pvt) Ltd`
 
                     {/* Pre-filled Rate Brief Document */}
                     {selectedInttraIds.size > 0 && (() => {
-                      const selectedRates = inttraResults.filter(r => selectedInttraIds.has(r.id))
+                      const selectedCards = inttraResults
+                        .filter(r => selectedInttraIds.has(r.spotRateId))
+                        .map(toInttraCard)
                       return (
                         <div className="ws-doc-preview">
                           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
@@ -1863,14 +1888,14 @@ ABC Logistics (Pvt) Ltd`
                             <div className="ws-doc-row"><span>Channel:</span><strong>{inq.channel}</strong></div>
                             <div className="ws-doc-divider" />
                             <div className="ws-doc-section">InttraAPI Spot Rates</div>
-                            {selectedRates.map(r => (
-                              <div key={r.id} style={{ padding: '6px 0', borderBottom: '1px dashed var(--border)' }}>
-                                <div style={{ fontWeight: 700, fontSize: 12 }}>{r.liner_name} <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>({r.liner_code})</span></div>
+                            {selectedCards.map(c => (
+                              <div key={c.spotRateId} style={{ padding: '6px 0', borderBottom: '1px dashed var(--border)' }}>
+                                <div style={{ fontWeight: 700, fontSize: 12 }}>{c.carrierName} <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>({c.carrierScac})</span></div>
                                 <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
-                                  ${r.amount.toLocaleString()} {r.currency} / {r.container_type} · {r.transit_days}d transit · Free time: {r.free_time_days}d
+                                  ${c.totalPriceUSD.toLocaleString()} USD / {c.containerType} · {c.transitTimeInDays}d transit · Free time: {c.freeTimeInDays}d
                                 </div>
                                 <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                                  Valid: {r.valid_from} → {r.valid_to} · Cut-off: {r.booking_cutoff}
+                                  Valid: {c.validFromDate} → {c.validToDate} · Cut-off: {c.bookingCutoffDate}
                                 </div>
                               </div>
                             ))}
@@ -1897,11 +1922,15 @@ ABC Logistics (Pvt) Ltd`
 
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                       <div>
-                        <label className="lt-label">Shipping Line / Liner</label>
+                        <label className="lt-label">Carrier</label>
                         <input className="lt-input" style={{ width: '100%' }} value={manualLiner} onChange={e => setManualLiner(e.target.value)} placeholder="e.g. Maersk Line" />
                       </div>
                       <div>
-                        <label className="lt-label">Rate (USD)</label>
+                        <label className="lt-label">Carrier SCAC</label>
+                        <input className="lt-input" style={{ width: '100%' }} value={manualScac} onChange={e => setManualScac(e.target.value.toUpperCase())} placeholder="e.g. MAEU" maxLength={4} />
+                      </div>
+                      <div>
+                        <label className="lt-label">Total Price USD</label>
                         <input className="lt-input" style={{ width: '100%' }} type="number" value={manualAmount} onChange={e => setManualAmount(e.target.value)} placeholder="e.g. 1200" />
                       </div>
                       <div>
@@ -1915,12 +1944,24 @@ ABC Logistics (Pvt) Ltd`
                         </select>
                       </div>
                       <div>
-                        <label className="lt-label">Transit Days</label>
+                        <label className="lt-label">Transit Time in Days</label>
                         <input className="lt-input" style={{ width: '100%' }} type="number" value={manualTransit} onChange={e => setManualTransit(e.target.value)} placeholder="e.g. 14" />
                       </div>
                       <div>
-                        <label className="lt-label">Free Time (days)</label>
+                        <label className="lt-label">Free Time in Days</label>
                         <input className="lt-input" style={{ width: '100%' }} type="number" value={manualFreeTime} onChange={e => setManualFreeTime(e.target.value)} placeholder="e.g. 7" />
+                      </div>
+                      <div>
+                        <label className="lt-label">Valid From</label>
+                        <input className="lt-input" style={{ width: '100%' }} type="date" value={manualValidFrom} onChange={e => setManualValidFrom(e.target.value)} />
+                      </div>
+                      <div>
+                        <label className="lt-label">Valid To</label>
+                        <input className="lt-input" style={{ width: '100%' }} type="date" value={manualValidTo} onChange={e => setManualValidTo(e.target.value)} />
+                      </div>
+                      <div>
+                        <label className="lt-label">Booking Cut-off Date</label>
+                        <input className="lt-input" style={{ width: '100%' }} type="date" value={manualCutoff} onChange={e => setManualCutoff(e.target.value)} />
                       </div>
                       <div>
                         <label className="lt-label">Attach Document</label>
@@ -1951,12 +1992,21 @@ ABC Logistics (Pvt) Ltd`
                           <div className="ws-doc-divider" />
                           <div className="ws-doc-section">Procurement Rate (Manual)</div>
                           <div style={{ padding: '6px 0', borderBottom: '1px dashed var(--border)' }}>
-                            <div style={{ fontWeight: 700, fontSize: 12 }}>{manualLiner}</div>
+                            <div style={{ fontWeight: 700, fontSize: 12 }}>
+                              {manualLiner}
+                              {manualScac ? <span style={{ fontWeight: 400, color: 'var(--text-muted)', marginLeft: 6, fontSize: 11 }}>{manualScac}</span> : null}
+                            </div>
                             <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
                               ${Number(manualAmount).toLocaleString()} USD / {manualContainer}
                               {manualTransit ? ` · ${manualTransit}d transit` : ''}
                               {manualFreeTime ? ` · Free time: ${manualFreeTime}d` : ''}
                             </div>
+                            {(manualValidFrom || manualValidTo || manualCutoff) && (
+                              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                                {manualValidFrom || manualValidTo ? `Valid: ${manualValidFrom || '?'} → ${manualValidTo || '?'}` : ''}
+                                {manualCutoff ? `${manualValidFrom || manualValidTo ? ' · ' : ''}Cut-off: ${manualCutoff}` : ''}
+                              </div>
+                            )}
                           </div>
                           {manualAttachment && (
                             <div className="ws-doc-row" style={{ marginTop: 6 }}>
