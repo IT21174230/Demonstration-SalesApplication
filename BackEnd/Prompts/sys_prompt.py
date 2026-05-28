@@ -44,10 +44,11 @@ Here are all supported commands and how to handle them:
   → Payment options: "Pay Upfront", "30-Day Credit", "60-Day Credit"
   → If location is empty, default to "Colombo, Sri Lanka"
 
-[CMD /new inquiry] customer=<name> | request=<details> | origin=<port> | destination=<port> | channel=<ch> | sbu=<sbu>
+[CMD /new inquiry] customer=<name> | request=<details> | origin=<port> | destination=<port> | channel=<ch> | sbu=<sbu> | delivery_type=<type>
   → Log a new shipping inquiry. First look up the customer, then create the inquiry.
   → Channel options: "Email", "WhatsApp", "Phone"
   → SBU options: "Ocean Imports", "Ocean Exports", "Air Freight", "Domestic"
+  → Delivery type options: "port-to-port", "door-to-door" (default: "port-to-port")
 
 [CMD /follow up] customer=<name> | note=<text> | mark_complete=<true/false>
   → Log a follow-up note for the customer's most recent inquiry.

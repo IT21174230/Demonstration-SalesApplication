@@ -1,19 +1,19 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import {
-  Inbox, ChevronRight, AlertTriangle, Check, Filter, Paperclip,
+  Inbox, ChevronRight, ChevronDown, AlertTriangle, Check, Paperclip, ClipboardPaste,
   FileText, Ship, ShieldCheck, X, User, ArrowRight, Mail, Loader2, UserPlus,
   Globe, FileDown, MessageCircle, Send, Edit3,
 } from 'lucide-react'
 import {
   EMPLOYEES, WORKFLOW_STAGES, ROLE_LABELS, ROLE_COLORS,
-  isSpotInquiry,
+  isSpotInquiry, daysUntil,
   type Inquiry, type Booking, type Quote, type Customer,
   type ActivityEntry, type UserRole, type WorkflowStage,
   type QuoteStatus, type KycStatus, type RateRecord, type InttraSpotRate,
   toInttraCard,
 } from '../../mockData'
 import { useRole } from '../../RoleContext'
-import { apiSendKyc, apiSearchRates, apiCheckInttraRates, apiSendQuotation, apiBookInttra, type InttraBookingResult } from '../../api'
+import { apiSendKyc, apiSearchRates, apiCheckInttraRates, apiSendQuotation, apiBookInttra, apiSubmitSiInttra, apiSetBookingSiCutoff, apiMarkSiRequested, type InttraBookingResult, type InttraSiResult } from '../../api'
 
 // ---------------------------------------------------------------------------
 // Props
@@ -32,13 +32,21 @@ interface WorkspaceProps {
   onCreateBooking: (payload: {
     customer_name: string; quote_id: string; shipping_line: string;
     container_type: string; quantity: number; origin: string; destination: string;
-    is_urgent: boolean; booked_by: number; notes: string;
+    is_urgent: boolean; booked_by: number; notes: string; delivery_type?: 'port-to-port' | 'door-to-door';
   }) => string
+  onSetBookingSiCutoff: (bookingId: string, date: string) => void
+  onMarkSiRequested: (bookingId: string) => void
+  onSetBookingBlCutoff: (bookingId: string, date: string) => void
+  onMarkSiSubmitted: (bookingId: string) => void
+  onMarkDraftBlSent: (bookingId: string) => void
+  onSetBlStatus: (bookingId: string, status: 'pending' | 'approved' | 'changes-requested') => void
+  onRecordMasterBl: (bookingId: string, data: { master_bl_number: string; shipper: string; consignee: string }) => void
+  onCreateHouseBl: (bookingId: string, data: { house_bl_number: string; shipper: string; consignee: string }) => void
   onSetQuoteStatus: (quoteId: string, status: QuoteStatus) => void
   onUpdateCustomerKyc: (customerName: string, kycStatus: KycStatus) => void
   onAutoAdvanceForCustomer: (customerName: string, targetStage: WorkflowStage) => void
   onLogActivity: (entry: Omit<ActivityEntry, 'id' | 'timestamp'>) => void
-  onFlash: (msg: string) => void
+  onFlash: (msg: string, action?: { label: string; onClick: () => void }) => void
 }
 
 // ---------------------------------------------------------------------------
@@ -59,6 +67,8 @@ interface WorkspaceItem {
   actionLabel: string
   actionKind: string
   sourceData: any // eslint-disable-line @typescript-eslint/no-explicit-any
+  /** Lower = more urgent. Used for cutoff-based sorting (e.g. SI reminders). */
+  urgencySortKey?: number
 }
 
 const TYPE_ICON: Record<ItemType, typeof FileText> = {
@@ -76,13 +86,90 @@ const TYPE_BADGE_CLASS: Record<ItemType, string> = {
 }
 
 // ---------------------------------------------------------------------------
+// Step-based navigation — per-role workflow steps
+// ---------------------------------------------------------------------------
+
+interface StepDef {
+  key: string
+  label: string
+  actionKinds: string[]
+  stepNumber: number
+}
+
+const CS_STEPS: StepDef[] = [
+  { key: 'cs-inquiry',    label: 'Inquiry',     actionKinds: ['advance-workflow'],   stepNumber: 1 },
+  { key: 'cs-kyc',        label: 'KYC',         actionKinds: ['send-kyc'],           stepNumber: 2 },
+  { key: 'cs-rates',      label: 'Rates',       actionKinds: ['check-rates'],        stepNumber: 3 },
+  { key: 'cs-send-quote', label: 'Send Quote',  actionKinds: ['send-to-customer'],   stepNumber: 4 },
+  { key: 'cs-response',   label: 'Response',    actionKinds: ['customer-response'],  stepNumber: 5 },
+  { key: 'cs-booking',    label: 'Booking',     actionKinds: ['booking-request'],    stepNumber: 6 },
+  { key: 'cs-release',    label: 'Release',     actionKinds: ['release-booking'],    stepNumber: 7 },
+  { key: 'cs-cutoff',     label: 'Cutoff',      actionKinds: ['record-cutoff'],     stepNumber: 8 },
+  { key: 'cs-si',         label: 'SI Reminder', actionKinds: ['request-si'],         stepNumber: 9 },
+  { key: 'cs-submit-si',  label: 'Submit SI',   actionKinds: ['submit-si'],          stepNumber: 10 },
+  { key: 'cs-draft-bl',   label: 'Draft BL',    actionKinds: ['send-draft-bl'],      stepNumber: 11 },
+  { key: 'cs-bl-approval',label: 'BL Approval', actionKinds: ['bl-approval'],        stepNumber: 12 },
+  { key: 'cs-master-bl', label: 'Master BL',   actionKinds: ['record-master-bl'],   stepNumber: 13 },
+  { key: 'cs-house-bl',  label: 'House BL',    actionKinds: ['create-house-bl'],    stepNumber: 14 },
+]
+
+const FINANCE_STEPS: StepDef[] = [
+  { key: 'fin-kyc',       label: 'KYC Review',  actionKinds: ['verify-kyc'],         stepNumber: 1 },
+  { key: 'fin-approvals', label: 'Approvals',   actionKinds: ['approve-quote'],      stepNumber: 2 },
+]
+
+const PROCUREMENT_STEPS: StepDef[] = [
+  { key: 'proc-rates',    label: 'Rate Check',  actionKinds: ['check-inttra-rates'],       stepNumber: 1 },
+  { key: 'proc-book',     label: 'Book Liner',  actionKinds: ['confirm-booking'],          stepNumber: 2 },
+  { key: 'proc-urgent',   label: 'Urgent',      actionKinds: ['acknowledge-procurement'],  stepNumber: 3 },
+]
+
+const SALES_STEPS: StepDef[] = [
+  { key: 'sales-quote',   label: 'Quotation',   actionKinds: ['prepare-quotation'],  stepNumber: 1 },
+]
+
+const ADMIN_STEPS: StepDef[] = [
+  { key: 'adm-inquiry',     label: 'Inquiry',      actionKinds: ['advance-workflow'],        stepNumber: 1 },
+  { key: 'adm-kyc-send',    label: 'KYC Send',     actionKinds: ['send-kyc'],               stepNumber: 2 },
+  { key: 'adm-kyc-review',  label: 'KYC Review',   actionKinds: ['verify-kyc'],             stepNumber: 3 },
+  { key: 'adm-rates-ams',   label: 'AMS Rates',    actionKinds: ['check-rates'],            stepNumber: 4 },
+  { key: 'adm-rates-inttra',label: 'Inttra Rates',  actionKinds: ['check-inttra-rates'],    stepNumber: 5 },
+  { key: 'adm-quotation',   label: 'Quotation',    actionKinds: ['prepare-quotation'],       stepNumber: 6 },
+  { key: 'adm-send-quote',  label: 'Send Quote',   actionKinds: ['send-to-customer'],        stepNumber: 7 },
+  { key: 'adm-approvals',   label: 'Approvals',    actionKinds: ['approve-quote'],           stepNumber: 8 },
+  { key: 'adm-response',    label: 'Response',     actionKinds: ['customer-response'],       stepNumber: 9 },
+  { key: 'adm-booking',     label: 'Booking',      actionKinds: ['booking-request'],         stepNumber: 10 },
+  { key: 'adm-book-liner',  label: 'Book Liner',   actionKinds: ['confirm-booking'],         stepNumber: 11 },
+  { key: 'adm-urgent',      label: 'Urgent',       actionKinds: ['acknowledge-procurement'], stepNumber: 12 },
+  { key: 'adm-release',     label: 'Release',      actionKinds: ['release-booking'],         stepNumber: 13 },
+  { key: 'adm-cutoff',      label: 'Cutoff',       actionKinds: ['record-cutoff'],           stepNumber: 14 },
+  { key: 'adm-si',          label: 'SI Reminder',  actionKinds: ['request-si'],              stepNumber: 15 },
+  { key: 'adm-submit-si',   label: 'Submit SI',    actionKinds: ['submit-si'],               stepNumber: 16 },
+  { key: 'adm-draft-bl',    label: 'Draft BL',     actionKinds: ['send-draft-bl'],           stepNumber: 17 },
+  { key: 'adm-bl-approval', label: 'BL Approval',  actionKinds: ['bl-approval'],             stepNumber: 18 },
+  { key: 'adm-master-bl',   label: 'Master BL',    actionKinds: ['record-master-bl'],        stepNumber: 19 },
+  { key: 'adm-house-bl',    label: 'House BL',     actionKinds: ['create-house-bl'],         stepNumber: 20 },
+]
+
+const ROLE_STEP_MAP: Record<string, StepDef[]> = {
+  CS: CS_STEPS,
+  Finance: FINANCE_STEPS,
+  Procurement: PROCUREMENT_STEPS,
+  Sales: SALES_STEPS,
+  Admin: ADMIN_STEPS,
+}
+
+// ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
 export default function Workspace({
   inquiries, bookings, quotes, customers, activityLog,
   onAdvanceWorkflow, onConfirmBooking, onReleaseBooking,
-  onAcknowledgeProcurement, onCreateBooking, onSetQuoteStatus, onUpdateCustomerKyc,
+  onAcknowledgeProcurement, onCreateBooking, onSetBookingSiCutoff, onMarkSiRequested,
+  onSetBookingBlCutoff, onMarkSiSubmitted, onMarkDraftBlSent, onSetBlStatus,
+  onRecordMasterBl, onCreateHouseBl,
+  onSetQuoteStatus, onUpdateCustomerKyc,
   onAutoAdvanceForCustomer, onLogActivity, onFlash,
 }: WorkspaceProps) {
   const { activeRole, activeEmployee } = useRole()
@@ -135,8 +222,40 @@ export default function Workspace({
   const [inttraBooking, setInttraBooking] = useState(false)
   const [inttraBookResult, setInttraBookResult] = useState<InttraBookingResult | null>(null)
 
-  // Filter state
-  const [activeFilter, setActiveFilter] = useState<string>('all')
+  // Vessel cutoff schedule panel state
+  // cutoffPanelOpen removed — cutoff is now a workflow step modal
+  const [cutoffBookingId, setCutoffBookingId] = useState('')
+  const [cutoffLiner, setCutoffLiner] = useState('')
+  const [cutoffMode, setCutoffMode] = useState<'paste' | 'upload'>('paste')
+  const [cutoffContent, setCutoffContent] = useState('')
+  const [cutoffFileName, setCutoffFileName] = useState('')
+  const [cutoffNotes, setCutoffNotes] = useState('')
+  const [cutoffSiDate, setCutoffSiDate] = useState('')
+  const [cutoffBlDate, setCutoffBlDate] = useState('')
+  // Submit SI to liner state
+  const [siContent, setSiContent] = useState('')
+  const [siFileName, setSiFileName] = useState('')
+  const [siMode, setSiMode] = useState<'paste' | 'upload'>('paste')
+  const [inttraSiLoading, setInttraSiLoading] = useState(false)
+  const [inttraSiResult, setInttraSiResult] = useState<InttraSiResult | null>(null)
+  // Draft BL state
+  const [draftBlContent, setDraftBlContent] = useState('')
+  const [draftBlFileName, setDraftBlFileName] = useState('')
+  const [draftBlMode, setDraftBlMode] = useState<'paste' | 'upload'>('paste')
+  // BL Approval state
+  const [blDecision, setBlDecision] = useState<'approved' | 'changes-requested'>('approved')
+  // Master BL state
+  const [masterBlNumber, setMasterBlNumber] = useState('')
+  const [masterBlShipper, setMasterBlShipper] = useState('Synergy Shipping & Logistics')
+  const [masterBlConsignee, setMasterBlConsignee] = useState('')
+  // House BL state
+  const [houseBlNumber, setHouseBlNumber] = useState('')
+  const [houseBlShipper, setHouseBlShipper] = useState('')
+  const [houseBlConsignee, setHouseBlConsignee] = useState('')
+
+  // Step navigation state
+  const [activeStep, setActiveStep] = useState<string | null>(null)
+  useEffect(() => { setActiveStep(null) }, [activeRole])
 
   const empName = (id: number) => EMPLOYEES.find(e => e.id === id)?.name ?? `EMP-${id}`
 
@@ -263,7 +382,7 @@ export default function Workspace({
         refId: inq.id,
         customerName: inq.customer_name,
         title,
-        subtitle: `${inq.request} · ${inq.origin} → ${inq.destination}`,
+        subtitle: `${inq.request} · ${inq.origin} → ${inq.destination} · ${inq.delivery_type === 'door-to-door' ? 'Door-to-Door' : 'Port-to-Port'}`,
         urgentFlag: isSpotInquiry(inq.inquiry_text),
         createdAt: inq.created_at,
         previousContext: findContext(inq.id),
@@ -324,6 +443,176 @@ export default function Workspace({
       }
     }
 
+    // --- From Bookings (record cutoff schedule) ---
+    for (const bkg of bookings) {
+      if (bkg.status !== 'Released') continue
+      if (role && role !== 'CS') continue
+      const hasCutoff = activityLog.some(a => a.ref_id === bkg.id && a.action.includes('Recorded vessel cutoff schedule'))
+      if (hasCutoff) continue
+
+      pending.push({
+        type: 'booking',
+        refId: bkg.id,
+        customerName: bkg.customer_name,
+        title: `Record vessel cutoff schedule for ${bkg.customer_name}`,
+        subtitle: `${bkg.quantity}x ${bkg.container_type} · ${bkg.origin} → ${bkg.destination} · ${bkg.shipping_line || 'No liner'}`,
+        urgentFlag: false,
+        createdAt: bkg.created_at,
+        previousContext: findContext(bkg.id),
+        actionLabel: 'Record Cutoff',
+        actionKind: 'record-cutoff',
+        sourceData: { booking: bkg },
+      })
+    }
+
+    // --- From Bookings (SI reminder — show all with cutoff dates, sorted by urgency) ---
+    for (const bkg of bookings) {
+      if (bkg.si_requested) continue
+      const cutoffDate = bkg.bl_cutoff_date || bkg.si_cutoff_date
+      if (!cutoffDate) continue
+      if (bkg.status !== 'Liner Confirmed' && bkg.status !== 'Released') continue
+      if (role && role !== 'CS') continue
+
+      const dLeft = daysUntil(cutoffDate)
+      const isOvd = dLeft < 0
+      const urgencyText = isOvd
+        ? `OVERDUE by ${Math.abs(dLeft)} day(s)`
+        : dLeft === 0 ? 'Due TODAY' : `${dLeft} day(s) left`
+
+      pending.push({
+        type: 'booking',
+        refId: bkg.id,
+        customerName: bkg.customer_name,
+        title: `Send SI reminder to ${bkg.customer_name}`,
+        subtitle: `${bkg.quantity}x ${bkg.container_type} · ${bkg.origin} → ${bkg.destination} · BL cutoff: ${cutoffDate} (${urgencyText})`,
+        urgentFlag: isOvd || dLeft <= 2,
+        createdAt: bkg.created_at,
+        previousContext: findContext(bkg.id),
+        actionLabel: 'Send Reminder',
+        actionKind: 'request-si',
+        sourceData: { booking: bkg },
+        urgencySortKey: dLeft,
+      })
+    }
+
+    // Helper: build cutoff date suffix for subtitles
+    const cutoffSuffix = (bkg: Booking) => {
+      const parts: string[] = []
+      if (bkg.si_cutoff_date) parts.push(`SI: ${bkg.si_cutoff_date}`)
+      if (bkg.bl_cutoff_date) parts.push(`BL: ${bkg.bl_cutoff_date}`)
+      return parts.length ? ` · ${parts.join(' · ')}` : ''
+    }
+
+    // --- From Bookings (submit SI to liner) ---
+    for (const bkg of bookings) {
+      if (!bkg.si_requested || bkg.si_submitted) continue
+      if (bkg.status !== 'Liner Confirmed' && bkg.status !== 'Released') continue
+      if (role && role !== 'CS') continue
+
+      pending.push({
+        type: 'booking',
+        refId: bkg.id,
+        customerName: bkg.customer_name,
+        title: `Submit SI to liner for ${bkg.customer_name}`,
+        subtitle: `${bkg.quantity}x ${bkg.container_type} · ${bkg.origin} → ${bkg.destination}${cutoffSuffix(bkg)}`,
+        urgentFlag: false,
+        createdAt: bkg.created_at,
+        previousContext: findContext(bkg.id),
+        actionLabel: 'Submit SI',
+        actionKind: 'submit-si',
+        sourceData: { booking: bkg },
+      })
+    }
+
+    // --- From Bookings (record Draft BL + send to customer) ---
+    for (const bkg of bookings) {
+      if (!bkg.si_submitted || bkg.draft_bl_sent) continue
+      if (bkg.status !== 'Liner Confirmed' && bkg.status !== 'Released') continue
+      if (role && role !== 'CS') continue
+
+      pending.push({
+        type: 'booking',
+        refId: bkg.id,
+        customerName: bkg.customer_name,
+        title: `Record Draft BL & send to ${bkg.customer_name}`,
+        subtitle: `${bkg.quantity}x ${bkg.container_type} · ${bkg.origin} → ${bkg.destination}${cutoffSuffix(bkg)}`,
+        urgentFlag: false,
+        createdAt: bkg.created_at,
+        previousContext: findContext(bkg.id),
+        actionLabel: 'Send Draft BL',
+        actionKind: 'send-draft-bl',
+        sourceData: { booking: bkg },
+      })
+    }
+
+    // --- From Bookings (BL approval from customer) ---
+    for (const bkg of bookings) {
+      if (!bkg.draft_bl_sent) continue
+      if (bkg.bl_status && bkg.bl_status !== 'pending') continue
+      if (bkg.status !== 'Liner Confirmed' && bkg.status !== 'Released') continue
+      if (role && role !== 'CS') continue
+
+      pending.push({
+        type: 'booking',
+        refId: bkg.id,
+        customerName: bkg.customer_name,
+        title: `Record BL approval from ${bkg.customer_name}`,
+        subtitle: `${bkg.quantity}x ${bkg.container_type} · ${bkg.origin} → ${bkg.destination}${cutoffSuffix(bkg)}`,
+        urgentFlag: false,
+        createdAt: bkg.created_at,
+        previousContext: findContext(bkg.id),
+        actionLabel: 'Record Response',
+        actionKind: 'bl-approval',
+        sourceData: { booking: bkg },
+      })
+    }
+
+    // --- Master BL (door-to-door only, after BL approved) ---
+    for (const bkg of bookings) {
+      if (bkg.delivery_type !== 'door-to-door') continue
+      if (bkg.bl_status !== 'approved') continue
+      if (bkg.master_bl_recorded) continue
+      if (bkg.status !== 'Liner Confirmed' && bkg.status !== 'Released') continue
+      if (role && role !== 'CS') continue
+
+      pending.push({
+        type: 'booking',
+        refId: bkg.id,
+        customerName: bkg.customer_name,
+        title: `Record Master BL for ${bkg.customer_name}`,
+        subtitle: `${bkg.quantity}x ${bkg.container_type} · ${bkg.origin} → ${bkg.destination}${cutoffSuffix(bkg)}`,
+        urgentFlag: false,
+        createdAt: bkg.created_at,
+        previousContext: findContext(bkg.id),
+        actionLabel: 'Record Master BL',
+        actionKind: 'record-master-bl',
+        sourceData: { booking: bkg },
+      })
+    }
+
+    // --- House BL (door-to-door only, after Master BL recorded) ---
+    for (const bkg of bookings) {
+      if (bkg.delivery_type !== 'door-to-door') continue
+      if (!bkg.master_bl_recorded) continue
+      if (bkg.house_bl_created) continue
+      if (bkg.status !== 'Liner Confirmed' && bkg.status !== 'Released') continue
+      if (role && role !== 'CS') continue
+
+      pending.push({
+        type: 'booking',
+        refId: bkg.id,
+        customerName: bkg.customer_name,
+        title: `Create House BL for ${bkg.customer_name}`,
+        subtitle: `${bkg.quantity}x ${bkg.container_type} · ${bkg.origin} → ${bkg.destination} · Master BL: ${bkg.master_bl_number || 'N/A'}${cutoffSuffix(bkg)}`,
+        urgentFlag: false,
+        createdAt: bkg.created_at,
+        previousContext: findContext(bkg.id),
+        actionLabel: 'Create House BL',
+        actionKind: 'create-house-bl',
+        sourceData: { booking: bkg },
+      })
+    }
+
     // --- From Quotes (by status) ---
     for (const q of quotes) {
       if (q.status === 'Awaiting Approval' && (!role || role === 'Finance')) {
@@ -343,9 +632,13 @@ export default function Workspace({
       }
     }
 
-    // Sort: urgent first, then newest first (customer items without dates go last)
+    // Sort: urgent first, then by urgencySortKey (lower = more urgent), then newest first
     pending.sort((a, b) => {
       if (a.urgentFlag !== b.urgentFlag) return a.urgentFlag ? -1 : 1
+      // If both have urgencySortKey, sort by it (lower = more urgent)
+      const aKey = a.urgencySortKey ?? Infinity
+      const bKey = b.urgencySortKey ?? Infinity
+      if (aKey !== bKey) return aKey - bKey
       if (!a.createdAt && b.createdAt) return 1
       if (a.createdAt && !b.createdAt) return -1
       return b.createdAt.localeCompare(a.createdAt)
@@ -360,40 +653,31 @@ export default function Workspace({
   }, [inquiries, bookings, quotes, customers, activityLog, activeRole]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---------------------------------------------------------------------------
-  // Filtering
+  // Step-based filtering (replaces filter chips)
   // ---------------------------------------------------------------------------
 
-  const FILTER_CATEGORIES: Record<string, { label: string; actionKinds: string[] }> = {
-    kyc:              { label: 'KYC',               actionKinds: ['send-kyc', 'verify-kyc'] },
-    rates:            { label: 'Rate Check',        actionKinds: ['check-rates', 'check-inttra-rates'] },
-    quotation:        { label: 'Quotation',         actionKinds: ['prepare-quotation', 'send-to-customer', 'approve-quote'] },
-    'customer-resp':  { label: 'Customer Response',  actionKinds: ['customer-response'] },
-    booking:          { label: 'Booking',           actionKinds: ['booking-request', 'confirm-booking', 'release-booking', 'acknowledge-procurement'] },
-    workflow:         { label: 'Workflow',           actionKinds: ['advance-workflow'] },
-  }
+  const roleSteps = ROLE_STEP_MAP[activeRole] ?? CS_STEPS
 
-  // Only show filter chips for categories that have at least one pending item
-  const availableFilters = useMemo(() => {
-    const result: { key: string; label: string; count: number }[] = []
-    for (const [key, cat] of Object.entries(FILTER_CATEGORIES)) {
-      const count = pendingItems.filter(i => cat.actionKinds.includes(i.actionKind)).length
-      if (count > 0) result.push({ key, label: cat.label, count })
+  const stepCounts = useMemo(() => {
+    const counts: Record<string, number> = {}
+    for (const step of roleSteps) {
+      counts[step.key] = pendingItems.filter(i => step.actionKinds.includes(i.actionKind)).length
     }
-    return result
-  }, [pendingItems]) // eslint-disable-line react-hooks/exhaustive-deps
+    return counts
+  }, [pendingItems, roleSteps])
+
+  const effectiveStep = useMemo(() => {
+    if (activeStep && roleSteps.some(s => s.key === activeStep)) return activeStep
+    const firstWithItems = roleSteps.find(s => (stepCounts[s.key] ?? 0) > 0)
+    return firstWithItems?.key ?? roleSteps[0]?.key ?? null
+  }, [activeStep, roleSteps, stepCounts])
 
   const filteredItems = useMemo(() => {
-    if (activeFilter === 'all') return pendingItems
-    const cat = FILTER_CATEGORIES[activeFilter]
-    if (!cat) return pendingItems
-    return pendingItems.filter(i => cat.actionKinds.includes(i.actionKind))
-  }, [pendingItems, activeFilter]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Reset filter if the active filter no longer has items
-  if (activeFilter !== 'all' && !availableFilters.some(f => f.key === activeFilter)) {
-    // Can't call setState during render, so this is safe as a deferred reset
-    setTimeout(() => setActiveFilter('all'), 0)
-  }
+    if (!effectiveStep) return pendingItems
+    const step = roleSteps.find(s => s.key === effectiveStep)
+    if (!step) return pendingItems
+    return pendingItems.filter(i => step.actionKinds.includes(i.actionKind))
+  }, [pendingItems, effectiveStep, roleSteps])
 
   // ---------------------------------------------------------------------------
   // Action handlers
@@ -415,7 +699,17 @@ export default function Workspace({
           pushed_to: nextStageObj.role,
           notes: `${inquiry.request} · ${inquiry.origin} → ${inquiry.destination}`,
         })
-        onFlash(`${inquiry.id} pushed to ${ROLE_LABELS[nextStageObj.role]}`)
+        // Map the destination workflow stage to the step that will handle items there
+        const stageActionMap: Record<string, string> = {
+          'kyc-pending': 'send-kyc', 'kyc-verification': 'verify-kyc',
+          'rate-check': 'check-rates', 'procurement-request': 'check-inttra-rates',
+          'quotation-prep': 'prepare-quotation', 'quotation-sent': 'send-to-customer',
+          'customer-response': 'customer-response', 'booking-request': 'booking-request',
+        }
+        const destActionKind = stageActionMap[nextStage]
+        const destStep = destActionKind ? roleSteps.find(s => s.actionKinds.includes(destActionKind)) : null
+        onFlash(`${inquiry.id} pushed to ${ROLE_LABELS[nextStageObj.role]}`,
+          destStep ? { label: `Go to ${destStep.label}`, onClick: () => setActiveStep(destStep.key) } : undefined)
         break
       }
       case 'acknowledge-procurement': {
@@ -593,6 +887,75 @@ ABC Logistics (Pvt) Ltd`
         setActionModal(item)
         break
       }
+      case 'record-cutoff': {
+        const bkg = item.sourceData.booking
+        setCutoffBookingId(bkg.id)
+        setCutoffLiner(bkg.shipping_line || '')
+        setCutoffMode('paste')
+        setCutoffContent('')
+        setCutoffFileName('')
+        setCutoffNotes('')
+        setCutoffSiDate('')
+        setCutoffBlDate('')
+        setActionModal(item)
+        break
+      }
+      case 'request-si': {
+        setFormNote('')
+        const siCust = customers.find(c => c.name.toLowerCase() === item.customerName.toLowerCase())
+        setCustomerContactEmail(siCust?.contact_email ?? '')
+        setCustomerContactPhone(siCust?.contact_phone ?? '')
+        setSendMethod(siCust?.contact_email ? 'email' : 'whatsapp')
+        setWaConfirmed(false)
+        setActionModal(item)
+        break
+      }
+      case 'submit-si': {
+        setSiContent('')
+        setSiFileName('')
+        setSiMode('paste')
+        setInttraSiResult(null)
+        setInttraSiLoading(false)
+        setFormNote('')
+        setActionModal(item)
+        break
+      }
+      case 'send-draft-bl': {
+        setDraftBlContent('')
+        setDraftBlFileName('')
+        setDraftBlMode('paste')
+        setFormNote('')
+        const blCust = customers.find(c => c.name.toLowerCase() === item.customerName.toLowerCase())
+        setCustomerContactEmail(blCust?.contact_email ?? '')
+        setCustomerContactPhone(blCust?.contact_phone ?? '')
+        setSendMethod(blCust?.contact_email ? 'email' : 'whatsapp')
+        setWaConfirmed(false)
+        setActionModal(item)
+        break
+      }
+      case 'bl-approval': {
+        setBlDecision('approved')
+        setFormNote('')
+        setActionModal(item)
+        break
+      }
+      case 'record-master-bl': {
+        setMasterBlNumber('')
+        setMasterBlShipper('Synergy Shipping & Logistics')
+        setMasterBlConsignee('')
+        setFormNote('')
+        setActionModal(item)
+        break
+      }
+      case 'create-house-bl': {
+        const { booking: hbBkg } = item.sourceData
+        setHouseBlNumber('')
+        setHouseBlShipper(hbBkg.customer_name)
+        setHouseBlConsignee('')
+        setFormNote('')
+        setActionModal(item)
+        break
+      }
       default:
         // Actions needing a form modal
         setFormVessel('')
@@ -608,6 +971,12 @@ ABC Logistics (Pvt) Ltd`
 
   const handleModalSubmit = async () => {
     if (!actionModal) return
+    // Compute next-step action for interactive toast navigation
+    const nextStepAction = (() => {
+      const cur = roleSteps.find(s => s.actionKinds.includes(actionModal.actionKind))
+      const nxt = cur ? roleSteps.find(s => s.stepNumber === cur.stepNumber + 1) : null
+      return nxt ? { label: `Go to ${nxt.label}`, onClick: () => setActiveStep(nxt.key) } : undefined
+    })()
     switch (actionModal.actionKind) {
       case 'send-kyc': {
         const { customer } = actionModal.sourceData
@@ -631,7 +1000,7 @@ ABC Logistics (Pvt) Ltd`
           pushed_to: 'Finance',
           notes: formNote || `KYC form emailed to ${formEmail}`,
         })
-        onFlash(`KYC sent to ${formEmail} — pushed to Finance`)
+        onFlash(`KYC sent to ${formEmail} — pushed to Finance`, nextStepAction)
         break
       }
       case 'verify-kyc': {
@@ -651,7 +1020,7 @@ ABC Logistics (Pvt) Ltd`
             pushed_to: 'CS',
             notes: formNote || 'KYC documents verified and approved.',
           })
-          onFlash(`KYC verified for ${customer.name} — sent to CS for rate check`)
+          onFlash(`KYC verified for ${customer.name} — sent to CS for rate check`, nextStepAction)
         } else {
           // Flag — send back to not_started (CS must re-send)
           onUpdateCustomerKyc(customer.name, 'not_started')
@@ -665,7 +1034,7 @@ ABC Logistics (Pvt) Ltd`
             pushed_to: 'CS',
             notes: formNote || 'KYC documents need resubmission.',
           })
-          onFlash(`KYC flagged — ${customer.name} returned to CS`)
+          onFlash(`KYC flagged — ${customer.name} returned to CS`, nextStepAction)
         }
         break
       }
@@ -689,7 +1058,7 @@ ABC Logistics (Pvt) Ltd`
             pushed_to: 'Sales',
             notes: formNote ? `${formNote} | Selected rates: ${ratesSummary}` : `Selected rates: ${ratesSummary}`,
           })
-          onFlash(`${inquiry.id} → ${selectedRates.length} rate(s) sent to Sales`)
+          onFlash(`${inquiry.id} → ${selectedRates.length} rate(s) sent to Sales`, nextStepAction)
         } else {
           // No rates selected → escalate to Procurement
           onAdvanceWorkflow(inquiry.id, 'procurement-request')
@@ -703,7 +1072,7 @@ ABC Logistics (Pvt) Ltd`
             pushed_to: 'Procurement',
             notes: formNote || `${inquiry.origin} → ${inquiry.destination} — no matching rates in system`,
           })
-          onFlash(`${inquiry.id} → No rates found, escalated to Procurement`)
+          onFlash(`${inquiry.id} → No rates found, escalated to Procurement`, nextStepAction)
         }
         break
       }
@@ -733,7 +1102,7 @@ ABC Logistics (Pvt) Ltd`
               ? `${formNote} | Customer: ${inquiry.customer_name} (${cust?.tier ?? 'N/A'}) | Route: ${inquiry.origin} → ${inquiry.destination} | Rates: ${ratesSummary}`
               : `Customer: ${inquiry.customer_name} (${cust?.tier ?? 'N/A'}) | Route: ${inquiry.origin} → ${inquiry.destination} | Rates: ${ratesSummary}`,
           })
-          onFlash(`${inquiry.id} → Rate brief sent to Sales`)
+          onFlash(`${inquiry.id} → Rate brief sent to Sales`, nextStepAction)
         } else {
           // Manual rate entry (no InttraAPI results)
           const manualSummary = [
@@ -760,7 +1129,7 @@ ABC Logistics (Pvt) Ltd`
               ? `${formNote} | Customer: ${inquiry.customer_name} (${cust?.tier ?? 'N/A'}) | Route: ${inquiry.origin} → ${inquiry.destination} | Manual Rate: ${manualSummary}${manualAttachment ? ` | Attachment: ${manualAttachment}` : ''}`
               : `Customer: ${inquiry.customer_name} (${cust?.tier ?? 'N/A'}) | Route: ${inquiry.origin} → ${inquiry.destination} | Manual Rate: ${manualSummary}${manualAttachment ? ` | Attachment: ${manualAttachment}` : ''}`,
           })
-          onFlash(`${inquiry.id} → Manual rate brief sent to Sales`)
+          onFlash(`${inquiry.id} → Manual rate brief sent to Sales`, nextStepAction)
         }
         break
       }
@@ -779,7 +1148,7 @@ ABC Logistics (Pvt) Ltd`
             ? `${formNote} | Quotation:\n${quotationContent}`
             : `Quotation:\n${quotationContent}`,
         })
-        onFlash(`${inquiry.id} → Quotation sent to CS for delivery`)
+        onFlash(`${inquiry.id} → Quotation sent to CS for delivery`, nextStepAction)
         break
       }
       case 'send-to-customer': {
@@ -816,7 +1185,7 @@ ABC Logistics (Pvt) Ltd`
             ? `Sent via Email to ${customerContactEmail}${formNote ? ` | ${formNote}` : ''}`
             : `Sent via WhatsApp to ${customerContactPhone}${formNote ? ` | ${formNote}` : ''}`,
         })
-        onFlash(`${inquiry.id} → Quotation sent to ${inquiry.customer_name} via ${sendMethod === 'email' ? 'Email' : 'WhatsApp'}`)
+        onFlash(`${inquiry.id} → Quotation sent to ${inquiry.customer_name} via ${sendMethod === 'email' ? 'Email' : 'WhatsApp'}`, nextStepAction)
         break
       }
       case 'customer-response': {
@@ -833,7 +1202,7 @@ ABC Logistics (Pvt) Ltd`
             pushed_to: 'CS',
             notes: `Customer accepted${formNote ? ` | ${formNote}` : ''}`,
           })
-          onFlash(`${inquiry.id} → ${inquiry.customer_name} accepted — ready for booking request`)
+          onFlash(`${inquiry.id} → ${inquiry.customer_name} accepted — ready for booking request`, nextStepAction)
         } else {
           onAdvanceWorkflow(inquiry.id, 'completed')
           onLogActivity({
@@ -863,6 +1232,7 @@ ABC Logistics (Pvt) Ltd`
           is_urgent: bkIsUrgent,
           booked_by: activeEmployee.id,
           notes: formNote || `Booking for ${inquiry.customer_name}: ${inquiry.request}`,
+          delivery_type: inquiry.delivery_type,
         })
         onAdvanceWorkflow(inquiry.id, 'completed')
         const attachInfo = bkAttachmentName ? ` | Attachment: ${bkAttachmentName}` : ''
@@ -876,7 +1246,7 @@ ABC Logistics (Pvt) Ltd`
           pushed_to: 'Procurement',
           notes: `Booking: ${bkQuantity}x ${bkContainerType} | ${bkShippingLine || 'Any liner'} | ${inquiry.origin} → ${inquiry.destination}${bkIsUrgent ? ' | URGENT' : ''}${attachInfo}${formNote ? ` | ${formNote}` : ''}`,
         })
-        onFlash(`${inquiry.id} → Booking request sent to Procurement`)
+        onFlash(`${inquiry.id} → Booking request sent to Procurement`, nextStepAction)
         break
       }
       case 'confirm-booking': {
@@ -920,7 +1290,140 @@ ABC Logistics (Pvt) Ltd`
           pushed_to: 'CS',
           notes: `Sent ${sendVia}${formNote ? ` | ${formNote}` : ''}`,
         })
-        onFlash(`${booking.id} → Release order sent to ${booking.customer_name} ${sendVia}`)
+        onFlash(`${booking.id} → Release order sent to ${booking.customer_name} ${sendVia}`, nextStepAction)
+        break
+      }
+      case 'record-cutoff': {
+        const { booking } = actionModal.sourceData
+        if (cutoffSiDate) onSetBookingSiCutoff(booking.id, cutoffSiDate)
+        if (cutoffBlDate) onSetBookingBlCutoff(booking.id, cutoffBlDate)
+        const cutoffSummary = cutoffContent
+          ? `Cutoff schedule recorded (${cutoffMode === 'upload' ? cutoffFileName : 'pasted text'})`
+          : 'Cutoff schedule recorded (no document attached)'
+        const dateNotes = [cutoffSiDate && `SI cutoff: ${cutoffSiDate}`, cutoffBlDate && `BL cutoff: ${cutoffBlDate}`].filter(Boolean).join(' | ')
+        onLogActivity({
+          actor_role: activeRole,
+          actor_id: activeEmployee.id,
+          action: `Recorded vessel cutoff schedule for ${booking.customer_name}. Liner: ${cutoffLiner || booking.shipping_line || 'N/A'}.${dateNotes ? ` ${dateNotes}.` : ''}`,
+          ref_type: 'booking',
+          ref_id: booking.id,
+          customer_name: booking.customer_name,
+          pushed_to: 'CS',
+          notes: `${cutoffSummary}${cutoffNotes ? ` | ${cutoffNotes}` : ''}${dateNotes ? ` | ${dateNotes}` : ''}`,
+        })
+        onFlash(`${booking.id} → Vessel cutoff recorded for ${booking.customer_name}`, nextStepAction)
+        break
+      }
+      case 'request-si': {
+        const { booking } = actionModal.sourceData
+        onMarkSiRequested(booking.id)
+        const sendVia = sendMethod === 'email'
+          ? `via Email to ${customerContactEmail}`
+          : `via WhatsApp to ${customerContactPhone || 'customer'}`
+        onLogActivity({
+          actor_role: activeRole,
+          actor_id: activeEmployee.id,
+          action: `SI requested from ${booking.customer_name} ${sendVia}. SI cutoff: ${booking.si_cutoff_date}.`,
+          ref_type: 'booking',
+          ref_id: booking.id,
+          customer_name: booking.customer_name,
+          pushed_to: 'CS',
+          notes: `SI follow-up sent ${sendVia}. Cutoff: ${booking.si_cutoff_date}${formNote ? ` | ${formNote}` : ''}`,
+        })
+        onFlash(`${booking.id} → SI requested from ${booking.customer_name} ${sendVia}`, nextStepAction)
+        break
+      }
+      case 'submit-si': {
+        const { booking } = actionModal.sourceData
+        onMarkSiSubmitted(booking.id)
+        const siRef = inttraSiResult?.si_reference
+        const method = inttraSiResult ? `via InttraAPI (Ref: ${siRef})` : 'manually'
+        onLogActivity({
+          actor_role: activeRole,
+          actor_id: activeEmployee.id,
+          action: `SI submitted to ${booking.shipping_line || 'liner'} for ${booking.customer_name} ${method}.`,
+          ref_type: 'booking',
+          ref_id: booking.id,
+          customer_name: booking.customer_name,
+          pushed_to: 'CS',
+          notes: `SI submitted ${method}${siContent ? ` | Document attached` : ''}${formNote ? ` | ${formNote}` : ''}`,
+        })
+        onFlash(`${booking.id} → SI submitted to ${booking.shipping_line || 'liner'} ${method}`, nextStepAction)
+        break
+      }
+      case 'send-draft-bl': {
+        const { booking } = actionModal.sourceData
+        onMarkDraftBlSent(booking.id)
+        const sendVia = sendMethod === 'email'
+          ? `via Email to ${customerContactEmail}`
+          : `via WhatsApp to ${customerContactPhone || 'customer'}`
+        onLogActivity({
+          actor_role: activeRole,
+          actor_id: activeEmployee.id,
+          action: `Draft BL sent to ${booking.customer_name} ${sendVia}. Awaiting customer approval.`,
+          ref_type: 'booking',
+          ref_id: booking.id,
+          customer_name: booking.customer_name,
+          pushed_to: 'CS',
+          notes: `Draft BL sent ${sendVia}${draftBlContent ? ` | Document attached` : ''}${formNote ? ` | ${formNote}` : ''}`,
+        })
+        onFlash(`${booking.id} → Draft BL sent to ${booking.customer_name} ${sendVia}`, nextStepAction)
+        break
+      }
+      case 'bl-approval': {
+        const { booking } = actionModal.sourceData
+        const approved = blDecision === 'approved'
+        onSetBlStatus(booking.id, blDecision)
+        onLogActivity({
+          actor_role: activeRole,
+          actor_id: activeEmployee.id,
+          action: approved
+            ? `${booking.customer_name} approved Draft BL for ${booking.id}.`
+            : `${booking.customer_name} requested changes to Draft BL for ${booking.id}.`,
+          ref_type: 'booking',
+          ref_id: booking.id,
+          customer_name: booking.customer_name,
+          pushed_to: 'CS',
+          notes: approved
+            ? `BL approved by customer${formNote ? ` | ${formNote}` : ''}`
+            : `Changes requested: ${formNote || 'No details provided'}`,
+        })
+        onFlash(approved
+          ? `${booking.id} → BL approved by ${booking.customer_name}`
+          : `${booking.id} → ${booking.customer_name} requested changes to Draft BL`,
+          approved ? nextStepAction : undefined)
+        break
+      }
+      case 'record-master-bl': {
+        const { booking } = actionModal.sourceData
+        onRecordMasterBl(booking.id, { master_bl_number: masterBlNumber, shipper: masterBlShipper, consignee: masterBlConsignee })
+        onLogActivity({
+          actor_role: activeRole,
+          actor_id: activeEmployee.id,
+          action: `Recorded Master BL ${masterBlNumber} for ${booking.id}.`,
+          ref_type: 'booking',
+          ref_id: booking.id,
+          customer_name: booking.customer_name,
+          pushed_to: 'CS',
+          notes: `Master BL: ${masterBlNumber} | Shipper: ${masterBlShipper} | Consignee: ${masterBlConsignee}${formNote ? ` | ${formNote}` : ''}`,
+        })
+        onFlash(`${booking.id} → Master BL ${masterBlNumber} recorded`, nextStepAction)
+        break
+      }
+      case 'create-house-bl': {
+        const { booking } = actionModal.sourceData
+        onCreateHouseBl(booking.id, { house_bl_number: houseBlNumber, shipper: houseBlShipper, consignee: houseBlConsignee })
+        onLogActivity({
+          actor_role: activeRole,
+          actor_id: activeEmployee.id,
+          action: `Created House BL ${houseBlNumber} for ${booking.id}.`,
+          ref_type: 'booking',
+          ref_id: booking.id,
+          customer_name: booking.customer_name,
+          pushed_to: 'CS',
+          notes: `House BL: ${houseBlNumber} | Shipper: ${houseBlShipper} | Consignee: ${houseBlConsignee} | Master BL: ${booking.master_bl_number || 'N/A'}${formNote ? ` | ${formNote}` : ''}`,
+        })
+        onFlash(`${booking.id} → House BL ${houseBlNumber} created`, nextStepAction)
         break
       }
       case 'approve-quote': {
@@ -971,37 +1474,9 @@ ABC Logistics (Pvt) Ltd`
         </div>
       </div>
 
-      {/* Filter chips */}
-      {availableFilters.length > 1 && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
-          <Filter size={14} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
-          <button
-            className={`db-btn ${activeFilter === 'all' ? 'primary' : ''}`}
-            style={activeFilter === 'all'
-              ? { fontSize: 11, padding: '4px 12px', borderRadius: 20 }
-              : { fontSize: 11, padding: '4px 12px', borderRadius: 20, background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}
-            onClick={() => setActiveFilter('all')}
-          >
-            All ({pendingItems.length})
-          </button>
-          {availableFilters.map(f => (
-            <button
-              key={f.key}
-              className={`db-btn ${activeFilter === f.key ? 'primary' : ''}`}
-              style={activeFilter === f.key
-                ? { fontSize: 11, padding: '4px 12px', borderRadius: 20 }
-                : { fontSize: 11, padding: '4px 12px', borderRadius: 20, background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}
-              onClick={() => setActiveFilter(f.key)}
-            >
-              {f.label} ({f.count})
-            </button>
-          ))}
-        </div>
-      )}
-
       {/* Empty state */}
       {filteredItems.length === 0 ? (
-        <div className="db-chart-card" style={{ textAlign: 'center', padding: '48px 24px' }}>
+        <div className="db-chart-card" style={{ textAlign: 'center', padding: '48px 24px', marginBottom: 80 }}>
           <Inbox size={40} style={{ color: 'var(--text-muted)', marginBottom: 12, opacity: 0.4 }} />
           <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 4 }}>
             All caught up
@@ -1011,7 +1486,7 @@ ABC Logistics (Pvt) Ltd`
           </div>
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 24 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 80 }}>
           {filteredItems.map(item => {
             const Icon = TYPE_ICON[item.type]
             const ctx = item.previousContext
@@ -1076,7 +1551,7 @@ ABC Logistics (Pvt) Ltd`
 
       {/* Recently Pushed */}
       {recentlyPushed.length > 0 && (
-        <div className="db-chart-card">
+        <div className="db-chart-card" style={{ marginBottom: 80 }}>
           <div className="db-chart-head">
             <div>
               <div className="db-chart-title">Recently Pushed</div>
@@ -1104,6 +1579,96 @@ ABC Logistics (Pvt) Ltd`
           </div>
         </div>
       )}
+
+      {/* Step Navigation Bar */}
+      <div style={{
+        position: 'sticky',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        background: 'var(--bg-card)',
+        borderTop: '1px solid var(--border)',
+        padding: '8px 12px',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 0,
+        overflowX: 'auto',
+        zIndex: 10,
+        boxShadow: '0 -2px 12px rgba(0,0,0,0.04)',
+      }}>
+        {roleSteps.map(step => {
+          const count = stepCounts[step.key] ?? 0
+          const isActive = effectiveStep === step.key
+          const isEmpty = count === 0
+          return (
+            <button
+              key={step.key}
+              onClick={() => setActiveStep(step.key)}
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: 2,
+                padding: '6px 14px',
+                minWidth: 72,
+                border: 'none',
+                borderRadius: 10,
+                cursor: 'pointer',
+                background: isActive ? roleColor + '12' : 'transparent',
+                transition: 'background 0.15s',
+                flexShrink: 0,
+                position: 'relative',
+              }}
+            >
+              <div style={{
+                width: 24,
+                height: 24,
+                borderRadius: '50%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: 11,
+                fontWeight: 700,
+                background: isActive ? roleColor : isEmpty ? 'rgba(0,0,0,0.06)' : roleColor + '20',
+                color: isActive ? '#fff' : isEmpty ? 'var(--text-muted)' : roleColor,
+                transition: 'all 0.15s',
+              }}>
+                {step.stepNumber}
+              </div>
+              <span style={{
+                fontSize: 10,
+                fontWeight: isActive ? 700 : 500,
+                color: isActive ? roleColor : isEmpty ? 'var(--text-muted)' : 'var(--text-secondary)',
+                whiteSpace: 'nowrap',
+                transition: 'color 0.15s',
+              }}>
+                {step.label}
+              </span>
+              {count > 0 && (
+                <span style={{
+                  position: 'absolute',
+                  top: 2,
+                  right: 8,
+                  minWidth: 16,
+                  height: 16,
+                  borderRadius: 8,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: 9,
+                  fontWeight: 700,
+                  background: isActive ? roleColor : '#ef4444',
+                  color: '#fff',
+                  padding: '0 4px',
+                  lineHeight: 1,
+                }}>
+                  {count}
+                </span>
+              )}
+            </button>
+          )
+        })}
+      </div>
 
       {/* Action Modal */}
       {actionModal && (
@@ -1397,7 +1962,7 @@ ABC Logistics (Pvt) Ltd`
                   {/* Route summary */}
                   <div style={{ padding: '10px 14px', background: 'rgba(79,70,229,0.06)', border: '1px solid rgba(79,70,229,0.15)', borderRadius: 8, fontSize: 12 }}>
                     <strong>{brInq.customer_name}</strong> — {brInq.origin} → {brInq.destination}
-                    <div style={{ color: 'var(--text-muted)', marginTop: 2 }}>{brInq.request}</div>
+                    <div style={{ color: 'var(--text-muted)', marginTop: 2 }}>{brInq.request} · {brInq.delivery_type === 'door-to-door' ? 'Door-to-Door' : 'Port-to-Port'}</div>
                   </div>
 
                   <div>
@@ -1690,6 +2255,807 @@ ABC Logistics (Pvt) Ltd`
                   <div>
                     <label className="lt-label">Release Note / Instructions (optional)</label>
                     <input className="lt-input" style={{ width: '100%' }} value={formNote} onChange={e => setFormNote(e.target.value)} placeholder="Collection instructions, pickup location, etc." />
+                  </div>
+                </div>
+              )
+            })()}
+
+            {/* Request SI modal */}
+            {actionModal.actionKind === 'request-si' && (() => {
+              const { booking: siBkg } = actionModal.sourceData
+              const ctx = actionModal.previousContext
+              const blCutoff = siBkg.bl_cutoff_date
+              const siCutoff = siBkg.si_cutoff_date
+              const primaryCutoff = blCutoff || siCutoff
+              const dLeft = primaryCutoff ? daysUntil(primaryCutoff) : 999
+              const isOvdSi = dLeft < 0
+              const urgencyColor = isOvdSi ? '#dc2626' : dLeft === 0 ? '#d97706' : '#0891b2'
+              const urgencyText = isOvdSi
+                ? `OVERDUE by ${Math.abs(dLeft)} day(s)`
+                : dLeft === 0 ? 'Due TODAY' : `${dLeft} day(s) remaining`
+
+              return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  {ctx && (
+                    <div className="ws-context-card" style={{ marginTop: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                        <User size={11} style={{ color: 'var(--text-muted)' }} />
+                        <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)' }}>
+                          {empName(ctx.actor_id)} ({ROLE_LABELS[ctx.actor_role]})
+                        </span>
+                      </div>
+                      <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{ctx.action}</div>
+                    </div>
+                  )}
+
+                  {/* Cutoff dates card */}
+                  <div style={{
+                    padding: '14px 16px',
+                    background: urgencyColor + '0a',
+                    border: `1px solid ${urgencyColor}30`,
+                    borderRadius: 8,
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                      <AlertTriangle size={14} style={{ color: urgencyColor }} />
+                      <span style={{ fontSize: 13, fontWeight: 700, color: urgencyColor }}>
+                        Cutoff Dates
+                      </span>
+                      <span style={{
+                        fontSize: 11, fontWeight: 700, color: urgencyColor,
+                        marginLeft: 'auto',
+                        padding: '2px 8px',
+                        background: urgencyColor + '15',
+                        borderRadius: 10,
+                      }}>
+                        {urgencyText}
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, marginBottom: 8 }}>
+                      {siCutoff && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ width: 80, color: 'var(--text-muted)', fontWeight: 600, fontSize: 11 }}>SI Cutoff</span>
+                          <span style={{ fontWeight: 700 }}>{siCutoff}</span>
+                          <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>({daysUntil(siCutoff) < 0 ? `${Math.abs(daysUntil(siCutoff))}d overdue` : `${daysUntil(siCutoff)}d left`})</span>
+                        </div>
+                      )}
+                      {blCutoff && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ width: 80, color: 'var(--text-muted)', fontWeight: 600, fontSize: 11 }}>BL Cutoff</span>
+                          <span style={{ fontWeight: 700 }}>{blCutoff}</span>
+                          <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>({daysUntil(blCutoff) < 0 ? `${Math.abs(daysUntil(blCutoff))}d overdue` : `${daysUntil(blCutoff)}d left`})</span>
+                        </div>
+                      )}
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 16px', fontSize: 12 }}>
+                      <div><span style={{ color: 'var(--text-muted)' }}>Customer:</span> <strong>{siBkg.customer_name}</strong></div>
+                      <div><span style={{ color: 'var(--text-muted)' }}>Route:</span> {siBkg.origin} → {siBkg.destination}</div>
+                      <div><span style={{ color: 'var(--text-muted)' }}>Vessel:</span> {siBkg.vessel_name || 'TBD'}</div>
+                      <div><span style={{ color: 'var(--text-muted)' }}>Voyage:</span> {siBkg.voyage_number || 'TBD'}</div>
+                      <div><span style={{ color: 'var(--text-muted)' }}>Container:</span> {siBkg.quantity}x {siBkg.container_type}</div>
+                      <div><span style={{ color: 'var(--text-muted)' }}>Liner:</span> {siBkg.shipping_line || 'N/A'}</div>
+                    </div>
+                  </div>
+
+                  {/* Send method toggle */}
+                  <div>
+                    <label className="lt-label">Contact Customer via</label>
+                    <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                      <button
+                        className={`db-btn ${sendMethod === 'email' ? 'primary' : ''}`}
+                        style={sendMethod !== 'email' ? { background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-secondary)' } : {}}
+                        onClick={() => setSendMethod('email')}
+                      >
+                        <Mail size={13} style={{ marginRight: 4 }} /> Email
+                      </button>
+                      <button
+                        className={`db-btn ${sendMethod === 'whatsapp' ? 'primary' : ''}`}
+                        style={sendMethod === 'whatsapp' ? { background: '#25d366', borderColor: '#25d366' } : { background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}
+                        onClick={() => setSendMethod('whatsapp')}
+                      >
+                        <MessageCircle size={13} style={{ marginRight: 4 }} /> WhatsApp
+                      </button>
+                    </div>
+                  </div>
+
+                  {sendMethod === 'email' && (
+                    <div>
+                      <label className="lt-label">Customer Email <span style={{ color: '#dc2626' }}>*</span></label>
+                      <input className="lt-input" style={{ width: '100%' }} type="email"
+                        value={customerContactEmail} onChange={e => setCustomerContactEmail(e.target.value)}
+                        placeholder="customer@example.com" />
+                    </div>
+                  )}
+
+                  {sendMethod === 'whatsapp' && (
+                    <>
+                      <div>
+                        <label className="lt-label">Customer WhatsApp Number</label>
+                        <input className="lt-input" style={{ width: '100%' }}
+                          value={customerContactPhone} onChange={e => setCustomerContactPhone(e.target.value)}
+                          placeholder="+94 7X XXX XXXX" />
+                      </div>
+                      <div style={{ padding: '10px 14px', background: 'rgba(37,211,102,0.06)', border: '1px solid rgba(37,211,102,0.2)', borderRadius: 8 }}>
+                        <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer', fontSize: 12, color: 'var(--text-secondary)' }}>
+                          <input type="checkbox" checked={waConfirmed} onChange={e => setWaConfirmed(e.target.checked)} style={{ marginTop: 2 }} />
+                          <span>
+                            I confirm that I have sent the SI request to the customer via WhatsApp.
+                            <span style={{ display: 'block', fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                              No WhatsApp integration — manual confirmation.
+                            </span>
+                          </span>
+                        </label>
+                      </div>
+                    </>
+                  )}
+
+                  <div>
+                    <label className="lt-label">Notes (optional)</label>
+                    <input className="lt-input" style={{ width: '100%' }} value={formNote}
+                      onChange={e => setFormNote(e.target.value)}
+                      placeholder="Any instructions or reminders for the customer..." />
+                  </div>
+                </div>
+              )
+            })()}
+
+            {/* Record Cutoff modal */}
+            {actionModal.actionKind === 'record-cutoff' && (() => {
+              const { booking: coBkg } = actionModal.sourceData
+              return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  {/* Booking summary */}
+                  <div style={{ padding: '10px 14px', background: 'rgba(79,70,229,0.06)', border: '1px solid rgba(79,70,229,0.15)', borderRadius: 8, fontSize: 12 }}>
+                    <strong>{coBkg.customer_name}</strong> — {coBkg.origin} → {coBkg.destination}
+                    <div style={{ color: 'var(--text-muted)', marginTop: 2 }}>
+                      {coBkg.quantity}x {coBkg.container_type} · {coBkg.shipping_line || 'No liner'}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="lt-label">Shipping Line / Liner</label>
+                    <input className="lt-input" style={{ width: '100%' }} value={cutoffLiner}
+                      onChange={e => setCutoffLiner(e.target.value)}
+                      placeholder="e.g. Maersk, MSC, Hapag-Lloyd" />
+                  </div>
+
+                  {/* Paste / Upload toggle */}
+                  <div>
+                    <label className="lt-label">Cutoff Schedule</label>
+                    <div style={{ display: 'flex', gap: 8, marginTop: 4, marginBottom: 8 }}>
+                      <button
+                        className={`db-btn ${cutoffMode === 'paste' ? 'primary' : ''}`}
+                        style={cutoffMode !== 'paste' ? { background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-secondary)' } : {}}
+                        onClick={() => setCutoffMode('paste')}
+                      >
+                        <ClipboardPaste size={13} style={{ marginRight: 4 }} /> Paste
+                      </button>
+                      <button
+                        className={`db-btn ${cutoffMode === 'upload' ? 'primary' : ''}`}
+                        style={cutoffMode !== 'upload' ? { background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-secondary)' } : {}}
+                        onClick={() => setCutoffMode('upload')}
+                      >
+                        <Paperclip size={13} style={{ marginRight: 4 }} /> Upload
+                      </button>
+                    </div>
+
+                    {cutoffMode === 'paste' && (
+                      <textarea
+                        className="lt-input"
+                        style={{ width: '100%', minHeight: 100, fontFamily: 'monospace', fontSize: 11, lineHeight: 1.5, resize: 'vertical' }}
+                        value={cutoffContent}
+                        onChange={e => setCutoffContent(e.target.value)}
+                        placeholder="Paste vessel cutoff schedule here..."
+                      />
+                    )}
+
+                    {cutoffMode === 'upload' && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <label
+                          className="db-btn"
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, cursor: 'pointer', background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}
+                        >
+                          <Paperclip size={13} />
+                          {cutoffFileName ? 'Replace file' : 'Choose file'}
+                          <input
+                            type="file"
+                            accept=".pdf,.xlsx,.xls,.csv,.png,.jpg,.jpeg,.txt"
+                            style={{ display: 'none' }}
+                            onChange={e => {
+                              const file = e.target.files?.[0]
+                              if (!file) return
+                              setCutoffFileName(file.name)
+                              const reader = new FileReader()
+                              reader.onload = () => setCutoffContent(reader.result as string)
+                              reader.readAsDataURL(file)
+                              e.target.value = ''
+                            }}
+                          />
+                        </label>
+                        {cutoffFileName && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text)' }}>
+                            <FileText size={13} style={{ color: '#16a34a' }} />
+                            <span style={{ fontWeight: 600 }}>{cutoffFileName}</span>
+                            <button
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, color: 'var(--text-muted)' }}
+                              onClick={() => { setCutoffFileName(''); setCutoffContent('') }}
+                              title="Remove file"
+                            >
+                              <X size={12} />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  <div style={{ display: 'flex', gap: 12 }}>
+                    <div style={{ flex: 1 }}>
+                      <label className="lt-label">SI Cutoff Date</label>
+                      <input className="lt-input" style={{ width: '100%' }} type="date"
+                        value={cutoffSiDate} onChange={e => setCutoffSiDate(e.target.value)} />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <label className="lt-label">BL Cutoff Date</label>
+                      <input className="lt-input" style={{ width: '100%' }} type="date"
+                        value={cutoffBlDate} onChange={e => setCutoffBlDate(e.target.value)} />
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                    SI &amp; BL cutoff dates trigger downstream follow-up tasks and reminders.
+                  </div>
+
+                  <div>
+                    <label className="lt-label">Notes (optional)</label>
+                    <input className="lt-input" style={{ width: '100%' }} value={cutoffNotes}
+                      onChange={e => setCutoffNotes(e.target.value)}
+                      placeholder="Any notes about vessel cutoff schedule..." />
+                  </div>
+                </div>
+              )
+            })()}
+
+            {/* Submit SI modal */}
+            {actionModal.actionKind === 'submit-si' && (() => {
+              const { booking: siBkg } = actionModal.sourceData
+              return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  {/* Booking summary */}
+                  <div style={{ padding: '10px 14px', background: 'rgba(79,70,229,0.06)', border: '1px solid rgba(79,70,229,0.15)', borderRadius: 8, fontSize: 12 }}>
+                    <strong>{siBkg.customer_name}</strong> — {siBkg.origin} → {siBkg.destination}
+                    <div style={{ color: 'var(--text-muted)', marginTop: 2 }}>
+                      {siBkg.quantity}x {siBkg.container_type} · {siBkg.shipping_line || 'No liner'}
+                    </div>
+                  </div>
+
+                  {/* Cutoff dates */}
+                  {(siBkg.si_cutoff_date || siBkg.bl_cutoff_date) && (
+                    <div style={{ display: 'flex', gap: 12, fontSize: 11 }}>
+                      {siBkg.si_cutoff_date && (
+                        <div style={{ flex: 1, padding: '6px 10px', background: 'rgba(8,145,178,0.06)', border: '1px solid rgba(8,145,178,0.15)', borderRadius: 6 }}>
+                          <span style={{ color: 'var(--text-muted)' }}>SI Cutoff:</span> <strong>{siBkg.si_cutoff_date}</strong>
+                        </div>
+                      )}
+                      {siBkg.bl_cutoff_date && (
+                        <div style={{ flex: 1, padding: '6px 10px', background: 'rgba(217,119,6,0.06)', border: '1px solid rgba(217,119,6,0.15)', borderRadius: 6 }}>
+                          <span style={{ color: 'var(--text-muted)' }}>BL Cutoff:</span> <strong>{siBkg.bl_cutoff_date}</strong>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Submit via InttraAPI */}
+                  {!inttraSiResult && (
+                    <button
+                      className="db-btn primary"
+                      disabled={inttraSiLoading}
+                      style={{ display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'center' }}
+                      onClick={async () => {
+                        setInttraSiLoading(true)
+                        try {
+                          const result = await apiSubmitSiInttra({
+                            booking_id: siBkg.id,
+                            shipping_line: siBkg.shipping_line || '',
+                            origin: siBkg.origin,
+                            destination: siBkg.destination,
+                          })
+                          setInttraSiResult(result)
+                        } catch {
+                          onFlash('InttraAPI SI submission failed — enter manually')
+                        }
+                        setInttraSiLoading(false)
+                      }}
+                    >
+                      {inttraSiLoading
+                        ? <><Loader2 size={13} className="spin" /> Submitting SI via InttraAPI...</>
+                        : <><Globe size={13} /> Submit SI via InttraAPI</>}
+                    </button>
+                  )}
+
+                  {/* Inttra confirmation result */}
+                  {inttraSiResult && (
+                    <div style={{ padding: '14px 16px', background: 'rgba(22,163,106,0.06)', border: '1px solid rgba(22,163,106,0.2)', borderRadius: 8 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                        <Check size={14} style={{ color: '#16a34a' }} />
+                        <span style={{ fontSize: 13, fontWeight: 700, color: '#16a34a' }}>SI Submitted</span>
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 16px', fontSize: 12 }}>
+                        <div><span style={{ color: 'var(--text-muted)' }}>Reference:</span> <strong>{inttraSiResult.si_reference}</strong></div>
+                        <div><span style={{ color: 'var(--text-muted)' }}>Liner:</span> {inttraSiResult.shipping_line}</div>
+                        <div><span style={{ color: 'var(--text-muted)' }}>Status:</span> {inttraSiResult.status}</div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Manual entry */}
+                  {!inttraSiResult && (
+                    <>
+                      <div style={{ textAlign: 'center', fontSize: 11, color: 'var(--text-muted)', padding: '4px 0' }}>— or enter manually —</div>
+                      <div>
+                        <label className="lt-label">SI Document</label>
+                        <div style={{ display: 'flex', gap: 8, marginTop: 4, marginBottom: 8 }}>
+                          <button
+                            className={`db-btn ${siMode === 'paste' ? 'primary' : ''}`}
+                            style={siMode !== 'paste' ? { background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-secondary)' } : {}}
+                            onClick={() => setSiMode('paste')}
+                          >
+                            <ClipboardPaste size={13} style={{ marginRight: 4 }} /> Paste
+                          </button>
+                          <button
+                            className={`db-btn ${siMode === 'upload' ? 'primary' : ''}`}
+                            style={siMode !== 'upload' ? { background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-secondary)' } : {}}
+                            onClick={() => setSiMode('upload')}
+                          >
+                            <Paperclip size={13} style={{ marginRight: 4 }} /> Upload
+                          </button>
+                        </div>
+
+                        {siMode === 'paste' && (
+                          <textarea
+                            className="lt-input"
+                            style={{ width: '100%', minHeight: 100, fontFamily: 'monospace', fontSize: 11, lineHeight: 1.5, resize: 'vertical' }}
+                            value={siContent}
+                            onChange={e => setSiContent(e.target.value)}
+                            placeholder="Paste shipping instructions here..."
+                          />
+                        )}
+
+                        {siMode === 'upload' && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <label
+                              className="db-btn"
+                              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, cursor: 'pointer', background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}
+                            >
+                              <Paperclip size={13} />
+                              {siFileName ? 'Replace file' : 'Choose file'}
+                              <input
+                                type="file"
+                                accept=".pdf,.xlsx,.xls,.csv,.png,.jpg,.jpeg,.txt,.doc,.docx"
+                                style={{ display: 'none' }}
+                                onChange={e => {
+                                  const file = e.target.files?.[0]
+                                  if (!file) return
+                                  setSiFileName(file.name)
+                                  const reader = new FileReader()
+                                  reader.onload = () => setSiContent(reader.result as string)
+                                  reader.readAsDataURL(file)
+                                  e.target.value = ''
+                                }}
+                              />
+                            </label>
+                            {siFileName && (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text)' }}>
+                                <FileText size={13} style={{ color: '#16a34a' }} />
+                                <span style={{ fontWeight: 600 }}>{siFileName}</span>
+                                <button
+                                  style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, color: 'var(--text-muted)' }}
+                                  onClick={() => { setSiFileName(''); setSiContent('') }}
+                                  title="Remove file"
+                                >
+                                  <X size={12} />
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  )}
+
+                  <div>
+                    <label className="lt-label">Notes (optional)</label>
+                    <input className="lt-input" style={{ width: '100%' }} value={formNote}
+                      onChange={e => setFormNote(e.target.value)}
+                      placeholder="Any notes about the SI submission..." />
+                  </div>
+                </div>
+              )
+            })()}
+
+            {/* Send Draft BL modal */}
+            {actionModal.actionKind === 'send-draft-bl' && (() => {
+              const { booking: blBkg } = actionModal.sourceData
+              return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  {/* Booking summary */}
+                  <div style={{ padding: '10px 14px', background: 'rgba(79,70,229,0.06)', border: '1px solid rgba(79,70,229,0.15)', borderRadius: 8, fontSize: 12 }}>
+                    <strong>{blBkg.customer_name}</strong> — {blBkg.origin} → {blBkg.destination}
+                    <div style={{ color: 'var(--text-muted)', marginTop: 2 }}>
+                      {blBkg.quantity}x {blBkg.container_type} · {blBkg.shipping_line || 'No liner'}
+                    </div>
+                  </div>
+
+                  {/* Cutoff dates */}
+                  {(blBkg.si_cutoff_date || blBkg.bl_cutoff_date) && (
+                    <div style={{ display: 'flex', gap: 12, fontSize: 11 }}>
+                      {blBkg.si_cutoff_date && (
+                        <div style={{ flex: 1, padding: '6px 10px', background: 'rgba(8,145,178,0.06)', border: '1px solid rgba(8,145,178,0.15)', borderRadius: 6 }}>
+                          <span style={{ color: 'var(--text-muted)' }}>SI Cutoff:</span> <strong>{blBkg.si_cutoff_date}</strong>
+                        </div>
+                      )}
+                      {blBkg.bl_cutoff_date && (
+                        <div style={{ flex: 1, padding: '6px 10px', background: 'rgba(217,119,6,0.06)', border: '1px solid rgba(217,119,6,0.15)', borderRadius: 6 }}>
+                          <span style={{ color: 'var(--text-muted)' }}>BL Cutoff:</span> <strong>{blBkg.bl_cutoff_date}</strong>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <div style={{ padding: '10px 14px', background: 'rgba(8,145,178,0.06)', border: '1px solid rgba(8,145,178,0.18)', borderRadius: 8, fontSize: 12, color: '#0891b2', display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <FileText size={14} />
+                    Record the Draft BL received from {blBkg.shipping_line || 'the liner'} and forward it to the customer for approval.
+                  </div>
+
+                  {/* Draft BL document */}
+                  <div>
+                    <label className="lt-label">Draft BL Document</label>
+                    <div style={{ display: 'flex', gap: 8, marginTop: 4, marginBottom: 8 }}>
+                      <button
+                        className={`db-btn ${draftBlMode === 'paste' ? 'primary' : ''}`}
+                        style={draftBlMode !== 'paste' ? { background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-secondary)' } : {}}
+                        onClick={() => setDraftBlMode('paste')}
+                      >
+                        <ClipboardPaste size={13} style={{ marginRight: 4 }} /> Paste
+                      </button>
+                      <button
+                        className={`db-btn ${draftBlMode === 'upload' ? 'primary' : ''}`}
+                        style={draftBlMode !== 'upload' ? { background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-secondary)' } : {}}
+                        onClick={() => setDraftBlMode('upload')}
+                      >
+                        <Paperclip size={13} style={{ marginRight: 4 }} /> Upload
+                      </button>
+                    </div>
+
+                    {draftBlMode === 'paste' && (
+                      <textarea
+                        className="lt-input"
+                        style={{ width: '100%', minHeight: 100, fontFamily: 'monospace', fontSize: 11, lineHeight: 1.5, resize: 'vertical' }}
+                        value={draftBlContent}
+                        onChange={e => setDraftBlContent(e.target.value)}
+                        placeholder="Paste Draft BL content here..."
+                      />
+                    )}
+
+                    {draftBlMode === 'upload' && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <label
+                          className="db-btn"
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, cursor: 'pointer', background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}
+                        >
+                          <Paperclip size={13} />
+                          {draftBlFileName ? 'Replace file' : 'Choose file'}
+                          <input
+                            type="file"
+                            accept=".pdf,.xlsx,.xls,.csv,.png,.jpg,.jpeg,.txt,.doc,.docx"
+                            style={{ display: 'none' }}
+                            onChange={e => {
+                              const file = e.target.files?.[0]
+                              if (!file) return
+                              setDraftBlFileName(file.name)
+                              const reader = new FileReader()
+                              reader.onload = () => setDraftBlContent(reader.result as string)
+                              reader.readAsDataURL(file)
+                              e.target.value = ''
+                            }}
+                          />
+                        </label>
+                        {draftBlFileName && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text)' }}>
+                            <FileText size={13} style={{ color: '#16a34a' }} />
+                            <span style={{ fontWeight: 600 }}>{draftBlFileName}</span>
+                            <button
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, color: 'var(--text-muted)' }}
+                              onClick={() => { setDraftBlFileName(''); setDraftBlContent('') }}
+                              title="Remove file"
+                            >
+                              <X size={12} />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Send method */}
+                  <div>
+                    <label className="lt-label">Send Draft BL to Customer via</label>
+                    <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                      <button
+                        className={`db-btn ${sendMethod === 'email' ? 'primary' : ''}`}
+                        style={sendMethod !== 'email' ? { background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-secondary)' } : {}}
+                        onClick={() => setSendMethod('email')}
+                      >
+                        <Mail size={13} style={{ marginRight: 4 }} /> Email
+                      </button>
+                      <button
+                        className={`db-btn ${sendMethod === 'whatsapp' ? 'primary' : ''}`}
+                        style={sendMethod === 'whatsapp' ? { background: '#25d366', borderColor: '#25d366' } : { background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}
+                        onClick={() => setSendMethod('whatsapp')}
+                      >
+                        <MessageCircle size={13} style={{ marginRight: 4 }} /> WhatsApp
+                      </button>
+                    </div>
+                  </div>
+
+                  {sendMethod === 'email' && (
+                    <div>
+                      <label className="lt-label">Customer Email <span style={{ color: '#dc2626' }}>*</span></label>
+                      <input className="lt-input" style={{ width: '100%' }} type="email"
+                        value={customerContactEmail} onChange={e => setCustomerContactEmail(e.target.value)}
+                        placeholder="customer@example.com" />
+                    </div>
+                  )}
+
+                  {sendMethod === 'whatsapp' && (
+                    <>
+                      <div>
+                        <label className="lt-label">Customer WhatsApp Number</label>
+                        <input className="lt-input" style={{ width: '100%' }}
+                          value={customerContactPhone} onChange={e => setCustomerContactPhone(e.target.value)}
+                          placeholder="+94 7X XXX XXXX" />
+                      </div>
+                      <div style={{ padding: '10px 14px', background: 'rgba(37,211,102,0.06)', border: '1px solid rgba(37,211,102,0.2)', borderRadius: 8 }}>
+                        <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer', fontSize: 12, color: 'var(--text-secondary)' }}>
+                          <input type="checkbox" checked={waConfirmed} onChange={e => setWaConfirmed(e.target.checked)} style={{ marginTop: 2 }} />
+                          <span>
+                            I confirm that I have sent the Draft BL to the customer via WhatsApp.
+                            <span style={{ display: 'block', fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                              No WhatsApp integration — manual confirmation.
+                            </span>
+                          </span>
+                        </label>
+                      </div>
+                    </>
+                  )}
+
+                  <div>
+                    <label className="lt-label">Notes (optional)</label>
+                    <input className="lt-input" style={{ width: '100%' }} value={formNote}
+                      onChange={e => setFormNote(e.target.value)}
+                      placeholder="Any notes for the customer..." />
+                  </div>
+                </div>
+              )
+            })()}
+
+            {/* BL Approval modal */}
+            {actionModal.actionKind === 'bl-approval' && (() => {
+              const { booking: baBkg } = actionModal.sourceData
+              return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  {/* Booking summary */}
+                  <div style={{ padding: '10px 14px', background: 'rgba(79,70,229,0.06)', border: '1px solid rgba(79,70,229,0.15)', borderRadius: 8, fontSize: 12 }}>
+                    <strong>{baBkg.customer_name}</strong> — {baBkg.origin} → {baBkg.destination}
+                    <div style={{ color: 'var(--text-muted)', marginTop: 2 }}>
+                      {baBkg.quantity}x {baBkg.container_type} · {baBkg.shipping_line || 'No liner'}
+                    </div>
+                  </div>
+
+                  {/* Cutoff dates */}
+                  {(baBkg.si_cutoff_date || baBkg.bl_cutoff_date) && (
+                    <div style={{ display: 'flex', gap: 12, fontSize: 11 }}>
+                      {baBkg.si_cutoff_date && (
+                        <div style={{ flex: 1, padding: '6px 10px', background: 'rgba(8,145,178,0.06)', border: '1px solid rgba(8,145,178,0.15)', borderRadius: 6 }}>
+                          <span style={{ color: 'var(--text-muted)' }}>SI Cutoff:</span> <strong>{baBkg.si_cutoff_date}</strong>
+                        </div>
+                      )}
+                      {baBkg.bl_cutoff_date && (
+                        <div style={{ flex: 1, padding: '6px 10px', background: 'rgba(217,119,6,0.06)', border: '1px solid rgba(217,119,6,0.15)', borderRadius: 6 }}>
+                          <span style={{ color: 'var(--text-muted)' }}>BL Cutoff:</span> <strong>{baBkg.bl_cutoff_date}</strong>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {actionModal.previousContext && (
+                    <div className="ws-context-card" style={{ marginTop: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                        <User size={11} style={{ color: 'var(--text-muted)' }} />
+                        <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)' }}>
+                          {empName(actionModal.previousContext.actor_id)} ({ROLE_LABELS[actionModal.previousContext.actor_role]})
+                        </span>
+                      </div>
+                      <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{actionModal.previousContext.action}</div>
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="lt-label">Customer Response to Draft BL</label>
+                    <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                      <button
+                        className={`db-btn ${blDecision === 'approved' ? 'primary' : ''}`}
+                        style={blDecision === 'approved' ? { background: '#16a34a', borderColor: '#16a34a' } : { background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}
+                        onClick={() => setBlDecision('approved')}
+                      >
+                        <Check size={13} style={{ marginRight: 4 }} /> Approved
+                      </button>
+                      <button
+                        className={`db-btn ${blDecision === 'changes-requested' ? 'primary' : ''}`}
+                        style={blDecision === 'changes-requested' ? { background: '#d97706', borderColor: '#d97706' } : { background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}
+                        onClick={() => setBlDecision('changes-requested')}
+                      >
+                        <Edit3 size={13} style={{ marginRight: 4 }} /> Changes Requested
+                      </button>
+                    </div>
+                  </div>
+
+                  {blDecision === 'changes-requested' && (
+                    <div>
+                      <label className="lt-label">Change Details <span style={{ color: '#dc2626' }}>*</span></label>
+                      <textarea
+                        className="lt-input"
+                        style={{ width: '100%', minHeight: 80, resize: 'vertical' }}
+                        value={formNote}
+                        onChange={e => setFormNote(e.target.value)}
+                        placeholder="Describe the changes requested by the customer..."
+                      />
+                    </div>
+                  )}
+
+                  {blDecision === 'approved' && (
+                    <div>
+                      <label className="lt-label">Notes (optional)</label>
+                      <input className="lt-input" style={{ width: '100%' }} value={formNote}
+                        onChange={e => setFormNote(e.target.value)}
+                        placeholder="Any notes..." />
+                    </div>
+                  )}
+                </div>
+              )
+            })()}
+
+            {/* Record Master BL modal */}
+            {actionModal.actionKind === 'record-master-bl' && (() => {
+              const { booking: mbBkg } = actionModal.sourceData
+              return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  {/* Booking summary */}
+                  <div style={{ padding: '10px 14px', background: 'rgba(79,70,229,0.06)', border: '1px solid rgba(79,70,229,0.15)', borderRadius: 8, fontSize: 12 }}>
+                    <strong>{mbBkg.customer_name}</strong> — {mbBkg.origin} → {mbBkg.destination}
+                    <div style={{ color: 'var(--text-muted)', marginTop: 2 }}>
+                      {mbBkg.quantity}x {mbBkg.container_type} · {mbBkg.shipping_line || 'No liner'} · Door-to-Door
+                    </div>
+                  </div>
+
+                  {/* Cutoff dates */}
+                  {(mbBkg.si_cutoff_date || mbBkg.bl_cutoff_date) && (
+                    <div style={{ display: 'flex', gap: 12, fontSize: 11 }}>
+                      {mbBkg.si_cutoff_date && (
+                        <div style={{ flex: 1, padding: '6px 10px', background: 'rgba(8,145,178,0.06)', border: '1px solid rgba(8,145,178,0.15)', borderRadius: 6 }}>
+                          <span style={{ color: 'var(--text-muted)' }}>SI Cutoff:</span> <strong>{mbBkg.si_cutoff_date}</strong>
+                        </div>
+                      )}
+                      {mbBkg.bl_cutoff_date && (
+                        <div style={{ flex: 1, padding: '6px 10px', background: 'rgba(217,119,6,0.06)', border: '1px solid rgba(217,119,6,0.15)', borderRadius: 6 }}>
+                          <span style={{ color: 'var(--text-muted)' }}>BL Cutoff:</span> <strong>{mbBkg.bl_cutoff_date}</strong>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <div style={{ padding: '8px 12px', background: 'rgba(13,148,136,0.06)', border: '1px solid rgba(13,148,136,0.15)', borderRadius: 8, fontSize: 11, color: 'var(--text-secondary)' }}>
+                    <strong>Master BL</strong> — Issued by liner. Synergy is listed as shipper; destination agent as consignee.
+                  </div>
+
+                  <div>
+                    <label className="lt-label">Master BL Number <span style={{ color: '#dc2626' }}>*</span></label>
+                    <input className="lt-input" style={{ width: '100%' }} value={masterBlNumber}
+                      onChange={e => setMasterBlNumber(e.target.value)}
+                      placeholder="e.g. MAEU123456789" autoFocus />
+                  </div>
+
+                  <div>
+                    <label className="lt-label">Shipper (on Master BL)</label>
+                    <input className="lt-input" style={{ width: '100%' }} value={masterBlShipper}
+                      onChange={e => setMasterBlShipper(e.target.value)}
+                      placeholder="Synergy Shipping & Logistics" />
+                  </div>
+
+                  <div>
+                    <label className="lt-label">Consignee — Destination Agent <span style={{ color: '#dc2626' }}>*</span></label>
+                    <input className="lt-input" style={{ width: '100%' }} value={masterBlConsignee}
+                      onChange={e => setMasterBlConsignee(e.target.value)}
+                      placeholder="e.g. Rotterdam Forwarding BV" />
+                  </div>
+
+                  <div>
+                    <label className="lt-label">Notes (optional)</label>
+                    <input className="lt-input" style={{ width: '100%' }} value={formNote}
+                      onChange={e => setFormNote(e.target.value)}
+                      placeholder="Any notes..." />
+                  </div>
+                </div>
+              )
+            })()}
+
+            {/* Create House BL modal */}
+            {actionModal.actionKind === 'create-house-bl' && (() => {
+              const { booking: hbBkg } = actionModal.sourceData
+              return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  {/* Booking summary */}
+                  <div style={{ padding: '10px 14px', background: 'rgba(79,70,229,0.06)', border: '1px solid rgba(79,70,229,0.15)', borderRadius: 8, fontSize: 12 }}>
+                    <strong>{hbBkg.customer_name}</strong> — {hbBkg.origin} → {hbBkg.destination}
+                    <div style={{ color: 'var(--text-muted)', marginTop: 2 }}>
+                      {hbBkg.quantity}x {hbBkg.container_type} · {hbBkg.shipping_line || 'No liner'} · Door-to-Door
+                    </div>
+                  </div>
+
+                  {/* Cutoff dates */}
+                  {(hbBkg.si_cutoff_date || hbBkg.bl_cutoff_date) && (
+                    <div style={{ display: 'flex', gap: 12, fontSize: 11 }}>
+                      {hbBkg.si_cutoff_date && (
+                        <div style={{ flex: 1, padding: '6px 10px', background: 'rgba(8,145,178,0.06)', border: '1px solid rgba(8,145,178,0.15)', borderRadius: 6 }}>
+                          <span style={{ color: 'var(--text-muted)' }}>SI Cutoff:</span> <strong>{hbBkg.si_cutoff_date}</strong>
+                        </div>
+                      )}
+                      {hbBkg.bl_cutoff_date && (
+                        <div style={{ flex: 1, padding: '6px 10px', background: 'rgba(217,119,6,0.06)', border: '1px solid rgba(217,119,6,0.15)', borderRadius: 6 }}>
+                          <span style={{ color: 'var(--text-muted)' }}>BL Cutoff:</span> <strong>{hbBkg.bl_cutoff_date}</strong>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Master BL reference */}
+                  <div style={{ padding: '8px 12px', background: 'rgba(13,148,136,0.06)', border: '1px solid rgba(13,148,136,0.15)', borderRadius: 8, fontSize: 11 }}>
+                    <span style={{ color: 'var(--text-muted)' }}>Master BL:</span>{' '}
+                    <strong style={{ color: 'var(--text-primary)' }}>{hbBkg.master_bl_number || 'N/A'}</strong>
+                    <span style={{ color: 'var(--text-muted)', marginLeft: 8 }}>Shipper:</span>{' '}
+                    <span style={{ color: 'var(--text-secondary)' }}>{hbBkg.master_bl_shipper || 'N/A'}</span>
+                    <span style={{ color: 'var(--text-muted)', marginLeft: 8 }}>Consignee:</span>{' '}
+                    <span style={{ color: 'var(--text-secondary)' }}>{hbBkg.master_bl_consignee || 'N/A'}</span>
+                  </div>
+
+                  <div style={{ padding: '8px 12px', background: 'rgba(217,119,6,0.06)', border: '1px solid rgba(217,119,6,0.15)', borderRadius: 8, fontSize: 11, color: 'var(--text-secondary)' }}>
+                    <strong>House BL</strong> — Created internally by CS. Lists actual shipper and consignee.
+                  </div>
+
+                  <div>
+                    <label className="lt-label">House BL Number <span style={{ color: '#dc2626' }}>*</span></label>
+                    <input className="lt-input" style={{ width: '100%' }} value={houseBlNumber}
+                      onChange={e => setHouseBlNumber(e.target.value)}
+                      placeholder="e.g. SYNHBL-2026-001" autoFocus />
+                  </div>
+
+                  <div>
+                    <label className="lt-label">Shipper (Actual)</label>
+                    <input className="lt-input" style={{ width: '100%' }} value={houseBlShipper}
+                      onChange={e => setHouseBlShipper(e.target.value)}
+                      placeholder="Actual shipper name" />
+                  </div>
+
+                  <div>
+                    <label className="lt-label">Consignee (Actual) <span style={{ color: '#dc2626' }}>*</span></label>
+                    <input className="lt-input" style={{ width: '100%' }} value={houseBlConsignee}
+                      onChange={e => setHouseBlConsignee(e.target.value)}
+                      placeholder="Actual consignee name" />
+                  </div>
+
+                  <div>
+                    <label className="lt-label">Notes (optional)</label>
+                    <input className="lt-input" style={{ width: '100%' }} value={formNote}
+                      onChange={e => setFormNote(e.target.value)}
+                      placeholder="Any notes..." />
                   </div>
                 </div>
               )
@@ -2078,6 +3444,15 @@ ABC Logistics (Pvt) Ltd`
                   (actionModal.actionKind === 'confirm-booking' && inttraBooking) ||
                   (actionModal.actionKind === 'release-booking' && sendMethod === 'email' && (!customerContactEmail.trim() || !customerContactEmail.includes('@'))) ||
                   (actionModal.actionKind === 'release-booking' && sendMethod === 'whatsapp' && !waConfirmed) ||
+                  (actionModal.actionKind === 'request-si' && sendMethod === 'email' && (!customerContactEmail.trim() || !customerContactEmail.includes('@'))) ||
+                  (actionModal.actionKind === 'request-si' && sendMethod === 'whatsapp' && !waConfirmed) ||
+                  (actionModal.actionKind === 'submit-si' && inttraSiLoading) ||
+                  (actionModal.actionKind === 'submit-si' && !inttraSiResult && !siContent.trim()) ||
+                  (actionModal.actionKind === 'send-draft-bl' && sendMethod === 'email' && (!customerContactEmail.trim() || !customerContactEmail.includes('@'))) ||
+                  (actionModal.actionKind === 'send-draft-bl' && sendMethod === 'whatsapp' && !waConfirmed) ||
+                  (actionModal.actionKind === 'bl-approval' && blDecision === 'changes-requested' && !formNote.trim()) ||
+                  (actionModal.actionKind === 'record-master-bl' && (!masterBlNumber.trim() || !masterBlConsignee.trim())) ||
+                  (actionModal.actionKind === 'create-house-bl' && (!houseBlNumber.trim() || !houseBlConsignee.trim())) ||
                   kycSending || quotationSending
                 }
                 style={
@@ -2092,12 +3467,29 @@ ABC Logistics (Pvt) Ltd`
                   actionModal.actionKind === 'customer-response' && customerDecision === 'accepted' ? { background: '#16a34a', borderColor: '#16a34a' } :
                   actionModal.actionKind === 'customer-response' && customerDecision === 'rejected' ? { background: '#dc2626', borderColor: '#dc2626' } :
                   actionModal.actionKind === 'booking-request' ? { background: '#4f46e5', borderColor: '#4f46e5' } :
+                  actionModal.actionKind === 'record-cutoff' ? { background: '#0891b2', borderColor: '#0891b2' } :
                   actionModal.actionKind === 'confirm-booking' && inttraBookResult ? { background: '#16a34a', borderColor: '#16a34a' } :
                   actionModal.actionKind === 'confirm-booking' && formVessel.trim() ? { background: '#d97706', borderColor: '#d97706' } :
                   actionModal.actionKind === 'confirm-booking' ? { opacity: 0.4, cursor: 'not-allowed' } :
                   actionModal.actionKind === 'release-booking' && sendMethod === 'whatsapp' && waConfirmed ? { background: '#25d366', borderColor: '#25d366' } :
                   actionModal.actionKind === 'release-booking' && sendMethod === 'email' && customerContactEmail.includes('@') ? {} :
                   actionModal.actionKind === 'release-booking' ? { opacity: 0.4, cursor: 'not-allowed' } :
+                  actionModal.actionKind === 'request-si' && sendMethod === 'whatsapp' && waConfirmed ? { background: '#25d366', borderColor: '#25d366' } :
+                  actionModal.actionKind === 'request-si' && sendMethod === 'email' && customerContactEmail.includes('@') ? { background: '#0891b2', borderColor: '#0891b2' } :
+                  actionModal.actionKind === 'request-si' ? { opacity: 0.4, cursor: 'not-allowed' } :
+                  actionModal.actionKind === 'submit-si' && inttraSiResult ? { background: '#16a34a', borderColor: '#16a34a' } :
+                  actionModal.actionKind === 'submit-si' && siContent.trim() ? { background: '#0891b2', borderColor: '#0891b2' } :
+                  actionModal.actionKind === 'submit-si' ? { opacity: 0.4, cursor: 'not-allowed' } :
+                  actionModal.actionKind === 'send-draft-bl' && sendMethod === 'whatsapp' && waConfirmed ? { background: '#25d366', borderColor: '#25d366' } :
+                  actionModal.actionKind === 'send-draft-bl' && sendMethod === 'email' && customerContactEmail.includes('@') ? { background: '#0891b2', borderColor: '#0891b2' } :
+                  actionModal.actionKind === 'send-draft-bl' ? { opacity: 0.4, cursor: 'not-allowed' } :
+                  actionModal.actionKind === 'bl-approval' && blDecision === 'approved' ? { background: '#16a34a', borderColor: '#16a34a' } :
+                  actionModal.actionKind === 'bl-approval' && blDecision === 'changes-requested' && formNote.trim() ? { background: '#d97706', borderColor: '#d97706' } :
+                  actionModal.actionKind === 'bl-approval' ? { opacity: 0.4, cursor: 'not-allowed' } :
+                  actionModal.actionKind === 'record-master-bl' && masterBlNumber.trim() && masterBlConsignee.trim() ? { background: '#0d9488', borderColor: '#0d9488' } :
+                  actionModal.actionKind === 'record-master-bl' ? { opacity: 0.4, cursor: 'not-allowed' } :
+                  actionModal.actionKind === 'create-house-bl' && houseBlNumber.trim() && houseBlConsignee.trim() ? { background: '#d97706', borderColor: '#d97706' } :
+                  actionModal.actionKind === 'create-house-bl' ? { opacity: 0.4, cursor: 'not-allowed' } :
                   (actionModal.actionKind === 'send-kyc' && (!formEmail.trim() || !formEmail.includes('@'))) ? { opacity: 0.4, cursor: 'not-allowed' } :
                   (actionModal.actionKind === 'check-inttra-rates' && (inttraLoading || !inttraSearched || (selectedInttraIds.size === 0 && (!manualLiner.trim() || !manualAmount.trim())))) ? { opacity: 0.4, cursor: 'not-allowed' } :
                   (actionModal.actionKind === 'prepare-quotation' && !quotationContent.trim()) ? { opacity: 0.4, cursor: 'not-allowed' } :
@@ -2121,10 +3513,21 @@ ABC Logistics (Pvt) Ltd`
                  actionModal.actionKind === 'customer-response' && customerDecision === 'accepted' ? <><Check size={12} /> Customer Accepted — Proceed to Booking</> :
                  actionModal.actionKind === 'customer-response' && customerDecision === 'rejected' ? <><X size={12} /> Customer Rejected — Close Inquiry</> :
                  actionModal.actionKind === 'booking-request' ? <><Ship size={12} /> Create Booking &amp; Send to Procurement</> :
+                 actionModal.actionKind === 'record-cutoff' ? <><Ship size={12} /> Record Cutoff &amp; Push</> :
                  actionModal.actionKind === 'confirm-booking' && inttraBookResult ? <><Check size={12} /> Confirm &amp; Send to CS</> :
                  actionModal.actionKind === 'confirm-booking' && formVessel.trim() ? <><Ship size={12} /> Confirm Manually &amp; Send to CS</> :
                  actionModal.actionKind === 'release-booking' && sendMethod === 'email' ? <><Mail size={12} /> Release &amp; Send via Email</> :
                  actionModal.actionKind === 'release-booking' && sendMethod === 'whatsapp' ? <><MessageCircle size={12} /> Release &amp; Confirm WhatsApp Sent</> :
+                 actionModal.actionKind === 'request-si' && sendMethod === 'email' ? <><Mail size={12} /> Request SI via Email</> :
+                 actionModal.actionKind === 'request-si' && sendMethod === 'whatsapp' ? <><MessageCircle size={12} /> Confirm SI Request via WhatsApp</> :
+                 actionModal.actionKind === 'submit-si' && inttraSiResult ? <><Check size={12} /> Confirm SI Submission</> :
+                 actionModal.actionKind === 'submit-si' ? <><Globe size={12} /> Submit SI &amp; Confirm</> :
+                 actionModal.actionKind === 'send-draft-bl' && sendMethod === 'email' ? <><Mail size={12} /> Send Draft BL via Email</> :
+                 actionModal.actionKind === 'send-draft-bl' && sendMethod === 'whatsapp' ? <><MessageCircle size={12} /> Confirm Draft BL Sent</> :
+                 actionModal.actionKind === 'bl-approval' && blDecision === 'approved' ? <><Check size={12} /> BL Approved</> :
+                 actionModal.actionKind === 'bl-approval' && blDecision === 'changes-requested' ? <><Edit3 size={12} /> Record Changes Requested</> :
+                 actionModal.actionKind === 'record-master-bl' ? <><FileText size={12} /> Record Master BL</> :
+                 actionModal.actionKind === 'create-house-bl' ? <><FileText size={12} /> Create House BL</> :
                  actionModal.actionKind === 'approve-quote' && formDecision === 'reject' ? 'Reject' :
                  <>Confirm &amp; Push <ChevronRight size={12} /></>}
               </button>

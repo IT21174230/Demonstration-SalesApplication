@@ -149,6 +149,7 @@ def get_fe_inquiries() -> list[dict]:
             "request": i.get("request", f"{i.get('quantity', '')} {i.get('container_type', '')}".strip()),
             "origin": i.get("origin", "TBD"),
             "destination": i.get("destination", "TBD"),
+            "delivery_type": i.get("delivery_type", "port-to-port"),
             "channel": _map_channel(i.get("channel", "email")),
             "sbu": i.get("sbu", "Ocean Exports"),
             "employee_id": i.get("received_by_party_id", 1),
@@ -309,6 +310,7 @@ def create_fe_inquiry(payload: dict) -> dict:
         "channel": payload.get("channel", "email").lower(),
         "origin": payload.get("origin", "TBD"),
         "destination": payload.get("destination", "TBD"),
+        "delivery_type": payload.get("delivery_type", "port-to-port"),
         "commodity": payload.get("request", ""),
         "container_type": "N/A",
         "quantity": 1,
@@ -332,6 +334,7 @@ def create_fe_inquiry(payload: dict) -> dict:
         "request": new_inq["request"],
         "origin": new_inq["origin"],
         "destination": new_inq["destination"],
+        "delivery_type": new_inq.get("delivery_type", "port-to-port"),
         "channel": _map_channel(new_inq["channel"]),
         "sbu": new_inq["sbu"],
         "employee_id": new_inq["received_by_party_id"],
@@ -793,6 +796,7 @@ def create_fe_booking(payload: dict) -> dict:
         "released_at": None,
         "procurement_notified": not is_urgent,
         "notes": "Urgent booking — CS booked directly with liner" if is_urgent else "",
+        "delivery_type": payload.get("delivery_type", "port-to-port"),
     }
     bookings.insert(0, new_booking)
     _save_data(data)
@@ -860,6 +864,130 @@ def notify_procurement_fe_booking(booking_id: str) -> bool:
     target["procurement_notified"] = True
     _save_data(data)
     return True
+
+
+def set_fe_booking_si_cutoff(booking_id: str, si_cutoff_date: str) -> bool:
+    """Set the SI cutoff date for a booking."""
+    data = _load_data()
+    bookings = data.get("bookings", [])
+    target = next((b for b in bookings if b["id"] == booking_id), None)
+    if not target:
+        return False
+    target["si_cutoff_date"] = si_cutoff_date
+    _save_data(data)
+    return True
+
+
+def mark_fe_booking_si_requested(booking_id: str) -> bool:
+    """Mark an SI request as sent for a booking."""
+    data = _load_data()
+    bookings = data.get("bookings", [])
+    target = next((b for b in bookings if b["id"] == booking_id), None)
+    if not target:
+        return False
+    target["si_requested"] = True
+    _save_data(data)
+    return True
+
+
+def set_fe_booking_bl_cutoff(booking_id: str, bl_cutoff_date: str) -> bool:
+    """Set the BL cutoff date for a booking."""
+    data = _load_data()
+    bookings = data.get("bookings", [])
+    target = next((b for b in bookings if b["id"] == booking_id), None)
+    if not target:
+        return False
+    target["bl_cutoff_date"] = bl_cutoff_date
+    _save_data(data)
+    return True
+
+
+def mark_fe_booking_si_submitted(booking_id: str) -> bool:
+    """Mark SI as submitted to the liner for a booking."""
+    data = _load_data()
+    bookings = data.get("bookings", [])
+    target = next((b for b in bookings if b["id"] == booking_id), None)
+    if not target:
+        return False
+    target["si_submitted"] = True
+    _save_data(data)
+    return True
+
+
+def mark_fe_booking_draft_bl_sent(booking_id: str) -> bool:
+    """Mark Draft BL as sent to the customer for a booking."""
+    data = _load_data()
+    bookings = data.get("bookings", [])
+    target = next((b for b in bookings if b["id"] == booking_id), None)
+    if not target:
+        return False
+    target["draft_bl_sent"] = True
+    _save_data(data)
+    return True
+
+
+def set_fe_booking_bl_status(booking_id: str, status: str) -> bool:
+    """Set the BL approval status for a booking."""
+    data = _load_data()
+    bookings = data.get("bookings", [])
+    target = next((b for b in bookings if b["id"] == booking_id), None)
+    if not target:
+        return False
+    target["bl_status"] = status
+    _save_data(data)
+    return True
+
+
+def record_fe_booking_master_bl(booking_id: str, master_bl_number: str, shipper: str, consignee: str) -> bool:
+    """Record the Master BL details for a door-to-door booking."""
+    data = _load_data()
+    bookings = data.get("bookings", [])
+    target = next((b for b in bookings if b["id"] == booking_id), None)
+    if not target:
+        return False
+    target["master_bl_number"] = master_bl_number
+    target["master_bl_shipper"] = shipper
+    target["master_bl_consignee"] = consignee
+    target["master_bl_recorded"] = True
+    _save_data(data)
+    return True
+
+
+def create_fe_booking_house_bl(booking_id: str, house_bl_number: str, shipper: str, consignee: str) -> bool:
+    """Create a House BL for a door-to-door booking."""
+    data = _load_data()
+    bookings = data.get("bookings", [])
+    target = next((b for b in bookings if b["id"] == booking_id), None)
+    if not target:
+        return False
+    target["house_bl_number"] = house_bl_number
+    target["house_bl_shipper"] = shipper
+    target["house_bl_consignee"] = consignee
+    target["house_bl_created"] = True
+    _save_data(data)
+    return True
+
+
+def simulate_inttra_si_submission(
+    booking_id: str = "",
+    shipping_line: str = "",
+    origin: str = "",
+    destination: str = "",
+) -> dict:
+    """Simulate an InttraAPI SI submission. Returns a mock confirmation."""
+    import hashlib
+
+    seed = hashlib.md5(f"SI-{booking_id}{shipping_line}{origin}{destination}".encode()).hexdigest()
+    si_ref = f"SI-{seed[:8].upper()}"
+
+    return {
+        "success": True,
+        "si_reference": si_ref,
+        "booking_id": booking_id,
+        "shipping_line": shipping_line or "Maersk Line",
+        "status": "Submitted",
+        "message": f"SI submitted to {shipping_line or 'carrier'} via InttraAPI. Reference: {si_ref}.",
+    }
 
 
 # ---------------------------------------------------------------------------

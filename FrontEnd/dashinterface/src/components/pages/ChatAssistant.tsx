@@ -9,7 +9,7 @@ import {
 import { usePersistentState } from '../../hooks'
 import {
   nowStamp, SBUS, ROLE_QUICK_COMMANDS, ROLE_LABELS, ROLE_COLORS,
-  type Inquiry, type Customer, type SBU, type CustomerTier, type PaymentTerms,
+  type Inquiry, type Customer, type SBU, type CustomerTier, type PaymentTerms, type DeliveryType,
 } from '../../mockData'
 import { useRole } from '../../RoleContext'
 import { useWebSocket } from '../../useWebSocket'
@@ -45,7 +45,7 @@ const QUICK_COMMANDS: QuickCommand[] = [
 /*  Form state types                                                   */
 /* ------------------------------------------------------------------ */
 interface NewCustomerForm { name: string; location: string; tier: CustomerTier; payment: PaymentTerms }
-interface NewInquiryForm  { customer: string; request: string; origin: string; destination: string; channel: 'WhatsApp' | 'Email' | 'Phone'; sbu: SBU }
+interface NewInquiryForm  { customer: string; request: string; origin: string; destination: string; channel: 'WhatsApp' | 'Email' | 'Phone'; sbu: SBU; deliveryType: DeliveryType }
 interface FollowUpForm    { customer: string; note: string; markComplete: boolean }
 interface NewTaskForm     { customer: string; task: string; dueDate: string }
 interface QuoteForm       { customer: string }
@@ -100,7 +100,7 @@ export default function ChatAssistant({
 
   // Form states
   const [custForm, setCustForm]           = useState<NewCustomerForm>({ name: '', location: '', tier: 'Regular', payment: 'Pay Upfront' })
-  const [inqForm, setInqForm]             = useState<NewInquiryForm>({ customer: '', request: '', origin: '', destination: '', channel: 'Email', sbu: 'Ocean Exports' })
+  const [inqForm, setInqForm]             = useState<NewInquiryForm>({ customer: '', request: '', origin: '', destination: '', channel: 'Email', sbu: 'Ocean Exports', deliveryType: 'port-to-port' })
   const [fuForm, setFuForm]               = useState<FollowUpForm>({ customer: '', note: '', markComplete: false })
   const [taskForm, setTaskForm]           = useState<NewTaskForm>({ customer: '', task: '', dueDate: '' })
   const [quoteForm, setQuoteForm]         = useState<QuoteForm>({ customer: '' })
@@ -188,7 +188,7 @@ export default function ChatAssistant({
     setActiveCmd(id)
     // Reset forms when opening
     setCustForm({ name: '', location: '', tier: 'Regular', payment: 'Pay Upfront' })
-    setInqForm({ customer: '', request: '', origin: '', destination: '', channel: 'Email', sbu: 'Ocean Exports' })
+    setInqForm({ customer: '', request: '', origin: '', destination: '', channel: 'Email', sbu: 'Ocean Exports', deliveryType: 'port-to-port' })
     setFuForm({ customer: '', note: '', markComplete: false })
     setTaskForm({ customer: '', task: '', dueDate: '' })
     setQuoteForm({ customer: '' })
@@ -213,7 +213,7 @@ export default function ChatAssistant({
         break
       case 'new-inquiry':
         if (!inqForm.customer.trim() || !inqForm.request.trim()) return
-        message = `[CMD /new inquiry] customer=${inqForm.customer} | request=${inqForm.request} | origin=${inqForm.origin || 'TBD'} | destination=${inqForm.destination || 'TBD'} | channel=${inqForm.channel} | sbu=${inqForm.sbu}`
+        message = `[CMD /new inquiry] customer=${inqForm.customer} | request=${inqForm.request} | origin=${inqForm.origin || 'TBD'} | destination=${inqForm.destination || 'TBD'} | channel=${inqForm.channel} | sbu=${inqForm.sbu} | delivery_type=${inqForm.deliveryType}`
         break
       case 'follow-up':
         if (!fuForm.customer.trim() || !fuForm.note.trim()) return
@@ -333,6 +333,12 @@ export default function ChatAssistant({
                   </select>
                 </FormField>
               </div>
+              <FormField label="Delivery Type">
+                <select className="qc-select" value={inqForm.deliveryType} onChange={e => setInqForm(p => ({ ...p, deliveryType: e.target.value as DeliveryType }))}>
+                  <option value="port-to-port">Port-to-Port</option>
+                  <option value="door-to-door">Door-to-Door</option>
+                </select>
+              </FormField>
             </>
           )}
           {activeCmd === 'follow-up' && (

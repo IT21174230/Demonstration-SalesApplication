@@ -175,6 +175,8 @@ export type InquiryStatus = 'pending' | 'completed'
 export type SBU = 'Ocean Imports' | 'Ocean Exports' | 'Air Freight' | 'Domestic'
 export const SBUS: SBU[] = ['Ocean Imports', 'Ocean Exports', 'Air Freight', 'Domestic']
 
+export type DeliveryType = 'port-to-port' | 'door-to-door'
+
 export interface Inquiry {
   id: string
   customer_name: string
@@ -182,6 +184,7 @@ export interface Inquiry {
   request: string
   origin: string         // where cargo ships from (e.g. 'Colombo')
   destination: string    // where cargo ships to   (e.g. 'Hamburg')
+  delivery_type: DeliveryType
   channel: 'WhatsApp' | 'Email' | 'Phone'
   sbu: SBU
   employee_id: number
@@ -262,6 +265,7 @@ export const SEED_INQUIRIES: Inquiry[] = [
     request: '12 reefer containers',
     origin: 'Colombo',
     destination: 'Hamburg',
+    delivery_type: 'port-to-port',
     channel: 'Email',
     sbu: 'Ocean Exports',
     employee_id: 2,
@@ -276,6 +280,7 @@ export const SEED_INQUIRIES: Inquiry[] = [
     request: '4x 40ft containers',
     origin: 'Colombo',
     destination: 'Singapore',
+    delivery_type: 'door-to-door',
     channel: 'WhatsApp',
     sbu: 'Ocean Exports',
     employee_id: 1,
@@ -290,6 +295,7 @@ export const SEED_INQUIRIES: Inquiry[] = [
     request: '10 containers',
     origin: 'Chennai',
     destination: 'Colombo',
+    delivery_type: 'port-to-port',
     channel: 'WhatsApp',
     sbu: 'Ocean Imports',
     employee_id: 1,
@@ -306,14 +312,15 @@ export const SEED_INQUIRIES: Inquiry[] = [
     request: '6 dry containers',
     origin: 'Colombo',
     destination: 'Rotterdam',
+    delivery_type: 'port-to-port',
     channel: 'Email',
     sbu: 'Ocean Exports',
     employee_id: 3,
-    status: 'completed',
+    status: 'quoted',
     created_at: '2026-05-01 10:20',
-    completed_at: '2026-05-01 16:05',
-    followup_note: 'Rate sent, awaiting PO.',
-    workflow_stage: 'completed',
+    completed_at: null,
+    followup_note: 'Quotation sent, awaiting customer response.',
+    workflow_stage: 'customer-response',
   },
   {
     id: 'INQ-1037',
@@ -322,6 +329,7 @@ export const SEED_INQUIRIES: Inquiry[] = [
     request: '8 containers',
     origin: 'Colombo',
     destination: 'Dubai',
+    delivery_type: 'door-to-door',
     channel: 'Email',
     sbu: 'Ocean Exports',
     employee_id: 2,
@@ -338,6 +346,7 @@ export const SEED_INQUIRIES: Inquiry[] = [
     request: '3x 20ft containers',
     origin: 'Colombo',
     destination: 'Mumbai',
+    delivery_type: 'port-to-port',
     channel: 'WhatsApp',
     sbu: 'Ocean Exports',
     employee_id: 1,
@@ -651,6 +660,21 @@ export interface Booking {
   released_at: string | null
   procurement_notified: boolean
   notes: string
+  si_cutoff_date?: string
+  si_requested?: boolean
+  bl_cutoff_date?: string
+  si_submitted?: boolean
+  draft_bl_sent?: boolean
+  bl_status?: 'pending' | 'approved' | 'changes-requested'
+  delivery_type?: DeliveryType
+  master_bl_number?: string
+  master_bl_shipper?: string
+  master_bl_consignee?: string
+  master_bl_recorded?: boolean
+  house_bl_number?: string
+  house_bl_shipper?: string
+  house_bl_consignee?: string
+  house_bl_created?: boolean
 }
 
 export const SEED_BOOKINGS: Booking[] = [
@@ -675,6 +699,9 @@ export const SEED_BOOKINGS: Booking[] = [
     released_at: null,
     procurement_notified: true,
     notes: '',
+    si_cutoff_date: '2026-05-28',
+    si_requested: false,
+    delivery_type: 'port-to-port',
   },
   {
     id: 'BKG-900',
@@ -697,6 +724,13 @@ export const SEED_BOOKINGS: Booking[] = [
     released_at: '2026-05-11 09:00',
     procurement_notified: true,
     notes: 'Urgent spot rate — CS booked directly with Maersk. Procurement notified post-booking.',
+    si_cutoff_date: '2026-05-29',
+    bl_cutoff_date: '2026-06-01',
+    si_requested: true,
+    si_submitted: true,
+    draft_bl_sent: true,
+    bl_status: 'approved',
+    delivery_type: 'door-to-door',
   },
 ]
 
@@ -852,6 +886,13 @@ export function daysOverdue(date?: string): number {
 export function isDueToday(date?: string): boolean {
   if (!date) return false
   return date === todayISO()
+}
+
+export function daysUntil(date?: string): number {
+  if (!date) return Infinity
+  const today = new Date(todayISO()).getTime()
+  const target = new Date(date).getTime()
+  return Math.round((target - today) / 86400000)
 }
 
 // ==================== PARSER ====================

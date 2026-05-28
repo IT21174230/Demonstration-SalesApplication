@@ -30,6 +30,9 @@ import {
   apiCreateTask, apiCompleteTask,
   apiAdvanceShipmentLeg, apiRecordShipmentPOD,
   apiCreateActivity, apiCreateBooking, apiConfirmBooking, apiReleaseBooking, apiNotifyProcurement,
+  apiSetBookingSiCutoff, apiMarkSiRequested,
+  apiSetBookingBlCutoff, apiMarkSiSubmitted, apiMarkDraftBlSent, apiSetBlStatus,
+  apiRecordMasterBl, apiCreateHouseBl,
   apiUpdateCustomer, apiAdvanceWorkflow,
 } from './api'
 
@@ -83,7 +86,7 @@ export default function App() {
   const [backendReady, setBackendReady] = useState(false)
   // Lets the chat tell the Quotations page to open its builder pre-filled with a customer.
   const [quotePrefillCustomer, setQuotePrefillCustomer] = useState<string | null>(null)
-  const [toast, setToast] = useState<string | null>(null)
+  const [toast, setToast] = useState<{ message: string; action?: { label: string; onClick: () => void } } | null>(null)
 
   // ---- Fetch all data from the backend on mount ----
   useEffect(() => {
@@ -134,9 +137,9 @@ export default function App() {
       .catch(() => console.warn('Refresh failed — backend unreachable'))
   }
 
-  const flash = (msg: string) => {
-    setToast(msg)
-    setTimeout(() => setToast(null), 2200)
+  const flash = (msg: string, action?: { label: string; onClick: () => void }) => {
+    setToast({ message: msg, action })
+    setTimeout(() => setToast(null), action ? 5000 : 2200)
   }
 
   const addFollowup = (
@@ -343,10 +346,74 @@ export default function App() {
     flash(`${bookingId} → Procurement acknowledged`)
   }
 
+  const setBookingSiCutoff = (bookingId: string, date: string) => {
+    setBookings(prev => prev.map(b =>
+      b.id === bookingId ? { ...b, si_cutoff_date: date } : b
+    ))
+    apiSetBookingSiCutoff(bookingId, date)
+      .catch(() => console.warn('API: set SI cutoff failed'))
+  }
+
+  const markSiRequested = (bookingId: string) => {
+    setBookings(prev => prev.map(b =>
+      b.id === bookingId ? { ...b, si_requested: true } : b
+    ))
+    apiMarkSiRequested(bookingId)
+      .catch(() => console.warn('API: mark SI requested failed'))
+  }
+
+  const setBookingBlCutoff = (bookingId: string, date: string) => {
+    setBookings(prev => prev.map(b =>
+      b.id === bookingId ? { ...b, bl_cutoff_date: date } : b
+    ))
+    apiSetBookingBlCutoff(bookingId, date)
+      .catch(() => console.warn('API: set BL cutoff failed'))
+  }
+
+  const markSiSubmitted = (bookingId: string) => {
+    setBookings(prev => prev.map(b =>
+      b.id === bookingId ? { ...b, si_submitted: true } : b
+    ))
+    apiMarkSiSubmitted(bookingId)
+      .catch(() => console.warn('API: mark SI submitted failed'))
+  }
+
+  const markDraftBlSent = (bookingId: string) => {
+    setBookings(prev => prev.map(b =>
+      b.id === bookingId ? { ...b, draft_bl_sent: true } : b
+    ))
+    apiMarkDraftBlSent(bookingId)
+      .catch(() => console.warn('API: mark draft BL sent failed'))
+  }
+
+  const setBlStatus = (bookingId: string, status: 'pending' | 'approved' | 'changes-requested') => {
+    setBookings(prev => prev.map(b =>
+      b.id === bookingId ? { ...b, bl_status: status } : b
+    ))
+    apiSetBlStatus(bookingId, status)
+      .catch(() => console.warn('API: set BL status failed'))
+  }
+
+  const recordMasterBl = (bookingId: string, data: { master_bl_number: string; shipper: string; consignee: string }) => {
+    setBookings(prev => prev.map(b =>
+      b.id === bookingId ? { ...b, master_bl_number: data.master_bl_number, master_bl_shipper: data.shipper, master_bl_consignee: data.consignee, master_bl_recorded: true } : b
+    ))
+    apiRecordMasterBl(bookingId, data)
+      .catch(() => console.warn('API: record master BL failed'))
+  }
+
+  const createHouseBl = (bookingId: string, data: { house_bl_number: string; shipper: string; consignee: string }) => {
+    setBookings(prev => prev.map(b =>
+      b.id === bookingId ? { ...b, house_bl_number: data.house_bl_number, house_bl_shipper: data.shipper, house_bl_consignee: data.consignee, house_bl_created: true } : b
+    ))
+    apiCreateHouseBl(bookingId, data)
+      .catch(() => console.warn('API: create house BL failed'))
+  }
+
   const createBooking = (payload: {
     customer_name: string; quote_id: string; shipping_line: string;
     container_type: string; quantity: number; origin: string; destination: string;
-    is_urgent: boolean; booked_by: number; notes: string;
+    is_urgent: boolean; booked_by: number; notes: string; delivery_type?: 'port-to-port' | 'door-to-door';
   }) => {
     const newId = `BKG-${900 + bookings.length + 1}`
     const stamp = nowStamp()
@@ -371,6 +438,7 @@ export default function App() {
       released_at: null,
       procurement_notified: false,
       notes: payload.notes,
+      delivery_type: payload.delivery_type,
     }
     setBookings(prev => [newBooking, ...prev])
     apiCreateBooking(payload).catch(() => console.warn('API: create booking failed'))
@@ -482,6 +550,14 @@ export default function App() {
             onReleaseBooking={releaseBooking}
             onAcknowledgeProcurement={acknowledgeProcurement}
             onCreateBooking={createBooking}
+            onSetBookingSiCutoff={setBookingSiCutoff}
+            onMarkSiRequested={markSiRequested}
+            onSetBookingBlCutoff={setBookingBlCutoff}
+            onMarkSiSubmitted={markSiSubmitted}
+            onMarkDraftBlSent={markDraftBlSent}
+            onSetBlStatus={setBlStatus}
+            onRecordMasterBl={recordMasterBl}
+            onCreateHouseBl={createHouseBl}
             onSetQuoteStatus={setQuoteStatus}
             onUpdateCustomerKyc={updateCustomerKyc}
             onAutoAdvanceForCustomer={autoAdvanceForCustomer}
@@ -524,7 +600,19 @@ export default function App() {
           </main>
         </div>
 
-        {toast && <div className="lt-toast">{toast}</div>}
+        {toast && (
+          <div className="lt-toast">
+            {toast.message}
+            {toast.action && (
+              <button
+                className="lt-toast-action"
+                onClick={() => { toast.action!.onClick(); setToast(null) }}
+              >
+                {toast.action.label} &rarr;
+              </button>
+            )}
+          </div>
+        )}
       </div>
     </RoleContext.Provider>
   )
