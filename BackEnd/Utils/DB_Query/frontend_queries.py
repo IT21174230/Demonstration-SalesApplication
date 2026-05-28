@@ -959,15 +959,41 @@ def search_fe_rates(
 # InttraAPI Simulation
 # ---------------------------------------------------------------------------
 
+_UNLOC_LOOKUP = {
+    "colombo":   "LKCMB", "hambantota": "LKHBN",
+    "hamburg":   "DEHAM", "rotterdam":  "NLRTM", "antwerp": "BEANR",
+    "dubai":     "AEDXB", "jebel ali":  "AEJEA", "abu dhabi": "AEAUH",
+    "singapore": "SGSIN",
+    "mumbai":    "INBOM", "nhava sheva": "INNSA",
+    "shanghai":  "CNSHA", "ningbo":     "CNNGB",
+    "new york":  "USNYC", "los angeles":"USLAX",
+}
+
+
+def _unloc_for(city: str | None) -> str:
+    if not city:
+        return ""
+    return _UNLOC_LOOKUP.get(city.strip().lower(), city.strip().upper()[:5])
+
+
+def _iso_container(label: str) -> str:
+    """Convert UI labels like 20'GP, 40'HC to INTTRA ISO codes (20GP, 40HC)."""
+    return (label or "20GP").replace("'", "").replace(" ", "").upper()
+
+
 def simulate_inttra_spot_rates(
     origin: str | None = None,
     destination: str | None = None,
     container_type: str | None = None,
 ) -> list[dict]:
     """
-    Simulate an InttraAPI spot rate lookup.
-    Returns 2-4 mock spot rate offers with realistic freight data.
-    Uses a hash of the route as seed so results are deterministic per route.
+    Simulate the INTTRA Rates → Spot endpoint response.
+
+    Shape matches GET /rates/spot/inttraCompanyId/:inttraCompanyId
+    (verified against INTTRA's Postman collection): array of SpotRate
+    objects with nested scheduleRates[].prices[] + detentionAndDemurrageList[].
+
+    Determinism: seeded by route so reloads return the same offers.
     """
     import hashlib
     from datetime import timedelta
@@ -975,50 +1001,98 @@ def simulate_inttra_spot_rates(
     seed = hashlib.md5(f"{origin or ''}{destination or ''}".encode()).hexdigest()
     seed_int = int(seed[:8], 16)
 
-    liners = [
-        ("Maersk Line", "MAEU"),
-        ("MSC", "MSCU"),
-        ("CMA CGM", "CMDU"),
-        ("Hapag-Lloyd", "HLCU"),
-        ("ONE", "ONEY"),
-        ("Evergreen", "EGLV"),
+    carriers = [
+        ("Maersk Line",    "MAEU"),
+        ("MSC",            "MSCU"),
+        ("CMA CGM",        "CMDU"),
+        ("Hapag-Lloyd",    "HLCU"),
+        ("ONE",            "ONEY"),
+        ("Evergreen",      "EGLV"),
         ("COSCO Shipping", "COSU"),
     ]
 
-    ct = container_type or "20'GP"
+    iso_ct = _iso_container(container_type or "20GP")
+    origin_unloc = _unloc_for(origin)
+    dest_unloc = _unloc_for(destination)
     base_rate = 800 + (seed_int % 1200)
 
-    results = []
-    num_results = 2 + (seed_int % 3)  # 2-4 results
+    now = datetime.now()
+    results: list[dict] = []
+    num_results = 2 + (seed_int % 3)  # 2-4 carrier offers
 
     for i in range(num_results):
-        liner_idx = (seed_int + i * 3) % len(liners)
-        liner_name, liner_code = liners[liner_idx]
+        c_name, c_scac = carriers[(seed_int + i * 3) % len(carriers)]
         variance = -150 + (seed_int + i * 7) % 400
-        amount = base_rate + variance
+        total_usd = base_rate + variance
+        base_ofr_usd = int(total_usd * 0.85)
 
         transit = 7 + (seed_int + i * 5) % 21
-        now = datetime.now()
+        depart = (now + timedelta(days=1 + i)).strftime("%Y-%m-%d")
+        arrive = (now + timedelta(days=1 + i + transit)).strftime("%Y-%m-%d")
         valid_from = now.strftime("%Y-%m-%d")
         valid_to = (now + timedelta(days=3 + i)).strftime("%Y-%m-%d")
-        booking_cutoff = (now + timedelta(days=1 + i)).strftime("%Y-%m-%d")
+        booking_cutoff = (now + timedelta(days=i)).strftime("%Y-%m-%d")
+        free_time = 7 + (seed_int + i) % 7
+        spot_rate_id = f"SPOT-{c_scac}-{seed[:6]}{i}"
 
         results.append({
-            "id": i + 1,
-            "liner_name": liner_name,
-            "liner_code": liner_code,
-            "origin": origin or "N/A",
-            "destination": destination or "N/A",
-            "container_type": ct,
-            "rate_type": "Spot",
-            "amount": amount,
-            "currency": "USD",
-            "transit_days": transit,
-            "valid_from": valid_from,
-            "valid_to": valid_to,
-            "booking_cutoff": booking_cutoff,
-            "source": "InttraAPI",
-            "free_time_days": 7 + (seed_int + i) % 7,
+            "spotRateId": spot_rate_id,
+            "carrierScac": c_scac,
+            "carrierName": c_name,
+            "originUnloc": origin_unloc,
+            "originDisplayName": origin or "N/A",
+            "destinationUnloc": dest_unloc,
+            "destinationDisplayName": destination or "N/A",
+            "validFromDate": valid_from,
+            "validToDate": valid_to,
+            "scheduleRates": [
+                {
+                    "schedule": {
+                        "fromLocation": origin or "N/A",
+                        "toLocation": destination or "N/A",
+                        "departureDate": depart,
+                        "arrivalDate": arrive,
+                        "vessel": f"MV {c_name.split()[0].upper()} {(seed_int + i) % 999:03d}",
+                        "voyageNumber": f"{(seed_int + i) % 9999:04d}E",
+                        "transitTimeInDays": float(transit),
+                        # NOTE: bookingCutoffDate isn't strictly part of INTTRA's
+                        # published spot schema (it lives inside scheduleDetails,
+                        # which Postman truncates). Kept here so the demo UI
+                        # still has a cut-off to render — verify against real
+                        # API once credentials are available.
+                        "bookingCutoffDate": booking_cutoff,
+                        "scheduleDetails": [],
+                    },
+                    "prices": [
+                        {
+                            "priceId": f"{spot_rate_id}-P1",
+                            "containerType": iso_ct,
+                            "priceValidFromDate": valid_from,
+                            "priceLineItems": [],
+                            "totalPriceUSD": total_usd,
+                            "totalBaseOceanFreightPriceUSD": base_ofr_usd,
+                        }
+                    ],
+                    "totalPriceUSD": total_usd,
+                    "totalBaseOceanFreightPriceUSD": base_ofr_usd,
+                    "rollable": (i % 2 == 0),
+                    "detentionAndDemurrageList": [
+                        {
+                            "displayName": "Destination demurrage",
+                            "chargeType": "Demurrage",
+                            "direction": "destination",
+                            "commodity": "FAK",
+                            "containerSizeType": iso_ct,
+                            "freeTimeInDays": free_time,
+                            "freeTimeStartEvent": "ContainerDischarge",
+                            "perDiemChargeList": [],
+                        }
+                    ],
+                    "penaltiesList": [],
+                }
+            ],
+            "termsAndConditionsUrl": f"https://www.{c_scac.lower()}.com/terms",
+            "customerSupportUrl": f"https://www.{c_scac.lower()}.com/support",
         })
 
     return results

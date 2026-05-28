@@ -400,22 +400,103 @@ export interface RateRecord {
   source_system: string
 }
 
+// ---- INTTRA Rates → Spot response shape ---------------------------------
+// Mirrors GET /rates/spot/inttraCompanyId/:inttraCompanyId (INTTRA Ocean
+// Execution API v1). Field names are verified against INTTRA's published
+// Postman schema so swapping mock data for the real API is a transport-
+// layer swap, not a UI rewrite.
+
+export interface InttraSchedule {
+  fromLocation: string
+  toLocation: string
+  departureDate: string
+  arrivalDate: string
+  vessel: string
+  voyageNumber: string
+  transitTimeInDays: number
+  bookingCutoffDate?: string  // not in INTTRA's published shape — see backend note
+  scheduleDetails: unknown[]
+}
+
+export interface InttraPrice {
+  priceId: string
+  containerType: string          // ISO code: 20GP, 40HC, etc.
+  priceValidFromDate: string
+  priceLineItems: unknown[]
+  totalPriceUSD: number
+  totalBaseOceanFreightPriceUSD: number
+}
+
+export interface InttraDetentionDemurrage {
+  displayName: string
+  chargeType: string
+  direction: string              // 'destination' | 'origin'
+  commodity: string
+  containerSizeType: string
+  freeTimeInDays: number
+  freeTimeStartEvent: string
+  perDiemChargeList: unknown[]
+}
+
+export interface InttraScheduleRate {
+  schedule: InttraSchedule
+  prices: InttraPrice[]
+  totalPriceUSD: number
+  totalBaseOceanFreightPriceUSD: number
+  rollable: boolean
+  detentionAndDemurrageList: InttraDetentionDemurrage[]
+  penaltiesList: unknown[]
+}
+
 export interface InttraSpotRate {
-  id: number
-  liner_name: string
-  liner_code: string
-  origin: string
-  destination: string
-  container_type: string
-  rate_type: 'Spot'
-  amount: number
-  currency: string
-  transit_days: number
-  valid_from: string
-  valid_to: string
-  booking_cutoff: string
-  source: 'InttraAPI'
-  free_time_days: number
+  spotRateId: string
+  carrierScac: string
+  carrierName: string
+  originUnloc: string
+  originDisplayName: string
+  destinationUnloc: string
+  destinationDisplayName: string
+  validFromDate: string
+  validToDate: string
+  scheduleRates: InttraScheduleRate[]
+  termsAndConditionsUrl: string
+  customerSupportUrl: string
+}
+
+// Flatten one INTTRA offer into the single row the demo card renders.
+// A real offer can carry multiple sailings (`scheduleRates[]`) and multiple
+// container-type prices per sailing — for the demo UI we pick the first of
+// each. When a multi-sailing UI is needed later, replace this with a fuller
+// projection.
+export interface InttraSpotRateCard {
+  spotRateId: string
+  carrierScac: string
+  carrierName: string
+  containerType: string
+  totalPriceUSD: number
+  transitTimeInDays: number
+  freeTimeInDays: number
+  bookingCutoffDate: string
+  validFromDate: string
+  validToDate: string
+}
+
+export function toInttraCard(offer: InttraSpotRate): InttraSpotRateCard {
+  const sr = offer.scheduleRates?.[0]
+  const price = sr?.prices?.[0]
+  const dnd = sr?.detentionAndDemurrageList?.[0]
+  return {
+    spotRateId: offer.spotRateId,
+    carrierScac: offer.carrierScac,
+    carrierName: offer.carrierName,
+    containerType: price?.containerType ?? '',
+    totalPriceUSD: price?.totalPriceUSD ?? 0,
+    transitTimeInDays: sr?.schedule?.transitTimeInDays ?? 0,
+    freeTimeInDays: dnd?.freeTimeInDays ?? 0,
+    bookingCutoffDate: sr?.schedule?.bookingCutoffDate ?? '',
+    validFromDate: offer.validFromDate,
+    validToDate: offer.validToDate,
+  }
 }
 
 // ==================== QUOTATIONS ====================
