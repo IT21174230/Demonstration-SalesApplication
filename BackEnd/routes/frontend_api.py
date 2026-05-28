@@ -25,6 +25,11 @@ from Utils.DB_Query.frontend_queries import (
     advance_fe_shipment_leg, record_fe_shipment_pod,
     create_fe_booking, confirm_fe_booking, release_fe_booking,
     notify_procurement_fe_booking,
+    set_fe_booking_si_cutoff, mark_fe_booking_si_requested,
+    set_fe_booking_bl_cutoff, mark_fe_booking_si_submitted,
+    mark_fe_booking_draft_bl_sent, set_fe_booking_bl_status,
+    record_fe_booking_master_bl, create_fe_booking_house_bl,
+    simulate_inttra_si_submission,
     get_fe_activity_log, create_fe_activity,
     search_fe_rates, simulate_inttra_spot_rates, simulate_inttra_booking,
     update_fe_inquiry_stage,
@@ -63,6 +68,7 @@ class InquiryCreate(BaseModel):
     request: str = ""
     origin: str = "TBD"
     destination: str = "TBD"
+    delivery_type: str = "port-to-port"
     channel: str = "Email"
     sbu: str = "Ocean Exports"
     employee_id: int = 1
@@ -320,6 +326,7 @@ class BookingCreate(BaseModel):
     quantity: int = 1
     is_urgent: bool = False
     booked_by: int = 2
+    delivery_type: str = "port-to-port"
 
 
 @router.post("/bookings")
@@ -360,6 +367,111 @@ def patch_notify_procurement(booking_id: str):
     if not ok:
         raise HTTPException(404, f"Booking '{booking_id}' not found")
     return {"success": True}
+
+
+class BookingSiCutoff(BaseModel):
+    si_cutoff_date: str = ""
+
+
+@router.patch("/bookings/{booking_id}/si-cutoff")
+def patch_si_cutoff(booking_id: str, body: BookingSiCutoff):
+    ok = set_fe_booking_si_cutoff(booking_id, body.si_cutoff_date)
+    if not ok:
+        raise HTTPException(404, f"Booking '{booking_id}' not found")
+    return {"success": True}
+
+
+@router.patch("/bookings/{booking_id}/si-requested")
+def patch_si_requested(booking_id: str):
+    ok = mark_fe_booking_si_requested(booking_id)
+    if not ok:
+        raise HTTPException(404, f"Booking '{booking_id}' not found")
+    return {"success": True}
+
+
+class BookingBlCutoff(BaseModel):
+    bl_cutoff_date: str = ""
+
+
+@router.patch("/bookings/{booking_id}/bl-cutoff")
+def patch_bl_cutoff(booking_id: str, body: BookingBlCutoff):
+    ok = set_fe_booking_bl_cutoff(booking_id, body.bl_cutoff_date)
+    if not ok:
+        raise HTTPException(404, f"Booking '{booking_id}' not found")
+    return {"success": True}
+
+
+@router.patch("/bookings/{booking_id}/si-submitted")
+def patch_si_submitted(booking_id: str):
+    ok = mark_fe_booking_si_submitted(booking_id)
+    if not ok:
+        raise HTTPException(404, f"Booking '{booking_id}' not found")
+    return {"success": True}
+
+
+@router.patch("/bookings/{booking_id}/draft-bl-sent")
+def patch_draft_bl_sent(booking_id: str):
+    ok = mark_fe_booking_draft_bl_sent(booking_id)
+    if not ok:
+        raise HTTPException(404, f"Booking '{booking_id}' not found")
+    return {"success": True}
+
+
+class BookingBlStatus(BaseModel):
+    status: str = "pending"
+
+
+@router.patch("/bookings/{booking_id}/bl-status")
+def patch_bl_status(booking_id: str, body: BookingBlStatus):
+    ok = set_fe_booking_bl_status(booking_id, body.status)
+    if not ok:
+        raise HTTPException(404, f"Booking '{booking_id}' not found")
+    return {"success": True}
+
+
+class MasterBlData(BaseModel):
+    master_bl_number: str = ""
+    shipper: str = "Synergy Shipping & Logistics"
+    consignee: str = ""
+
+
+@router.patch("/bookings/{booking_id}/master-bl")
+def patch_master_bl(booking_id: str, body: MasterBlData):
+    ok = record_fe_booking_master_bl(booking_id, body.master_bl_number, body.shipper, body.consignee)
+    if not ok:
+        raise HTTPException(404, f"Booking '{booking_id}' not found")
+    return {"success": True}
+
+
+class HouseBlData(BaseModel):
+    house_bl_number: str = ""
+    shipper: str = ""
+    consignee: str = ""
+
+
+@router.patch("/bookings/{booking_id}/house-bl")
+def patch_house_bl(booking_id: str, body: HouseBlData):
+    ok = create_fe_booking_house_bl(booking_id, body.house_bl_number, body.shipper, body.consignee)
+    if not ok:
+        raise HTTPException(404, f"Booking '{booking_id}' not found")
+    return {"success": True}
+
+
+class InttraSiRequest(BaseModel):
+    booking_id: str = ""
+    shipping_line: str = ""
+    origin: str = ""
+    destination: str = ""
+
+
+@router.post("/inttra/submit-si")
+def inttra_submit_si(body: InttraSiRequest):
+    return simulate_inttra_si_submission(
+        booking_id=body.booking_id,
+        shipping_line=body.shipping_line,
+        origin=body.origin,
+        destination=body.destination,
+    )
 
 
 # ---------------------------------------------------------------------------

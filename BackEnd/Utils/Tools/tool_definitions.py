@@ -292,6 +292,11 @@ tools = [
                     "quantity": {
                         "type": "integer",
                         "description": "Number of containers."
+                    },
+                    "delivery_type": {
+                        "type": "string",
+                        "enum": ["port-to-port", "door-to-door"],
+                        "description": "Delivery type: port-to-port or door-to-door."
                     }
                 },
                 "required": ["customer_id", "channel", "origin", "destination", "commodity", "container_type", "quantity"]

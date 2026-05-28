@@ -90,6 +90,7 @@ def _dispatch(name: str, args: dict):
             "commodity": args["commodity"],
             "container_type": args["container_type"],
             "quantity": args["quantity"],
+            "delivery_type": args.get("delivery_type", "port-to-port"),
             "status": "new",
             "received_at": now,
             "received_by_party_id": 2,

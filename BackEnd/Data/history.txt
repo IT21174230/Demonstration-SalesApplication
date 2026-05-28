@@ -96,3 +96,18 @@
 {"role": "assistant", "content": "Logged inquiry for Lanka Textiles (Pvt) Ltd: 10 gp, Colombo \u2192 Hamburg."}
 {"role": "user", "content": "[ROLE: Customer Service | User: Anjali Silva] what are pending KYCs/"}
 {"role": "assistant", "content": "Pending KYC: Hela Apparel."}
+{"role": "user", "content": "[ROLE: Sales Executive | User: Rohan Fernando] [CMD /new inquiry] customer=Dilmah Tea | request=10 GP | origin=Colombo | destination=London | channel=Email | sbu=Ocean Exports"}
+{"role": "user", "content": "[ROLE: Customer Service | User: Anjali Silva] [CMD /new inquiry] customer=Dilmah Tea | request=10 GP | origin=Colombo | destination=London | channel=Email | sbu=Ocean Exports"}
+{"role": "assistant", "content": "Logged inquiry for Dilmah Tea: 10 GP, Colombo \u2192 London."}
+{"role": "user", "content": "[ROLE: Customer Service | User: Anjali Silva] [CMD /new inquiry] customer=Ceylon Spice Exporters | request=1 GP | origin=Colombo | destination=London | channel=Email | sbu=Ocean Exports | delivery_type=door-to-door"}
+{"role": "assistant", "content": "Logged inquiry for Ceylon Spice Exporters: 1 GP, Colombo \u2192 London."}
+{"role": "user", "content": "[ROLE: Customer Service | User: Anjali Silva] [CMD /new inquiry] customer=Spa Ceylon Pvt Ltd | request=1 GP | origin=Colombo | destination=Marid, Spain | channel=Email | sbu=Ocean Exports | delivery_type=door-to-door"}
+{"role": "assistant", "content": "Logged inquiry for Spa Ceylon Pvt Ltd: 1 GP, Colombo \u2192 Marid, Spain."}
+{"role": "user", "content": "[ROLE: Customer Service | User: Anjali Silva] [CMD /new inquiry] customer=Ceylon Spice Exporters | request=1GP | origin=Colombo | destination=Manila | channel=Email | sbu=Ocean Exports | delivery_type=door-to-door"}
+{"role": "assistant", "content": "Logged inquiry for Ceylon Spice Exporters: 1 GP, Colombo \u2192 Manila."}
+{"role": "user", "content": "[ROLE: Customer Service | User: Anjali Silva] [CMD /new inquiry] customer=Ceylon Spice Exporters | request=20kg of luxury spices | origin=Colombo | destination=Vienna | channel=Email | sbu=Ocean Exports | delivery_type=door-to-door"}
+{"role": "assistant", "content": "Logged inquiry for Ceylon Spice Exporters: 20kg of luxury spices, Colombo \u2192 Vienna."}
+{"role": "user", "content": "[ROLE: Customer Service | User: Anjali Silva] [CMD /new inquiry] customer=Indo-Asia Trading | request=10 gp | origin=colombo | destination=london | channel=Email | sbu=Ocean Exports | delivery_type=door-to-door"}
+{"role": "assistant", "content": "Logged inquiry for Indo-Asia Trading: 10 gp, Colombo \u2192 London."}
+{"role": "user", "content": "[ROLE: Customer Service | User: Anjali Silva] [CMD /new inquiry] customer=Indo-Asia Trading | request=10 gp | origin=colombo | destination=london | channel=Email | sbu=Ocean Exports | delivery_type=door-to-door"}
+{"role": "assistant", "content": "Logged inquiry for Indo-Asia Trading: Colombo \u2192 London."}

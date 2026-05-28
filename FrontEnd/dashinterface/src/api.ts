@@ -8,7 +8,7 @@
 import type {
   Inquiry, Customer, Task, MissingItem, Followup, Quote, Shipment, Employee, Booking,
   QuoteStatus, CustomerTier, PaymentTerms, SBU, QuoteLine, ActivityEntry, KycStatus, RateRecord,
-  InttraSpotRate,
+  InttraSpotRate, DeliveryType,
 } from './mockData'
 
 const BASE = import.meta.env.VITE_API_BASE || '/api'
@@ -74,6 +74,7 @@ export function apiCreateInquiry(data: {
   request?: string
   origin?: string
   destination?: string
+  delivery_type?: DeliveryType
   channel?: string
   sbu?: SBU
   employee_id?: number
@@ -237,6 +238,46 @@ export function apiNotifyProcurement(bookingId: string): Promise<{ success: bool
   return patch<{ success: boolean }>(`/bookings/${encodeURIComponent(bookingId)}/notify`)
 }
 
+export function apiSetBookingSiCutoff(bookingId: string, siCutoffDate: string): Promise<{ success: boolean }> {
+  return patch<{ success: boolean }>(`/bookings/${encodeURIComponent(bookingId)}/si-cutoff`, { si_cutoff_date: siCutoffDate })
+}
+
+export function apiMarkSiRequested(bookingId: string): Promise<{ success: boolean }> {
+  return patch<{ success: boolean }>(`/bookings/${encodeURIComponent(bookingId)}/si-requested`)
+}
+
+export function apiSetBookingBlCutoff(bookingId: string, blCutoffDate: string): Promise<{ success: boolean }> {
+  return patch<{ success: boolean }>(`/bookings/${encodeURIComponent(bookingId)}/bl-cutoff`, { bl_cutoff_date: blCutoffDate })
+}
+
+export function apiMarkSiSubmitted(bookingId: string): Promise<{ success: boolean }> {
+  return patch<{ success: boolean }>(`/bookings/${encodeURIComponent(bookingId)}/si-submitted`)
+}
+
+export function apiMarkDraftBlSent(bookingId: string): Promise<{ success: boolean }> {
+  return patch<{ success: boolean }>(`/bookings/${encodeURIComponent(bookingId)}/draft-bl-sent`)
+}
+
+export function apiSetBlStatus(bookingId: string, status: string): Promise<{ success: boolean }> {
+  return patch<{ success: boolean }>(`/bookings/${encodeURIComponent(bookingId)}/bl-status`, { status })
+}
+
+export function apiRecordMasterBl(bookingId: string, data: {
+  master_bl_number: string
+  shipper: string
+  consignee: string
+}): Promise<{ success: boolean }> {
+  return patch<{ success: boolean }>(`/bookings/${encodeURIComponent(bookingId)}/master-bl`, data)
+}
+
+export function apiCreateHouseBl(bookingId: string, data: {
+  house_bl_number: string
+  shipper: string
+  consignee: string
+}): Promise<{ success: boolean }> {
+  return patch<{ success: boolean }>(`/bookings/${encodeURIComponent(bookingId)}/house-bl`, data)
+}
+
 // ---------------------------------------------------------------------------
 // Rate Search (AMS)
 // ---------------------------------------------------------------------------
@@ -294,6 +335,24 @@ export function apiBookInttra(data: {
   quantity?: number
 }): Promise<InttraBookingResult> {
   return post<InttraBookingResult>('/inttra/book', data)
+}
+
+export interface InttraSiResult {
+  success: boolean
+  si_reference: string
+  booking_id: string
+  shipping_line: string
+  status: string
+  message: string
+}
+
+export function apiSubmitSiInttra(data: {
+  booking_id: string
+  shipping_line: string
+  origin: string
+  destination: string
+}): Promise<InttraSiResult> {
+  return post<InttraSiResult>('/inttra/submit-si', data)
 }
 
 // ---------------------------------------------------------------------------

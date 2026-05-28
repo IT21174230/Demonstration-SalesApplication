@@ -1,7 +1,13 @@
 import json
+import os
+import tempfile
+import threading
 from pathlib import Path
 
 DATA_FILE = Path(__file__).resolve().parent.parent.parent / "Data" / "mock_data.json"
+
+# Prevent concurrent read/write races that corrupt the JSON file.
+_file_lock = threading.Lock()
 
 
 # ---------------------------------------------------------------------------
@@ -9,13 +15,33 @@ DATA_FILE = Path(__file__).resolve().parent.parent.parent / "Data" / "mock_data.
 # ---------------------------------------------------------------------------
 
 def _load_data() -> dict:
-    with open(DATA_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)
+    with _file_lock:
+        with open(DATA_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
 
 
 def _save_data(data: dict) -> None:
-    with open(DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
+    """Atomic write: dump to a temp file, then os.replace() over the original.
+
+    os.replace is atomic on both POSIX and Windows (NTFS), so the JSON file
+    is never left in a half-written state even if the process crashes or two
+    requests race each other.
+    """
+    with _file_lock:
+        fd, tmp_path = tempfile.mkstemp(
+            dir=DATA_FILE.parent, suffix=".tmp", prefix="mock_data_"
+        )
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+            os.replace(tmp_path, DATA_FILE)
+        except BaseException:
+            # Clean up the temp file if anything goes wrong
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            raise
 
 
 def _next_id(records: list[dict]) -> int:
