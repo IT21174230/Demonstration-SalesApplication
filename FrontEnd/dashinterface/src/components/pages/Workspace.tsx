@@ -1,19 +1,19 @@
 import { useState, useMemo, useEffect } from 'react'
 import {
-  Inbox, ChevronRight, ChevronDown, AlertTriangle, Check, Paperclip, ClipboardPaste,
+  Inbox, ChevronRight, AlertTriangle, Check, Paperclip, ClipboardPaste,
   FileText, Ship, ShieldCheck, X, User, ArrowRight, Mail, Loader2, UserPlus,
-  Globe, FileDown, MessageCircle, Send, Edit3,
+  Globe, MessageCircle, Send, Edit3, Plus, DollarSign,
 } from 'lucide-react'
 import {
   EMPLOYEES, WORKFLOW_STAGES, ROLE_LABELS, ROLE_COLORS,
   isSpotInquiry, daysUntil,
   type Inquiry, type Booking, type Quote, type Customer,
-  type ActivityEntry, type UserRole, type WorkflowStage,
-  type QuoteStatus, type KycStatus, type RateRecord, type InttraSpotRate,
-  toInttraCard,
+  type ActivityEntry, type WorkflowStage,
+  type QuoteStatus, type KycStatus,
+  type ContainerLine,
 } from '../../mockData'
 import { useRole } from '../../RoleContext'
-import { apiSendKyc, apiSearchRates, apiCheckInttraRates, apiSendQuotation, apiBookInttra, apiSubmitSiInttra, apiSetBookingSiCutoff, apiMarkSiRequested, type InttraBookingResult, type InttraSiResult } from '../../api'
+import { apiSendKyc, apiSendQuotation, apiBookInttra, apiSubmitSiInttra, type InttraBookingResult, type InttraSiResult } from '../../api'
 
 // ---------------------------------------------------------------------------
 // Props
@@ -25,6 +25,7 @@ interface WorkspaceProps {
   quotes: Quote[]
   customers: Customer[]
   activityLog: ActivityEntry[]
+  onGoTo: (page: import('../../mockData').PageId) => void
   onAdvanceWorkflow: (inquiryId: string, nextStage: WorkflowStage) => void
   onConfirmBooking: (bookingId: string, vesselName: string, voyageNumber: string) => void
   onReleaseBooking: (bookingId: string, note: string) => void
@@ -47,6 +48,7 @@ interface WorkspaceProps {
   onAutoAdvanceForCustomer: (customerName: string, targetStage: WorkflowStage) => void
   onLogActivity: (entry: Omit<ActivityEntry, 'id' | 'timestamp'>) => void
   onFlash: (msg: string, action?: { label: string; onClick: () => void }) => void
+  onStartRateCheck: (inquiry: Inquiry, container?: ContainerLine, variant?: 'procurement' | 'cs-sales') => void
 }
 
 // ---------------------------------------------------------------------------
@@ -108,9 +110,9 @@ const CS_STEPS: StepDef[] = [
   { key: 'cs-si',         label: 'SI Reminder', actionKinds: ['request-si'],         stepNumber: 9 },
   { key: 'cs-submit-si',  label: 'Submit SI',   actionKinds: ['submit-si'],          stepNumber: 10 },
   { key: 'cs-draft-bl',   label: 'Draft BL',    actionKinds: ['send-draft-bl'],      stepNumber: 11 },
-  { key: 'cs-bl-approval',label: 'BL Approval', actionKinds: ['bl-approval'],        stepNumber: 12 },
-  { key: 'cs-master-bl', label: 'Master BL',   actionKinds: ['record-master-bl'],   stepNumber: 13 },
-  { key: 'cs-house-bl',  label: 'House BL',    actionKinds: ['create-house-bl'],    stepNumber: 14 },
+  { key: 'cs-master-bl', label: 'Master BL',   actionKinds: ['record-master-bl'],   stepNumber: 12 },
+  { key: 'cs-house-bl',  label: 'House BL',    actionKinds: ['create-house-bl'],    stepNumber: 13 },
+  { key: 'cs-bl-approval',label: 'BL Approval', actionKinds: ['bl-approval'],        stepNumber: 14 },
 ]
 
 const FINANCE_STEPS: StepDef[] = [
@@ -125,14 +127,15 @@ const PROCUREMENT_STEPS: StepDef[] = [
 ]
 
 const SALES_STEPS: StepDef[] = [
-  { key: 'sales-quote',   label: 'Quotation',   actionKinds: ['prepare-quotation'],  stepNumber: 1 },
+  { key: 'sales-inquiry', label: 'Inquiry',     actionKinds: ['advance-workflow'],   stepNumber: 1 },
+  { key: 'sales-quote',   label: 'Quotation',   actionKinds: ['prepare-quotation'],  stepNumber: 2 },
 ]
 
 const ADMIN_STEPS: StepDef[] = [
   { key: 'adm-inquiry',     label: 'Inquiry',      actionKinds: ['advance-workflow'],        stepNumber: 1 },
   { key: 'adm-kyc-send',    label: 'KYC Send',     actionKinds: ['send-kyc'],               stepNumber: 2 },
   { key: 'adm-kyc-review',  label: 'KYC Review',   actionKinds: ['verify-kyc'],             stepNumber: 3 },
-  { key: 'adm-rates-ams',   label: 'AMS Rates',    actionKinds: ['check-rates'],            stepNumber: 4 },
+  { key: 'adm-rates-ams',   label: 'Database Rates',    actionKinds: ['check-rates'],            stepNumber: 4 },
   { key: 'adm-rates-inttra',label: 'Inttra Rates',  actionKinds: ['check-inttra-rates'],    stepNumber: 5 },
   { key: 'adm-quotation',   label: 'Quotation',    actionKinds: ['prepare-quotation'],       stepNumber: 6 },
   { key: 'adm-send-quote',  label: 'Send Quote',   actionKinds: ['send-to-customer'],        stepNumber: 7 },
@@ -146,9 +149,9 @@ const ADMIN_STEPS: StepDef[] = [
   { key: 'adm-si',          label: 'SI Reminder',  actionKinds: ['request-si'],              stepNumber: 15 },
   { key: 'adm-submit-si',   label: 'Submit SI',    actionKinds: ['submit-si'],               stepNumber: 16 },
   { key: 'adm-draft-bl',    label: 'Draft BL',     actionKinds: ['send-draft-bl'],           stepNumber: 17 },
-  { key: 'adm-bl-approval', label: 'BL Approval',  actionKinds: ['bl-approval'],             stepNumber: 18 },
-  { key: 'adm-master-bl',   label: 'Master BL',    actionKinds: ['record-master-bl'],        stepNumber: 19 },
-  { key: 'adm-house-bl',    label: 'House BL',     actionKinds: ['create-house-bl'],         stepNumber: 20 },
+  { key: 'adm-master-bl',   label: 'Master BL',    actionKinds: ['record-master-bl'],        stepNumber: 18 },
+  { key: 'adm-house-bl',    label: 'House BL',     actionKinds: ['create-house-bl'],         stepNumber: 19 },
+  { key: 'adm-bl-approval', label: 'BL Approval',  actionKinds: ['bl-approval'],             stepNumber: 20 },
 ]
 
 const ROLE_STEP_MAP: Record<string, StepDef[]> = {
@@ -165,12 +168,12 @@ const ROLE_STEP_MAP: Record<string, StepDef[]> = {
 
 export default function Workspace({
   inquiries, bookings, quotes, customers, activityLog,
-  onAdvanceWorkflow, onConfirmBooking, onReleaseBooking,
+  onGoTo, onAdvanceWorkflow, onConfirmBooking, onReleaseBooking,
   onAcknowledgeProcurement, onCreateBooking, onSetBookingSiCutoff, onMarkSiRequested,
   onSetBookingBlCutoff, onMarkSiSubmitted, onMarkDraftBlSent, onSetBlStatus,
   onRecordMasterBl, onCreateHouseBl,
   onSetQuoteStatus, onUpdateCustomerKyc,
-  onAutoAdvanceForCustomer, onLogActivity, onFlash,
+  onAutoAdvanceForCustomer, onLogActivity, onFlash, onStartRateCheck,
 }: WorkspaceProps) {
   const { activeRole, activeEmployee } = useRole()
 
@@ -182,25 +185,6 @@ export default function Workspace({
   const [formDecision, setFormDecision] = useState<'approve' | 'reject'>('approve')
   const [formEmail, setFormEmail] = useState('')
   const [kycSending, setKycSending] = useState(false)
-  const [rateResults, setRateResults] = useState<RateRecord[]>([])
-  const [selectedRateIds, setSelectedRateIds] = useState<Set<number>>(new Set())
-  const [ratesLoading, setRatesLoading] = useState(false)
-  const [ratesSearched, setRatesSearched] = useState(false)
-  const [inttraResults, setInttraResults] = useState<InttraSpotRate[]>([])
-  const [inttraLoading, setInttraLoading] = useState(false)
-  const [inttraSearched, setInttraSearched] = useState(false)
-  const [selectedInttraIds, setSelectedInttraIds] = useState<Set<string>>(new Set())
-  // Manual rate entry state (when InttraAPI has no results)
-  const [manualLiner, setManualLiner] = useState('')
-  const [manualScac, setManualScac] = useState('')
-  const [manualAmount, setManualAmount] = useState('')
-  const [manualTransit, setManualTransit] = useState('')
-  const [manualContainer, setManualContainer] = useState("20'GP")
-  const [manualFreeTime, setManualFreeTime] = useState('')
-  const [manualValidFrom, setManualValidFrom] = useState('')
-  const [manualValidTo, setManualValidTo] = useState('')
-  const [manualCutoff, setManualCutoff] = useState('')
-  const [manualAttachment, setManualAttachment] = useState<string>('')
   // Quotation prep state (Sales edits document)
   const [quotationContent, setQuotationContent] = useState('')
   // Send-to-customer state (CS sends via Email or WhatsApp)
@@ -217,14 +201,14 @@ export default function Workspace({
   const [bkQuantity, setBkQuantity] = useState(1)
   const [bkIsUrgent, setBkIsUrgent] = useState(false)
   const [bkAttachmentName, setBkAttachmentName] = useState('')
-  const [bkAttachmentData, setBkAttachmentData] = useState('')
+  const [_bkAttachmentData, setBkAttachmentData] = useState('')
   // InttraAPI booking confirmation state (Procurement books with liner)
   const [inttraBooking, setInttraBooking] = useState(false)
   const [inttraBookResult, setInttraBookResult] = useState<InttraBookingResult | null>(null)
 
   // Vessel cutoff schedule panel state
   // cutoffPanelOpen removed — cutoff is now a workflow step modal
-  const [cutoffBookingId, setCutoffBookingId] = useState('')
+  const [_cutoffBookingId, setCutoffBookingId] = useState('')
   const [cutoffLiner, setCutoffLiner] = useState('')
   const [cutoffMode, setCutoffMode] = useState<'paste' | 'upload'>('paste')
   const [cutoffContent, setCutoffContent] = useState('')
@@ -308,6 +292,7 @@ export default function Workspace({
     }
 
     // --- From Inquiries (by workflow_stage) ---
+    // Multi-container inquiries are split: one work item per container.
     for (const inq of inquiries) {
       if (inq.status === 'completed' || !inq.workflow_stage) continue
       const stage = WORKFLOW_STAGES.find(s => s.id === inq.workflow_stage)
@@ -323,73 +308,100 @@ export default function Workspace({
       if (!resolvedNextStage) continue
 
       // At customer-check, if customer KYC is already approved, skip to rate-check
-      // (CS checks AMS rates first before escalating to Procurement)
+      // (CS checks Database rates first before escalating to Procurement)
       const cust = customers.find(c => c.name.toLowerCase() === inq.customer_name.toLowerCase())
       if (inq.workflow_stage === 'customer-check' && cust?.kyc_status === 'approved') {
         resolvedNextStage = WORKFLOW_STAGES.find(s => s.id === 'rate-check')!
       }
 
-      let title = ''
-      let actionKind = 'advance-workflow'
-      let actionLabel = `Push to ${ROLE_LABELS[resolvedNextStage.role]}`
+      // Build the list of containers to iterate over.
+      // If the inquiry has no containers array, create a single synthetic entry.
+      const containerEntries: { container: ContainerLine; containerIdx: number }[] =
+        inq.containers && inq.containers.length > 0
+          ? inq.containers.map((c, ci) => ({ container: c, containerIdx: ci }))
+          : [{
+              container: {
+                containerType: inq.container_type ?? '20 GP',
+                quantity: inq.container_qty ?? 1,
+                weight: inq.cargo_weight ?? '',
+                commodityType: inq.commodity_type ?? 'General',
+                commodityName: '',
+                destination: inq.destination,
+                isFcl: inq.is_fcl ?? true,
+                zipCode: '',
+                doorAgents: [],
+                freeTime: '',
+              },
+              containerIdx: 0,
+            }]
 
-      switch (inq.workflow_stage) {
-        case 'inquiry-received':    title = `Process new inquiry from ${inq.customer_name}`; break
-        case 'customer-check': {
-          if (cust?.kyc_status === 'approved') {
-            title = `Customer ${inq.customer_name} verified (KYC approved) — check rates`
-            actionLabel = 'Check Rates'
-          } else {
-            title = `Verify customer ${inq.customer_name}`
+      for (const { container: cont, containerIdx: ci } of containerEntries) {
+        const dest = cont.destination || inq.destination
+        const containerLabel = `${cont.quantity}x ${cont.containerType}`
+        const routeLabel = `${inq.origin} → ${dest}`
+
+        let title = ''
+        let actionKind = 'advance-workflow'
+        let actionLabel = `Push to ${ROLE_LABELS[resolvedNextStage.role]}`
+
+        switch (inq.workflow_stage) {
+          case 'inquiry-received':    title = `Process new inquiry from ${inq.customer_name}`; actionLabel = 'Process Inquiry'; break
+          case 'customer-check': {
+            if (cust?.kyc_status === 'approved') {
+              title = `Customer ${inq.customer_name} verified (KYC approved) — check rates`
+              actionLabel = 'Check Rates'
+            } else {
+              title = `Verify customer ${inq.customer_name}`
+            }
+            break
           }
-          break
+          case 'rate-check':
+            title = `Rate check: ${routeLabel} · ${containerLabel}`
+            actionKind = 'check-rates'
+            actionLabel = 'Check Rates (Database + Spot + INTTRA)'
+            break
+          case 'procurement-request':
+            title = `Procurement escalation: ${routeLabel} · ${containerLabel}`
+            actionKind = 'check-inttra-rates'
+            actionLabel = 'Check Rates'
+            break
+          case 'quotation-prep':
+            title = `Prepare quotation for ${inq.customer_name} · ${containerLabel}`
+            actionKind = 'prepare-quotation'
+            actionLabel = 'Prepare Quotation'
+            break
+          case 'quotation-sent':
+            title = `Send quotation to ${inq.customer_name}`
+            actionKind = 'send-to-customer'
+            actionLabel = 'Send to Customer'
+            break
+          case 'customer-response':
+            title = `Awaiting response from ${inq.customer_name}`
+            actionKind = 'customer-response'
+            actionLabel = 'Record Response'
+            break
+          case 'booking-request':
+            title = `Create booking for ${inq.customer_name} · ${containerLabel}`
+            actionKind = 'booking-request'
+            actionLabel = 'Create Booking'
+            break
+          default:                    title = `${stage.label} — ${inq.customer_name}`
         }
-        case 'rate-check':
-          title = `Check rates for ${inq.origin} → ${inq.destination}`
-          actionKind = 'check-rates'
-          actionLabel = 'Check AMS Rates'
-          break
-        case 'procurement-request':
-          title = `Check InttraAPI spot rates: ${inq.origin} → ${inq.destination}`
-          actionKind = 'check-inttra-rates'
-          actionLabel = 'Check InttraAPI'
-          break
-        case 'quotation-prep':
-          title = `Prepare quotation for ${inq.customer_name}`
-          actionKind = 'prepare-quotation'
-          actionLabel = 'Prepare Quotation'
-          break
-        case 'quotation-sent':
-          title = `Send quotation to ${inq.customer_name}`
-          actionKind = 'send-to-customer'
-          actionLabel = 'Send to Customer'
-          break
-        case 'customer-response':
-          title = `Awaiting response from ${inq.customer_name}`
-          actionKind = 'customer-response'
-          actionLabel = 'Record Response'
-          break
-        case 'booking-request':
-          title = `Create booking request for ${inq.customer_name}`
-          actionKind = 'booking-request'
-          actionLabel = 'Create Booking'
-          break
-        default:                    title = `${stage.label} — ${inq.customer_name}`
-      }
 
-      pending.push({
-        type: 'inquiry',
-        refId: inq.id,
-        customerName: inq.customer_name,
-        title,
-        subtitle: `${inq.request} · ${inq.origin} → ${inq.destination} · ${inq.delivery_type === 'door-to-door' ? 'Door-to-Door' : 'Port-to-Port'}`,
-        urgentFlag: isSpotInquiry(inq.inquiry_text),
-        createdAt: inq.created_at,
-        previousContext: findContext(inq.id),
-        actionLabel,
-        actionKind,
-        sourceData: { inquiry: inq, nextStage: resolvedNextStage.id },
-      })
+        pending.push({
+          type: 'inquiry',
+          refId: inq.id,
+          customerName: inq.customer_name,
+          title,
+          subtitle: `${inq.request} · ${routeLabel} · ${containerLabel} · ${inq.delivery_type === 'door-to-door' ? 'Door-to-Door' : 'Port-to-Port'}`,
+          urgentFlag: isSpotInquiry(inq.inquiry_text),
+          createdAt: inq.created_at,
+          previousContext: findContext(inq.id),
+          actionLabel,
+          actionKind,
+          sourceData: { inquiry: inq, nextStage: resolvedNextStage.id, container: cont, containerIdx: ci },
+        })
+      }
     }
 
     // --- From Bookings (by status) ---
@@ -526,6 +538,7 @@ export default function Workspace({
 
     // --- From Bookings (record Draft BL + send to customer) ---
     for (const bkg of bookings) {
+      if (bkg.delivery_type === 'door-to-door') continue // door-to-door skips Draft BL
       if (!bkg.si_submitted || bkg.draft_bl_sent) continue
       if (bkg.status !== 'Liner Confirmed' && bkg.status !== 'Released') continue
       if (role && role !== 'CS') continue
@@ -545,32 +558,10 @@ export default function Workspace({
       })
     }
 
-    // --- From Bookings (BL approval from customer) ---
-    for (const bkg of bookings) {
-      if (!bkg.draft_bl_sent) continue
-      if (bkg.bl_status && bkg.bl_status !== 'pending') continue
-      if (bkg.status !== 'Liner Confirmed' && bkg.status !== 'Released') continue
-      if (role && role !== 'CS') continue
-
-      pending.push({
-        type: 'booking',
-        refId: bkg.id,
-        customerName: bkg.customer_name,
-        title: `Record BL approval from ${bkg.customer_name}`,
-        subtitle: `${bkg.quantity}x ${bkg.container_type} · ${bkg.origin} → ${bkg.destination}${cutoffSuffix(bkg)}`,
-        urgentFlag: false,
-        createdAt: bkg.created_at,
-        previousContext: findContext(bkg.id),
-        actionLabel: 'Record Response',
-        actionKind: 'bl-approval',
-        sourceData: { booking: bkg },
-      })
-    }
-
-    // --- Master BL (door-to-door only, after BL approved) ---
+    // --- Master BL (door-to-door only, after SI submitted) ---
     for (const bkg of bookings) {
       if (bkg.delivery_type !== 'door-to-door') continue
-      if (bkg.bl_status !== 'approved') continue
+      if (!bkg.si_submitted) continue
       if (bkg.master_bl_recorded) continue
       if (bkg.status !== 'Liner Confirmed' && bkg.status !== 'Released') continue
       if (role && role !== 'CS') continue
@@ -602,13 +593,41 @@ export default function Workspace({
         type: 'booking',
         refId: bkg.id,
         customerName: bkg.customer_name,
-        title: `Create House BL for ${bkg.customer_name}`,
+        title: `Create & send House BL to ${bkg.customer_name}`,
         subtitle: `${bkg.quantity}x ${bkg.container_type} · ${bkg.origin} → ${bkg.destination} · Master BL: ${bkg.master_bl_number || 'N/A'}${cutoffSuffix(bkg)}`,
         urgentFlag: false,
         createdAt: bkg.created_at,
         previousContext: findContext(bkg.id),
-        actionLabel: 'Create House BL',
+        actionLabel: 'Create & Send House BL',
         actionKind: 'create-house-bl',
+        sourceData: { booking: bkg },
+      })
+    }
+
+    // --- BL Approval (port-to-port: after Draft BL sent; door-to-door: after House BL sent) ---
+    for (const bkg of bookings) {
+      const isDtd = bkg.delivery_type === 'door-to-door'
+      if (isDtd) {
+        if (!bkg.house_bl_created) continue
+      } else {
+        if (!bkg.draft_bl_sent) continue
+      }
+      if (bkg.bl_status && bkg.bl_status !== 'pending') continue
+      if (bkg.status !== 'Liner Confirmed' && bkg.status !== 'Released') continue
+      if (role && role !== 'CS') continue
+
+      const blLabel = isDtd ? 'House BL' : 'Draft BL'
+      pending.push({
+        type: 'booking',
+        refId: bkg.id,
+        customerName: bkg.customer_name,
+        title: `Record ${blLabel} approval from ${bkg.customer_name}`,
+        subtitle: `${bkg.quantity}x ${bkg.container_type} · ${bkg.origin} → ${bkg.destination}${cutoffSuffix(bkg)}`,
+        urgentFlag: false,
+        createdAt: bkg.created_at,
+        previousContext: findContext(bkg.id),
+        actionLabel: 'Record Response',
+        actionKind: 'bl-approval',
         sourceData: { booking: bkg },
       })
     }
@@ -679,6 +698,7 @@ export default function Workspace({
     return pendingItems.filter(i => step.actionKinds.includes(i.actionKind))
   }, [pendingItems, effectiveStep, roleSteps])
 
+
   // ---------------------------------------------------------------------------
   // Action handlers
   // ---------------------------------------------------------------------------
@@ -708,8 +728,9 @@ export default function Workspace({
         }
         const destActionKind = stageActionMap[nextStage]
         const destStep = destActionKind ? roleSteps.find(s => s.actionKinds.includes(destActionKind)) : null
+        const crossDept = activeRole !== 'Admin' && nextStageObj.role !== activeRole
         onFlash(`${inquiry.id} pushed to ${ROLE_LABELS[nextStageObj.role]}`,
-          destStep ? { label: `Go to ${destStep.label}`, onClick: () => setActiveStep(destStep.key) } : undefined)
+          !crossDept && destStep ? { label: `Go to ${destStep.label}`, onClick: () => setActiveStep(destStep.key) } : undefined)
         break
       }
       case 'acknowledge-procurement': {
@@ -728,44 +749,14 @@ export default function Workspace({
         break
       }
       case 'check-rates': {
-        // Open modal and immediately search for rates
-        setFormNote('')
-        setRateResults([])
-        setSelectedRateIds(new Set())
-        setRatesSearched(false)
-        setRatesLoading(true)
-        setActionModal(item)
-        const { inquiry: rateInq } = item.sourceData
-        apiSearchRates({ origin: rateInq.origin, destination: rateInq.destination })
-          .then(rates => { setRateResults(rates); setRatesSearched(true) })
-          .catch(() => { setRateResults([]); setRatesSearched(true) })
-          .finally(() => setRatesLoading(false))
-        break
+        const { inquiry, container } = item.sourceData
+        onStartRateCheck(inquiry, container, 'cs-sales')
+        return
       }
       case 'check-inttra-rates': {
-        // Open modal and fetch InttraAPI spot rates
-        setFormNote('')
-        setInttraResults([])
-        setSelectedInttraIds(new Set())
-        setInttraSearched(false)
-        setInttraLoading(true)
-        setManualLiner('')
-        setManualScac('')
-        setManualAmount('')
-        setManualTransit('')
-        setManualContainer("20'GP")
-        setManualFreeTime('')
-        setManualValidFrom('')
-        setManualValidTo('')
-        setManualCutoff('')
-        setManualAttachment('')
-        setActionModal(item)
-        const { inquiry: inttraInq } = item.sourceData
-        apiCheckInttraRates({ origin: inttraInq.origin, destination: inttraInq.destination })
-          .then(rates => { setInttraResults(rates); setInttraSearched(true) })
-          .catch(() => { setInttraResults([]); setInttraSearched(true) })
-          .finally(() => setInttraLoading(false))
-        break
+        const { inquiry, container } = item.sourceData
+        onStartRateCheck(inquiry, container, 'procurement')
+        return
       }
       case 'prepare-quotation': {
         // Pre-fill quotation document from previous context (rate data)
@@ -842,7 +833,7 @@ ABC Logistics (Pvt) Ltd`
         let qty = ''
         for (const entry of allCtx) {
           const n = entry.notes ?? ''
-          // From InttraAPI/AMS rates: "Maersk $1200 20'GP ..."
+          // From InttraAPI/Database rates: "Maersk $1200 20'GP ..."
           const rateMatch = n.match(/Selected rates?:\s*(\w[\w\s-]*?)\s+\$/i)
           if (rateMatch && !liner) liner = rateMatch[1].trim()
           // From manual rate: "Custom $800 20'GP ..." or "Maersk Line $800 ..."
@@ -953,6 +944,11 @@ ABC Logistics (Pvt) Ltd`
         setHouseBlShipper(hbBkg.customer_name)
         setHouseBlConsignee('')
         setFormNote('')
+        const hbCust = customers.find(c => c.name.toLowerCase() === hbBkg.customer_name.toLowerCase())
+        setCustomerContactEmail(hbCust?.contact_email ?? '')
+        setCustomerContactPhone(hbCust?.contact_phone ?? '')
+        setSendMethod(hbCust?.contact_email ? 'email' : 'whatsapp')
+        setWaConfirmed(false)
         setActionModal(item)
         break
       }
@@ -972,7 +968,10 @@ ABC Logistics (Pvt) Ltd`
   const handleModalSubmit = async () => {
     if (!actionModal) return
     // Compute next-step action for interactive toast navigation
+    // Skip for actions that push work to a different department (unless Admin who sees all)
+    const crossDeptActions = new Set(['send-kyc', 'verify-kyc', 'check-rates', 'check-inttra-rates', 'prepare-quotation', 'booking-request'])
     const nextStepAction = (() => {
+      if (activeRole !== 'Admin' && crossDeptActions.has(actionModal.actionKind)) return undefined
       const cur = roleSteps.find(s => s.actionKinds.includes(actionModal.actionKind))
       const nxt = cur ? roleSteps.find(s => s.stepNumber === cur.stepNumber + 1) : null
       return nxt ? { label: `Go to ${nxt.label}`, onClick: () => setActiveStep(nxt.key) } : undefined
@@ -1008,7 +1007,7 @@ ABC Logistics (Pvt) Ltd`
         const approved = formDecision === 'approve'
         if (approved) {
           onUpdateCustomerKyc(customer.name, 'approved')
-          // Auto-advance all stuck inquiries for this customer to rate-check (CS checks AMS first)
+          // Auto-advance all stuck inquiries for this customer to rate-check (CS checks Database first)
           onAutoAdvanceForCustomer(customer.name, 'rate-check')
           onLogActivity({
             actor_role: activeRole,
@@ -1035,101 +1034,6 @@ ABC Logistics (Pvt) Ltd`
             notes: formNote || 'KYC documents need resubmission.',
           })
           onFlash(`KYC flagged — ${customer.name} returned to CS`, nextStepAction)
-        }
-        break
-      }
-      case 'check-rates': {
-        const { inquiry } = actionModal.sourceData
-        const selectedRates = rateResults.filter(r => selectedRateIds.has(r.id))
-
-        if (selectedRates.length > 0) {
-          // Rates selected → advance to quotation-prep (Sales)
-          onAdvanceWorkflow(inquiry.id, 'quotation-prep')
-          const ratesSummary = selectedRates
-            .map(r => `${r.liner_name} ${r.rate_type} $${r.amount} (${r.container_type})`)
-            .join('; ')
-          onLogActivity({
-            actor_role: activeRole,
-            actor_id: activeEmployee.id,
-            action: `Rates checked. ${selectedRates.length} rate(s) selected from AMS. Pushed to Sales for quotation.`,
-            ref_type: 'inquiry',
-            ref_id: inquiry.id,
-            customer_name: inquiry.customer_name,
-            pushed_to: 'Sales',
-            notes: formNote ? `${formNote} | Selected rates: ${ratesSummary}` : `Selected rates: ${ratesSummary}`,
-          })
-          onFlash(`${inquiry.id} → ${selectedRates.length} rate(s) sent to Sales`, nextStepAction)
-        } else {
-          // No rates selected → escalate to Procurement
-          onAdvanceWorkflow(inquiry.id, 'procurement-request')
-          onLogActivity({
-            actor_role: activeRole,
-            actor_id: activeEmployee.id,
-            action: `No suitable rates found in AMS. Escalated to Procurement for rate procurement.`,
-            ref_type: 'inquiry',
-            ref_id: inquiry.id,
-            customer_name: inquiry.customer_name,
-            pushed_to: 'Procurement',
-            notes: formNote || `${inquiry.origin} → ${inquiry.destination} — no matching rates in system`,
-          })
-          onFlash(`${inquiry.id} → No rates found, escalated to Procurement`, nextStepAction)
-        }
-        break
-      }
-      case 'check-inttra-rates': {
-        const { inquiry } = actionModal.sourceData
-        const cust = customers.find(c => c.name.toLowerCase() === inquiry.customer_name.toLowerCase())
-
-        if (selectedInttraIds.size > 0) {
-          // InttraAPI rates selected
-          const selectedRates = inttraResults.filter(r => selectedInttraIds.has(r.spotRateId))
-          const ratesSummary = selectedRates
-            .map(r => {
-              const c = toInttraCard(r)
-              return `${c.carrierName} $${c.totalPriceUSD} ${c.containerType} ${c.transitTimeInDays}d (valid ${c.validFromDate}→${c.validToDate})`
-            })
-            .join('; ')
-          onAdvanceWorkflow(inquiry.id, 'quotation-prep')
-          onLogActivity({
-            actor_role: activeRole,
-            actor_id: activeEmployee.id,
-            action: `InttraAPI spot rates checked. ${selectedRates.length} rate(s) selected. Rate brief prepared and sent to Sales.`,
-            ref_type: 'inquiry',
-            ref_id: inquiry.id,
-            customer_name: inquiry.customer_name,
-            pushed_to: 'Sales',
-            notes: formNote
-              ? `${formNote} | Customer: ${inquiry.customer_name} (${cust?.tier ?? 'N/A'}) | Route: ${inquiry.origin} → ${inquiry.destination} | Rates: ${ratesSummary}`
-              : `Customer: ${inquiry.customer_name} (${cust?.tier ?? 'N/A'}) | Route: ${inquiry.origin} → ${inquiry.destination} | Rates: ${ratesSummary}`,
-          })
-          onFlash(`${inquiry.id} → Rate brief sent to Sales`, nextStepAction)
-        } else {
-          // Manual rate entry (no InttraAPI results)
-          const manualSummary = [
-            `carrierName=${manualLiner || 'Custom'}`,
-            `carrierScac=${manualScac || '?'}`,
-            `totalPriceUSD=${manualAmount || '0'}`,
-            `containerType=${manualContainer}`,
-            `transitTimeInDays=${manualTransit || '?'}`,
-            `freeTimeInDays=${manualFreeTime || '?'}`,
-            `validFromDate=${manualValidFrom || '?'}`,
-            `validToDate=${manualValidTo || '?'}`,
-            `bookingCutoffDate=${manualCutoff || '?'}`,
-          ].join(', ')
-          onAdvanceWorkflow(inquiry.id, 'quotation-prep')
-          onLogActivity({
-            actor_role: activeRole,
-            actor_id: activeEmployee.id,
-            action: `No InttraAPI rates available. Manual rate document created and sent to Sales.`,
-            ref_type: 'inquiry',
-            ref_id: inquiry.id,
-            customer_name: inquiry.customer_name,
-            pushed_to: 'Sales',
-            notes: formNote
-              ? `${formNote} | Customer: ${inquiry.customer_name} (${cust?.tier ?? 'N/A'}) | Route: ${inquiry.origin} → ${inquiry.destination} | Manual Rate: ${manualSummary}${manualAttachment ? ` | Attachment: ${manualAttachment}` : ''}`
-              : `Customer: ${inquiry.customer_name} (${cust?.tier ?? 'N/A'}) | Route: ${inquiry.origin} → ${inquiry.destination} | Manual Rate: ${manualSummary}${manualAttachment ? ` | Attachment: ${manualAttachment}` : ''}`,
-          })
-          onFlash(`${inquiry.id} → Manual rate brief sent to Sales`, nextStepAction)
         }
         break
       }
@@ -1373,24 +1277,25 @@ ABC Logistics (Pvt) Ltd`
       case 'bl-approval': {
         const { booking } = actionModal.sourceData
         const approved = blDecision === 'approved'
+        const baBlType = booking.delivery_type === 'door-to-door' ? 'House BL' : 'Draft BL'
         onSetBlStatus(booking.id, blDecision)
         onLogActivity({
           actor_role: activeRole,
           actor_id: activeEmployee.id,
           action: approved
-            ? `${booking.customer_name} approved Draft BL for ${booking.id}.`
-            : `${booking.customer_name} requested changes to Draft BL for ${booking.id}.`,
+            ? `${booking.customer_name} approved ${baBlType} for ${booking.id}.`
+            : `${booking.customer_name} requested changes to ${baBlType} for ${booking.id}.`,
           ref_type: 'booking',
           ref_id: booking.id,
           customer_name: booking.customer_name,
           pushed_to: 'CS',
           notes: approved
-            ? `BL approved by customer${formNote ? ` | ${formNote}` : ''}`
+            ? `${baBlType} approved by customer${formNote ? ` | ${formNote}` : ''}`
             : `Changes requested: ${formNote || 'No details provided'}`,
         })
         onFlash(approved
-          ? `${booking.id} → BL approved by ${booking.customer_name}`
-          : `${booking.id} → ${booking.customer_name} requested changes to Draft BL`,
+          ? `${booking.id} → ${baBlType} approved by ${booking.customer_name}`
+          : `${booking.id} → ${booking.customer_name} requested changes to ${baBlType}`,
           approved ? nextStepAction : undefined)
         break
       }
@@ -1413,17 +1318,20 @@ ABC Logistics (Pvt) Ltd`
       case 'create-house-bl': {
         const { booking } = actionModal.sourceData
         onCreateHouseBl(booking.id, { house_bl_number: houseBlNumber, shipper: houseBlShipper, consignee: houseBlConsignee })
+        const hbSendVia = sendMethod === 'email'
+          ? `via Email to ${customerContactEmail}`
+          : `via WhatsApp to ${customerContactPhone || 'customer'}`
         onLogActivity({
           actor_role: activeRole,
           actor_id: activeEmployee.id,
-          action: `Created House BL ${houseBlNumber} for ${booking.id}.`,
+          action: `Created House BL ${houseBlNumber} and sent to ${booking.customer_name} ${hbSendVia}. Awaiting customer approval.`,
           ref_type: 'booking',
           ref_id: booking.id,
           customer_name: booking.customer_name,
           pushed_to: 'CS',
-          notes: `House BL: ${houseBlNumber} | Shipper: ${houseBlShipper} | Consignee: ${houseBlConsignee} | Master BL: ${booking.master_bl_number || 'N/A'}${formNote ? ` | ${formNote}` : ''}`,
+          notes: `House BL: ${houseBlNumber} | Shipper: ${houseBlShipper} | Consignee: ${houseBlConsignee} | Master BL: ${booking.master_bl_number || 'N/A'} | Sent ${hbSendVia}${formNote ? ` | ${formNote}` : ''}`,
         })
-        onFlash(`${booking.id} → House BL ${houseBlNumber} created`, nextStepAction)
+        onFlash(`${booking.id} → House BL ${houseBlNumber} sent to ${booking.customer_name} ${hbSendVia}`, nextStepAction)
         break
       }
       case 'approve-quote': {
@@ -1464,6 +1372,24 @@ ABC Logistics (Pvt) Ltd`
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            {(effectiveStep === 'cs-inquiry' || effectiveStep === 'adm-inquiry' || effectiveStep === 'sales-inquiry') && (
+              <button
+                className="db-btn primary"
+                style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12 }}
+                onClick={() => onGoTo('new-inquiry')}
+              >
+                <Plus size={12} /> New Inquiry
+              </button>
+            )}
+            {effectiveStep === 'proc-rates' && (
+              <button
+                className="db-btn primary"
+                style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12 }}
+                onClick={() => onGoTo('record-rate')}
+              >
+                <DollarSign size={12} /> Record Rate
+              </button>
+            )}
             <span className="db-badge" style={{ background: roleColor + '12', color: roleColor, border: `1px solid ${roleColor}30` }}>
               {ROLE_LABELS[activeRole]}
             </span>
@@ -1473,6 +1399,9 @@ ABC Logistics (Pvt) Ltd`
           </div>
         </div>
       </div>
+
+      {/* ---- Work Queue ---- */}
+      <div>
 
       {/* Empty state */}
       {filteredItems.length === 0 ? (
@@ -1491,7 +1420,7 @@ ABC Logistics (Pvt) Ltd`
             const Icon = TYPE_ICON[item.type]
             const ctx = item.previousContext
             return (
-              <div key={`${item.type}-${item.refId}-${item.actionKind}`} className="db-chart-card ws-item-card" style={{ padding: '16px 20px' }}>
+              <div key={`${item.type}-${item.refId}-${item.actionKind}-${item.sourceData?.containerIdx ?? 0}`} className="db-chart-card ws-item-card" style={{ padding: '16px 20px' }}>
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
                   {/* Type icon */}
                   <div className="ws-type-icon" style={{ background: roleColor + '10', color: roleColor }}>
@@ -1579,6 +1508,8 @@ ABC Logistics (Pvt) Ltd`
           </div>
         </div>
       )}
+
+      </div>{/* end Work Queue wrapper */}
 
       {/* Step Navigation Bar */}
       <div style={{
@@ -2840,13 +2771,15 @@ ABC Logistics (Pvt) Ltd`
             {/* BL Approval modal */}
             {actionModal.actionKind === 'bl-approval' && (() => {
               const { booking: baBkg } = actionModal.sourceData
+              const isDtd = baBkg.delivery_type === 'door-to-door'
+              const blType = isDtd ? 'House BL' : 'Draft BL'
               return (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                   {/* Booking summary */}
                   <div style={{ padding: '10px 14px', background: 'rgba(79,70,229,0.06)', border: '1px solid rgba(79,70,229,0.15)', borderRadius: 8, fontSize: 12 }}>
                     <strong>{baBkg.customer_name}</strong> — {baBkg.origin} → {baBkg.destination}
                     <div style={{ color: 'var(--text-muted)', marginTop: 2 }}>
-                      {baBkg.quantity}x {baBkg.container_type} · {baBkg.shipping_line || 'No liner'}
+                      {baBkg.quantity}x {baBkg.container_type} · {baBkg.shipping_line || 'No liner'}{isDtd ? ' · Door-to-Door' : ''}
                     </div>
                   </div>
 
@@ -2879,7 +2812,7 @@ ABC Logistics (Pvt) Ltd`
                   )}
 
                   <div>
-                    <label className="lt-label">Customer Response to Draft BL</label>
+                    <label className="lt-label">Customer Response to {blType}</label>
                     <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
                       <button
                         className={`db-btn ${blDecision === 'approved' ? 'primary' : ''}`}
@@ -3027,7 +2960,7 @@ ABC Logistics (Pvt) Ltd`
                   </div>
 
                   <div style={{ padding: '8px 12px', background: 'rgba(217,119,6,0.06)', border: '1px solid rgba(217,119,6,0.15)', borderRadius: 8, fontSize: 11, color: 'var(--text-secondary)' }}>
-                    <strong>House BL</strong> — Created internally by CS. Lists actual shipper and consignee.
+                    <strong>House BL</strong> — Created by CS with actual shipper and consignee. Sent to customer for approval.
                   </div>
 
                   <div>
@@ -3051,6 +2984,58 @@ ABC Logistics (Pvt) Ltd`
                       placeholder="Actual consignee name" />
                   </div>
 
+                  {/* Send House BL to customer */}
+                  <div>
+                    <label className="lt-label">Send House BL to Customer via</label>
+                    <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                      <button
+                        className={`db-btn ${sendMethod === 'email' ? 'primary' : ''}`}
+                        style={sendMethod !== 'email' ? { background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-secondary)' } : {}}
+                        onClick={() => setSendMethod('email')}
+                      >
+                        <Mail size={13} style={{ marginRight: 4 }} /> Email
+                      </button>
+                      <button
+                        className={`db-btn ${sendMethod === 'whatsapp' ? 'primary' : ''}`}
+                        style={sendMethod === 'whatsapp' ? { background: '#25d366', borderColor: '#25d366' } : { background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}
+                        onClick={() => setSendMethod('whatsapp')}
+                      >
+                        <MessageCircle size={13} style={{ marginRight: 4 }} /> WhatsApp
+                      </button>
+                    </div>
+                  </div>
+
+                  {sendMethod === 'email' && (
+                    <div>
+                      <label className="lt-label">Customer Email <span style={{ color: '#dc2626' }}>*</span></label>
+                      <input className="lt-input" style={{ width: '100%' }} type="email"
+                        value={customerContactEmail} onChange={e => setCustomerContactEmail(e.target.value)}
+                        placeholder="customer@example.com" />
+                    </div>
+                  )}
+
+                  {sendMethod === 'whatsapp' && (
+                    <>
+                      <div>
+                        <label className="lt-label">Customer WhatsApp Number</label>
+                        <input className="lt-input" style={{ width: '100%' }}
+                          value={customerContactPhone} onChange={e => setCustomerContactPhone(e.target.value)}
+                          placeholder="+94 7X XXX XXXX" />
+                      </div>
+                      <div style={{ padding: '10px 14px', background: 'rgba(37,211,102,0.06)', border: '1px solid rgba(37,211,102,0.2)', borderRadius: 8 }}>
+                        <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer', fontSize: 12, color: 'var(--text-secondary)' }}>
+                          <input type="checkbox" checked={waConfirmed} onChange={e => setWaConfirmed(e.target.checked)} style={{ marginTop: 2 }} />
+                          <span>
+                            I confirm that I have sent the House BL to the customer via WhatsApp.
+                            <span style={{ display: 'block', fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                              No WhatsApp integration — manual confirmation.
+                            </span>
+                          </span>
+                        </label>
+                      </div>
+                    </>
+                  )}
+
                   <div>
                     <label className="lt-label">Notes (optional)</label>
                     <input className="lt-input" style={{ width: '100%' }} value={formNote}
@@ -3061,343 +3046,7 @@ ABC Logistics (Pvt) Ltd`
               )
             })()}
 
-            {/* Check Rates modal (AMS lookup) */}
-            {actionModal.actionKind === 'check-rates' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                <div style={{ padding: '10px 14px', background: 'rgba(8,145,178,0.06)', border: '1px solid rgba(8,145,178,0.18)', borderRadius: 8, fontSize: 12, color: '#0891b2' }}>
-                  Searching AMS for rates: <strong>{actionModal.sourceData.inquiry.origin} → {actionModal.sourceData.inquiry.destination}</strong>
-                </div>
 
-                {ratesLoading && (
-                  <div style={{ textAlign: 'center', padding: 20, color: 'var(--text-muted)' }}>
-                    <Loader2 size={20} className="spin" style={{ marginBottom: 8 }} />
-                    <div style={{ fontSize: 13 }}>Searching rates...</div>
-                  </div>
-                )}
-
-                {ratesSearched && rateResults.length === 0 && (
-                  <div style={{ padding: 16, textAlign: 'center', background: 'rgba(220,38,38,0.04)', border: '1px solid rgba(220,38,38,0.15)', borderRadius: 8 }}>
-                    <div style={{ fontSize: 14, fontWeight: 700, color: '#dc2626', marginBottom: 4 }}>No rates found</div>
-                    <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-                      No matching rates in AMS for this route. Click &ldquo;Escalate to Procurement&rdquo; to request rates from liners.
-                    </div>
-                  </div>
-                )}
-
-                {ratesSearched && rateResults.length > 0 && (
-                  <>
-                    <div style={{ fontSize: 12, color: 'var(--text-secondary)', fontWeight: 600 }}>
-                      {rateResults.length} rate(s) found — select one or more to send to Sales
-                    </div>
-                    <div style={{ maxHeight: 260, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
-                      {rateResults.map(rate => {
-                        const selected = selectedRateIds.has(rate.id)
-                        return (
-                          <label
-                            key={rate.id}
-                            className="ws-rate-row"
-                            style={{
-                              display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px',
-                              border: `1px solid ${selected ? 'var(--accent)' : 'var(--border)'}`,
-                              borderRadius: 8, cursor: 'pointer',
-                              background: selected ? 'rgba(79,70,229,0.04)' : 'transparent',
-                            }}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={selected}
-                              onChange={() => {
-                                setSelectedRateIds(prev => {
-                                  const next = new Set(prev)
-                                  if (next.has(rate.id)) next.delete(rate.id)
-                                  else next.add(rate.id)
-                                  return next
-                                })
-                              }}
-                            />
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>
-                                {rate.liner_name}
-                                <span style={{ fontWeight: 400, color: 'var(--text-secondary)', marginLeft: 8 }}>
-                                  {rate.container_type} · {rate.rate_type}
-                                </span>
-                              </div>
-                              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
-                                Valid: {rate.valid_from} → {rate.valid_to}
-                                {rate.source_system && ` · ${rate.source_system}`}
-                              </div>
-                            </div>
-                            <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', whiteSpace: 'nowrap' }}>
-                              ${rate.amount.toLocaleString()} <span style={{ fontSize: 10, fontWeight: 400, color: 'var(--text-muted)' }}>{rate.currency}</span>
-                            </div>
-                          </label>
-                        )
-                      })}
-                    </div>
-                  </>
-                )}
-
-                {ratesSearched && (
-                  <div>
-                    <label className="lt-label">Notes (optional)</label>
-                    <input className="lt-input" style={{ width: '100%' }} value={formNote}
-                      onChange={e => setFormNote(e.target.value)}
-                      placeholder="Any notes for the next team..." />
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* InttraAPI Rate Check + Document Preview (Procurement) */}
-            {actionModal.actionKind === 'check-inttra-rates' && (() => {
-              const inq = actionModal.sourceData.inquiry
-              const custData = customers.find(c => c.name.toLowerCase() === inq.customer_name.toLowerCase())
-              const hasManualEntry = !!(manualLiner.trim() && manualAmount.trim())
-              return (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                <div style={{ padding: '10px 14px', background: 'rgba(217,119,6,0.06)', border: '1px solid rgba(217,119,6,0.18)', borderRadius: 8, fontSize: 12, color: '#d97706', display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <Globe size={14} />
-                  Querying InttraAPI for spot rates: <strong style={{ marginLeft: 4 }}>{inq.origin} → {inq.destination}</strong>
-                </div>
-
-                {inttraLoading && (
-                  <div style={{ textAlign: 'center', padding: 20, color: 'var(--text-muted)' }}>
-                    <Loader2 size={20} className="spin" style={{ marginBottom: 8 }} />
-                    <div style={{ fontSize: 13 }}>Connecting to InttraAPI...</div>
-                  </div>
-                )}
-
-                {inttraSearched && inttraResults.length === 0 && (
-                  <div style={{ padding: 12, background: 'rgba(220,38,38,0.04)', border: '1px solid rgba(220,38,38,0.15)', borderRadius: 8 }}>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: '#dc2626', marginBottom: 2 }}>No spot rates available</div>
-                    <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>InttraAPI returned no rates for this route. You can enter rates manually below.</div>
-                  </div>
-                )}
-
-                {inttraSearched && inttraResults.length > 0 && (
-                  <>
-                    <div style={{ fontSize: 12, color: 'var(--text-secondary)', fontWeight: 600 }}>
-                      {inttraResults.length} spot rate(s) from InttraAPI — select rates to include in the brief
-                    </div>
-                    <div style={{ maxHeight: 220, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
-                      {inttraResults.map(offer => {
-                        const card = toInttraCard(offer)
-                        const selected = selectedInttraIds.has(card.spotRateId)
-                        return (
-                          <label
-                            key={card.spotRateId}
-                            className="ws-rate-row"
-                            style={{
-                              display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px',
-                              border: `1px solid ${selected ? '#d97706' : 'var(--border)'}`,
-                              borderRadius: 8, cursor: 'pointer',
-                              background: selected ? 'rgba(217,119,6,0.04)' : 'transparent',
-                            }}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={selected}
-                              onChange={() => {
-                                setSelectedInttraIds(prev => {
-                                  const next = new Set(prev)
-                                  if (next.has(card.spotRateId)) next.delete(card.spotRateId)
-                                  else next.add(card.spotRateId)
-                                  return next
-                                })
-                              }}
-                            />
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>
-                                {card.carrierName}
-                                <span style={{ fontWeight: 400, color: 'var(--text-muted)', marginLeft: 6, fontSize: 11 }}>{card.carrierScac}</span>
-                                <span style={{ fontWeight: 400, color: 'var(--text-secondary)', marginLeft: 8 }}>{card.containerType}</span>
-                              </div>
-                              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
-                                {card.transitTimeInDays}d transit · Free time: {card.freeTimeInDays}d · Cut-off: {card.bookingCutoffDate}
-                              </div>
-                              <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                                Valid: {card.validFromDate} → {card.validToDate}
-                              </div>
-                            </div>
-                            <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', whiteSpace: 'nowrap' }}>
-                              ${card.totalPriceUSD.toLocaleString()} <span style={{ fontSize: 10, fontWeight: 400, color: 'var(--text-muted)' }}>USD</span>
-                            </div>
-                          </label>
-                        )
-                      })}
-                    </div>
-
-                    {/* Pre-filled Rate Brief Document */}
-                    {selectedInttraIds.size > 0 && (() => {
-                      const selectedCards = inttraResults
-                        .filter(r => selectedInttraIds.has(r.spotRateId))
-                        .map(toInttraCard)
-                      return (
-                        <div className="ws-doc-preview">
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
-                            <FileDown size={14} style={{ color: '#d97706' }} />
-                            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)' }}>Rate Brief (Pre-filled)</span>
-                          </div>
-                          <div className="ws-doc-body">
-                            <div className="ws-doc-header">RATE BRIEF</div>
-                            <div className="ws-doc-sub">ABC Logistics (Pvt) Ltd</div>
-                            <div className="ws-doc-divider" />
-                            <div className="ws-doc-section">Customer</div>
-                            <div className="ws-doc-row"><span>Name:</span><strong>{inq.customer_name}</strong></div>
-                            <div className="ws-doc-row"><span>Tier:</span><strong>{custData?.tier ?? 'N/A'}</strong></div>
-                            <div className="ws-doc-row"><span>Location:</span><strong>{custData?.location ?? 'N/A'}</strong></div>
-                            <div className="ws-doc-divider" />
-                            <div className="ws-doc-section">Inquiry</div>
-                            <div className="ws-doc-row"><span>Ref:</span><strong>{inq.id}</strong></div>
-                            <div className="ws-doc-row"><span>Route:</span><strong>{inq.origin} → {inq.destination}</strong></div>
-                            <div className="ws-doc-row"><span>Request:</span><strong>{inq.request}</strong></div>
-                            <div className="ws-doc-row"><span>Channel:</span><strong>{inq.channel}</strong></div>
-                            <div className="ws-doc-divider" />
-                            <div className="ws-doc-section">InttraAPI Spot Rates</div>
-                            {selectedCards.map(c => (
-                              <div key={c.spotRateId} style={{ padding: '6px 0', borderBottom: '1px dashed var(--border)' }}>
-                                <div style={{ fontWeight: 700, fontSize: 12 }}>{c.carrierName} <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>({c.carrierScac})</span></div>
-                                <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
-                                  ${c.totalPriceUSD.toLocaleString()} USD / {c.containerType} · {c.transitTimeInDays}d transit · Free time: {c.freeTimeInDays}d
-                                </div>
-                                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                                  Valid: {c.validFromDate} → {c.validToDate} · Cut-off: {c.bookingCutoffDate}
-                                </div>
-                              </div>
-                            ))}
-                            <div className="ws-doc-divider" />
-                            <div className="ws-doc-row"><span>Prepared by:</span><strong>{activeEmployee.name} (Procurement)</strong></div>
-                            <div className="ws-doc-row"><span>Date:</span><strong>{new Date().toISOString().slice(0, 10)}</strong></div>
-                          </div>
-                        </div>
-                      )
-                    })()}
-                  </>
-                )}
-
-                {/* Manual Rate Entry — always available */}
-                {inttraSearched && (
-                  <>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
-                      <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
-                      <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                        {inttraResults.length > 0 ? 'Or enter manually' : 'Enter rates manually'}
-                      </span>
-                      <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
-                    </div>
-
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                      <div>
-                        <label className="lt-label">Carrier</label>
-                        <input className="lt-input" style={{ width: '100%' }} value={manualLiner} onChange={e => setManualLiner(e.target.value)} placeholder="e.g. Maersk Line" />
-                      </div>
-                      <div>
-                        <label className="lt-label">Carrier SCAC</label>
-                        <input className="lt-input" style={{ width: '100%' }} value={manualScac} onChange={e => setManualScac(e.target.value.toUpperCase())} placeholder="e.g. MAEU" maxLength={4} />
-                      </div>
-                      <div>
-                        <label className="lt-label">Total Price USD</label>
-                        <input className="lt-input" style={{ width: '100%' }} type="number" value={manualAmount} onChange={e => setManualAmount(e.target.value)} placeholder="e.g. 1200" />
-                      </div>
-                      <div>
-                        <label className="lt-label">Container Type</label>
-                        <select className="lt-input" style={{ width: '100%' }} value={manualContainer} onChange={e => setManualContainer(e.target.value)}>
-                          <option>20&apos;GP</option>
-                          <option>40&apos;GP</option>
-                          <option>40&apos;HC</option>
-                          <option>20&apos;RF</option>
-                          <option>40&apos;RF</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="lt-label">Transit Time in Days</label>
-                        <input className="lt-input" style={{ width: '100%' }} type="number" value={manualTransit} onChange={e => setManualTransit(e.target.value)} placeholder="e.g. 14" />
-                      </div>
-                      <div>
-                        <label className="lt-label">Free Time in Days</label>
-                        <input className="lt-input" style={{ width: '100%' }} type="number" value={manualFreeTime} onChange={e => setManualFreeTime(e.target.value)} placeholder="e.g. 7" />
-                      </div>
-                      <div>
-                        <label className="lt-label">Valid From</label>
-                        <input className="lt-input" style={{ width: '100%' }} type="date" value={manualValidFrom} onChange={e => setManualValidFrom(e.target.value)} />
-                      </div>
-                      <div>
-                        <label className="lt-label">Valid To</label>
-                        <input className="lt-input" style={{ width: '100%' }} type="date" value={manualValidTo} onChange={e => setManualValidTo(e.target.value)} />
-                      </div>
-                      <div>
-                        <label className="lt-label">Booking Cut-off Date</label>
-                        <input className="lt-input" style={{ width: '100%' }} type="date" value={manualCutoff} onChange={e => setManualCutoff(e.target.value)} />
-                      </div>
-                      <div>
-                        <label className="lt-label">Attach Document</label>
-                        <input className="lt-input" style={{ width: '100%' }} value={manualAttachment} onChange={e => setManualAttachment(e.target.value)} placeholder="filename.pdf" />
-                      </div>
-                    </div>
-
-                    {/* Manual Rate Brief Preview */}
-                    {hasManualEntry && selectedInttraIds.size === 0 && (
-                      <div className="ws-doc-preview">
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
-                          <FileDown size={14} style={{ color: '#d97706' }} />
-                          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)' }}>Rate Brief (Manual)</span>
-                        </div>
-                        <div className="ws-doc-body">
-                          <div className="ws-doc-header">RATE BRIEF</div>
-                          <div className="ws-doc-sub">ABC Logistics (Pvt) Ltd — Manual Entry</div>
-                          <div className="ws-doc-divider" />
-                          <div className="ws-doc-section">Customer</div>
-                          <div className="ws-doc-row"><span>Name:</span><strong>{inq.customer_name}</strong></div>
-                          <div className="ws-doc-row"><span>Tier:</span><strong>{custData?.tier ?? 'N/A'}</strong></div>
-                          <div className="ws-doc-row"><span>Location:</span><strong>{custData?.location ?? 'N/A'}</strong></div>
-                          <div className="ws-doc-divider" />
-                          <div className="ws-doc-section">Inquiry</div>
-                          <div className="ws-doc-row"><span>Ref:</span><strong>{inq.id}</strong></div>
-                          <div className="ws-doc-row"><span>Route:</span><strong>{inq.origin} → {inq.destination}</strong></div>
-                          <div className="ws-doc-row"><span>Request:</span><strong>{inq.request}</strong></div>
-                          <div className="ws-doc-divider" />
-                          <div className="ws-doc-section">Procurement Rate (Manual)</div>
-                          <div style={{ padding: '6px 0', borderBottom: '1px dashed var(--border)' }}>
-                            <div style={{ fontWeight: 700, fontSize: 12 }}>
-                              {manualLiner}
-                              {manualScac ? <span style={{ fontWeight: 400, color: 'var(--text-muted)', marginLeft: 6, fontSize: 11 }}>{manualScac}</span> : null}
-                            </div>
-                            <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
-                              ${Number(manualAmount).toLocaleString()} USD / {manualContainer}
-                              {manualTransit ? ` · ${manualTransit}d transit` : ''}
-                              {manualFreeTime ? ` · Free time: ${manualFreeTime}d` : ''}
-                            </div>
-                            {(manualValidFrom || manualValidTo || manualCutoff) && (
-                              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
-                                {manualValidFrom || manualValidTo ? `Valid: ${manualValidFrom || '?'} → ${manualValidTo || '?'}` : ''}
-                                {manualCutoff ? `${manualValidFrom || manualValidTo ? ' · ' : ''}Cut-off: ${manualCutoff}` : ''}
-                              </div>
-                            )}
-                          </div>
-                          {manualAttachment && (
-                            <div className="ws-doc-row" style={{ marginTop: 6 }}>
-                              <span>Attached:</span><strong>{manualAttachment}</strong>
-                            </div>
-                          )}
-                          <div className="ws-doc-divider" />
-                          <div className="ws-doc-row"><span>Prepared by:</span><strong>{activeEmployee.name} (Procurement)</strong></div>
-                          <div className="ws-doc-row"><span>Date:</span><strong>{new Date().toISOString().slice(0, 10)}</strong></div>
-                          <div className="ws-doc-row"><span>Source:</span><strong>Manual — liner contacted directly</strong></div>
-                        </div>
-                      </div>
-                    )}
-
-                    <div>
-                      <label className="lt-label">Notes (optional)</label>
-                      <input className="lt-input" style={{ width: '100%' }} value={formNote}
-                        onChange={e => setFormNote(e.target.value)}
-                        placeholder="Any notes for Sales..." />
-                    </div>
-                  </>
-                )}
-              </div>
-              )
-            })()}
 
             {/* Quote approval form */}
             {actionModal.actionKind === 'approve-quote' && (
@@ -3434,9 +3083,6 @@ ABC Logistics (Pvt) Ltd`
                 className="db-btn primary"
                 disabled={
                   (actionModal.actionKind === 'send-kyc' && (!formEmail.trim() || !formEmail.includes('@'))) ||
-                  (actionModal.actionKind === 'check-rates' && ratesLoading) ||
-                  (actionModal.actionKind === 'check-inttra-rates' && (inttraLoading || !inttraSearched)) ||
-                  (actionModal.actionKind === 'check-inttra-rates' && inttraSearched && selectedInttraIds.size === 0 && (!manualLiner.trim() || !manualAmount.trim())) ||
                   (actionModal.actionKind === 'prepare-quotation' && !quotationContent.trim()) ||
                   (actionModal.actionKind === 'send-to-customer' && sendMethod === 'email' && (!customerContactEmail.trim() || !customerContactEmail.includes('@'))) ||
                   (actionModal.actionKind === 'send-to-customer' && sendMethod === 'whatsapp' && !waConfirmed) ||
@@ -3453,14 +3099,14 @@ ABC Logistics (Pvt) Ltd`
                   (actionModal.actionKind === 'bl-approval' && blDecision === 'changes-requested' && !formNote.trim()) ||
                   (actionModal.actionKind === 'record-master-bl' && (!masterBlNumber.trim() || !masterBlConsignee.trim())) ||
                   (actionModal.actionKind === 'create-house-bl' && (!houseBlNumber.trim() || !houseBlConsignee.trim())) ||
+                  (actionModal.actionKind === 'create-house-bl' && sendMethod === 'email' && (!customerContactEmail.trim() || !customerContactEmail.includes('@'))) ||
+                  (actionModal.actionKind === 'create-house-bl' && sendMethod === 'whatsapp' && !waConfirmed) ||
                   kycSending || quotationSending
                 }
                 style={
                   actionModal.actionKind === 'verify-kyc' && formDecision === 'reject' ? { background: '#dc2626', borderColor: '#dc2626' } :
                   actionModal.actionKind === 'verify-kyc' ? { background: '#16a34a', borderColor: '#16a34a' } :
                   actionModal.actionKind === 'approve-quote' && formDecision === 'reject' ? { background: '#dc2626', borderColor: '#dc2626' } :
-                  actionModal.actionKind === 'check-rates' && selectedRateIds.size === 0 && ratesSearched ? { background: '#d97706', borderColor: '#d97706' } :
-                  actionModal.actionKind === 'check-inttra-rates' && (selectedInttraIds.size > 0 || (manualLiner.trim() && manualAmount.trim())) ? { background: '#d97706', borderColor: '#d97706' } :
                   actionModal.actionKind === 'prepare-quotation' ? { background: '#4f46e5', borderColor: '#4f46e5' } :
                   actionModal.actionKind === 'send-to-customer' && sendMethod === 'whatsapp' && waConfirmed ? { background: '#25d366', borderColor: '#25d366' } :
                   actionModal.actionKind === 'send-to-customer' && sendMethod === 'email' && customerContactEmail.includes('@') ? {} :
@@ -3488,10 +3134,10 @@ ABC Logistics (Pvt) Ltd`
                   actionModal.actionKind === 'bl-approval' ? { opacity: 0.4, cursor: 'not-allowed' } :
                   actionModal.actionKind === 'record-master-bl' && masterBlNumber.trim() && masterBlConsignee.trim() ? { background: '#0d9488', borderColor: '#0d9488' } :
                   actionModal.actionKind === 'record-master-bl' ? { opacity: 0.4, cursor: 'not-allowed' } :
-                  actionModal.actionKind === 'create-house-bl' && houseBlNumber.trim() && houseBlConsignee.trim() ? { background: '#d97706', borderColor: '#d97706' } :
+                  actionModal.actionKind === 'create-house-bl' && sendMethod === 'whatsapp' && waConfirmed && houseBlNumber.trim() && houseBlConsignee.trim() ? { background: '#25d366', borderColor: '#25d366' } :
+                  actionModal.actionKind === 'create-house-bl' && sendMethod === 'email' && customerContactEmail.includes('@') && houseBlNumber.trim() && houseBlConsignee.trim() ? { background: '#d97706', borderColor: '#d97706' } :
                   actionModal.actionKind === 'create-house-bl' ? { opacity: 0.4, cursor: 'not-allowed' } :
                   (actionModal.actionKind === 'send-kyc' && (!formEmail.trim() || !formEmail.includes('@'))) ? { opacity: 0.4, cursor: 'not-allowed' } :
-                  (actionModal.actionKind === 'check-inttra-rates' && (inttraLoading || !inttraSearched || (selectedInttraIds.size === 0 && (!manualLiner.trim() || !manualAmount.trim())))) ? { opacity: 0.4, cursor: 'not-allowed' } :
                   (actionModal.actionKind === 'prepare-quotation' && !quotationContent.trim()) ? { opacity: 0.4, cursor: 'not-allowed' } :
                   (actionModal.actionKind === 'send-to-customer' && ((sendMethod === 'email' && (!customerContactEmail.trim() || !customerContactEmail.includes('@'))) || (sendMethod === 'whatsapp' && !waConfirmed))) ? { opacity: 0.4, cursor: 'not-allowed' } :
                   {}
@@ -3503,10 +3149,6 @@ ABC Logistics (Pvt) Ltd`
                  actionModal.actionKind === 'send-kyc' ? <><Mail size={12} /> Send KYC &amp; Push</> :
                  actionModal.actionKind === 'verify-kyc' && formDecision === 'reject' ? 'Flag & Return to CS' :
                  actionModal.actionKind === 'verify-kyc' ? <><ShieldCheck size={12} /> Verify &amp; Push</> :
-                 actionModal.actionKind === 'check-rates' && selectedRateIds.size > 0 ? <><ChevronRight size={12} /> Send {selectedRateIds.size} Rate(s) to Sales</> :
-                 actionModal.actionKind === 'check-rates' && ratesSearched ? 'Escalate to Procurement' :
-                 actionModal.actionKind === 'check-inttra-rates' && selectedInttraIds.size > 0 ? <><FileDown size={12} /> Send Rate Brief to Sales ({selectedInttraIds.size} rate{selectedInttraIds.size > 1 ? 's' : ''})</> :
-                 actionModal.actionKind === 'check-inttra-rates' && manualLiner.trim() && manualAmount.trim() ? <><FileDown size={12} /> Send Manual Rate Brief to Sales</> :
                  actionModal.actionKind === 'prepare-quotation' ? <><Send size={12} /> Send Quotation to CS</> :
                  actionModal.actionKind === 'send-to-customer' && sendMethod === 'email' ? <><Mail size={12} /> Send via Email</> :
                  actionModal.actionKind === 'send-to-customer' && sendMethod === 'whatsapp' ? <><MessageCircle size={12} /> Confirm WhatsApp Sent</> :
@@ -3527,7 +3169,8 @@ ABC Logistics (Pvt) Ltd`
                  actionModal.actionKind === 'bl-approval' && blDecision === 'approved' ? <><Check size={12} /> BL Approved</> :
                  actionModal.actionKind === 'bl-approval' && blDecision === 'changes-requested' ? <><Edit3 size={12} /> Record Changes Requested</> :
                  actionModal.actionKind === 'record-master-bl' ? <><FileText size={12} /> Record Master BL</> :
-                 actionModal.actionKind === 'create-house-bl' ? <><FileText size={12} /> Create House BL</> :
+                 actionModal.actionKind === 'create-house-bl' && sendMethod === 'email' ? <><Mail size={12} /> Create &amp; Send House BL via Email</> :
+                 actionModal.actionKind === 'create-house-bl' && sendMethod === 'whatsapp' ? <><MessageCircle size={12} /> Create &amp; Confirm House BL Sent</> :
                  actionModal.actionKind === 'approve-quote' && formDecision === 'reject' ? 'Reject' :
                  <>Confirm &amp; Push <ChevronRight size={12} /></>}
               </button>
@@ -3535,6 +3178,10 @@ ABC Logistics (Pvt) Ltd`
           </div>
         </div>
       )}
+
+      {/* Record Rate — now a full page at /record-rate */}
+
+
     </div>
   )
 }

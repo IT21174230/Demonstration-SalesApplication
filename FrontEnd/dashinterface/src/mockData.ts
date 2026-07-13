@@ -3,7 +3,11 @@ export type PageId =
   | 'dashboard'
   | 'chat'
   | 'workspace'
+  | 'new-inquiry'
+  | 'record-rate'
+  | 'rate-check'
   | 'inquiry-list'
+  | 'rate-list'
   | 'quotations'
   | 'shipments'
   | 'followups'
@@ -14,7 +18,11 @@ export const PAGE_LABELS: Record<PageId, string> = {
   dashboard: 'Dashboard',
   chat: 'Command Center',
   workspace: 'Workspace',
+  'new-inquiry': 'New Inquiry',
+  'record-rate': 'Record Rate',
+  'rate-check': 'Rate Check',
   'inquiry-list': 'Inquiry List',
+  'rate-list': 'Rate List',
   quotations: 'Quotations',
   shipments: 'Shipments',
   followups: 'Operations',
@@ -43,11 +51,11 @@ export const ROLE_COLORS: Record<UserRole, string> = {
 }
 
 export const ROLE_PAGE_ACCESS: Record<UserRole, PageId[]> = {
-  CS:          ['dashboard', 'chat', 'workspace', 'inquiry-list', 'followups', 'customers', 'kyc'],
-  Sales:       ['dashboard', 'chat', 'workspace', 'inquiry-list', 'quotations', 'followups', 'customers'],
+  CS:          ['dashboard', 'chat', 'workspace', 'new-inquiry', 'inquiry-list', 'followups', 'customers', 'kyc'],
+  Sales:       ['dashboard', 'chat', 'workspace', 'new-inquiry', 'inquiry-list', 'quotations', 'followups', 'customers'],
   Finance:     ['dashboard', 'chat', 'workspace', 'customers', 'kyc', 'quotations'],
-  Procurement: ['dashboard', 'chat', 'workspace', 'inquiry-list', 'followups'],
-  Admin:       ['dashboard', 'chat', 'workspace', 'inquiry-list', 'quotations', 'shipments', 'followups', 'customers', 'kyc'],
+  Procurement: ['dashboard', 'chat', 'workspace', 'inquiry-list', 'record-rate', 'rate-check', 'rate-list', 'followups'],
+  Admin:       ['dashboard', 'chat', 'workspace', 'new-inquiry', 'record-rate', 'rate-check', 'inquiry-list', 'rate-list', 'quotations', 'shipments', 'followups', 'customers', 'kyc'],
 }
 
 export const ROLE_QUICK_COMMANDS: Record<UserRole, string[]> = {
@@ -147,13 +155,13 @@ export type WorkflowStage =
   | 'booking-request'
   | 'completed'
 
-export const WORKFLOW_STAGES: { id: WorkflowStage; label: string; role: UserRole; step: number }[] = [
+export const WORKFLOW_STAGES: { id: WorkflowStage; label: string; role: UserRole; step: number; skippable?: boolean }[] = [
   { id: 'inquiry-received',    label: 'Inquiry Received',      role: 'CS',          step: 1 },
   { id: 'customer-check',      label: 'Customer Verification', role: 'CS',          step: 2 },
   { id: 'kyc-pending',         label: 'KYC Initialization',    role: 'CS',          step: 3 },
   { id: 'kyc-verification',    label: 'KYC Clearance',         role: 'Finance',     step: 4 },
-  { id: 'rate-check',          label: 'Rate Check (AMS)',      role: 'CS',          step: 5 },
-  { id: 'procurement-request', label: 'Procurement Rate',      role: 'Procurement', step: 6 },
+  { id: 'rate-check',          label: 'Multi-Source Rate Check', role: 'CS',        step: 5 },
+  { id: 'procurement-request', label: 'Procurement Escalation', role: 'Procurement', step: 6, skippable: true },
   { id: 'quotation-prep',      label: 'Quotation Prep',        role: 'Sales',       step: 7 },
   { id: 'quotation-sent',      label: 'Quote Sent',            role: 'CS',          step: 8 },
   { id: 'customer-response',   label: 'Customer Response',     role: 'CS',          step: 9 },
@@ -177,6 +185,49 @@ export const SBUS: SBU[] = ['Ocean Imports', 'Ocean Exports', 'Air Freight', 'Do
 
 export type DeliveryType = 'port-to-port' | 'door-to-door'
 
+// Priority levels — can be set at creation and changed mid-workflow by Sales or CS.
+export type InquiryPriority = 'Low' | 'Medium' | 'High' | 'Urgent'
+export const INQUIRY_PRIORITIES: InquiryPriority[] = ['Low', 'Medium', 'High', 'Urgent']
+
+// Commodity types — captured at inquiry level per the meeting requirement.
+export type CommodityType = 'General' | 'Food' | 'Hazardous' | 'Pharmaceuticals' | 'Textiles' | 'Electronics' | 'Chemicals' | 'Other'
+export const COMMODITY_TYPES: CommodityType[] = ['General', 'Food', 'Hazardous', 'Pharmaceuticals', 'Textiles', 'Electronics', 'Chemicals', 'Other']
+
+// Container types — structured field instead of free text.
+export type ContainerType = '20 GP' | '40 GP' | '20 OPEN TOP' | '40 OPEN TOP' | '40 HC' | '20 REEFER' | '40 REEFER' | '20 FLAT RACK' | '40 FLAT RACK' | 'TANKER'
+export const CONTAINER_TYPES: ContainerType[] = ['20 GP', '40 GP', '20 OPEN TOP', '40 OPEN TOP', '40 HC', '20 REEFER', '40 REEFER', '20 FLAT RACK', '40 FLAT RACK', 'TANKER']
+
+// Container line — one entry per container in a multi-container inquiry.
+export interface ContainerLine {
+  containerType: ContainerType
+  quantity: number
+  weight: number | ''
+  commodityType: CommodityType
+  commodityName: string
+  destination: string
+  isFcl: boolean
+  zipCode: string
+  doorAgents: string[]
+  freeTime: number | ''
+}
+
+export const emptyContainerLine = (): ContainerLine => ({
+  containerType: '20 GP',
+  quantity: 1,
+  weight: '',
+  commodityType: 'General',
+  commodityName: '',
+  destination: '',
+  isFcl: true,
+  zipCode: '',
+  doorAgents: [],
+  freeTime: '',
+})
+
+// Special equipment needs — open top, flat rack, reefer, etc.
+export type SpecialEquipment = 'None' | 'Reefer' | 'Open Top' | 'Flat Rack' | 'Tank' | 'Ventilated'
+export const SPECIAL_EQUIPMENT_OPTIONS: SpecialEquipment[] = ['None', 'Reefer', 'Open Top', 'Flat Rack', 'Tank', 'Ventilated']
+
 export interface Inquiry {
   id: string
   customer_name: string
@@ -193,6 +244,19 @@ export interface Inquiry {
   completed_at?: string
   followup_note?: string
   workflow_stage?: WorkflowStage
+  priority?: InquiryPriority        // settable at creation, changeable mid-workflow
+  commodity_type?: CommodityType     // cargo commodity classification
+  container_type?: ContainerType     // structured container size/type
+  container_qty?: number             // number of containers requested
+  special_equipment?: SpecialEquipment // special equipment needs
+  cargo_weight?: number              // cargo weight in kg
+  is_fcl?: boolean                   // true = FCL, false = LCL
+  remark?: string                    // special instructions / notes
+  contact_person?: string            // name of the person who made the inquiry
+  contact_channel_id?: string        // channel-specific: email address, WhatsApp number, or phone number
+  containers?: ContainerLine[]       // multi-container support
+  preferred_liners?: string[]        // multiple preferred shipping lines
+  recorded_by?: number               // employee_id of the person who created this inquiry
 }
 
 // ==================== CUSTOMER MASTER ====================
@@ -203,6 +267,10 @@ export type CustomerTier = 'Key Account' | 'Regular' | 'Walk-in'
 export type PaymentTerms = 'Pay Upfront' | '30-Day Credit' | '60-Day Credit'
 
 export type KycStatus = 'not_started' | 'pending_customer' | 'approved'
+
+// Customer classification — shipper, buyer, agent, trader per the meeting requirement.
+export type CustomerType = 'Shipper' | 'Buyer' | 'Agent' | 'Trader'
+export const CUSTOMER_TYPES: CustomerType[] = ['Shipper', 'Buyer', 'Agent', 'Trader']
 
 export interface Customer {
   id: string
@@ -217,16 +285,19 @@ export interface Customer {
   kyc_status?: KycStatus   // onboarding KYC status — new customers start as 'not_started'
   contact_email?: string
   contact_phone?: string
+  contact_person?: string    // primary contact person name
+  customer_type?: CustomerType // classification: shipper, buyer, agent, trader
+  assigned_salesperson_id?: number // salesperson responsible for this customer
 }
 
 export const SEED_CUSTOMERS: Customer[] = [
-  { id: 'CUS-001', name: 'Hayleys Logistics', location: 'Colombo, Sri Lanka', tier: 'Key Account', payment_terms: '30-Day Credit', blacklisted: false, credit_hold: false, min_margin_pct: 5, kyc_status: 'approved', contact_email: 'shipping@hayleys.lk', contact_phone: '+94112345001' },
-  { id: 'CUS-002', name: 'Brandix Apparel',   location: 'Colombo, Sri Lanka', tier: 'Key Account', payment_terms: '30-Day Credit', blacklisted: false, credit_hold: false, min_margin_pct: 5, kyc_status: 'approved', contact_email: 'logistics@brandix.com', contact_phone: '+94112345002' },
-  { id: 'CUS-003', name: 'Customer ABC',      location: 'Colombo, Sri Lanka', tier: 'Regular',     payment_terms: 'Pay Upfront',   blacklisted: false, credit_hold: false, min_margin_pct: 7, kyc_status: 'approved', contact_email: 'contact@customerabc.com', contact_phone: '+94112345003' },
-  { id: 'CUS-004', name: 'MAS Holdings',      location: 'Colombo, Sri Lanka', tier: 'Key Account', payment_terms: '60-Day Credit', blacklisted: false, credit_hold: false, min_margin_pct: 4, kyc_status: 'approved', notes: 'Strategic account — large monthly volume', contact_email: 'shipping@masholdings.com', contact_phone: '+94112345004' },
-  { id: 'CUS-005', name: 'Dilmah Tea',        location: 'Peliyagoda, Sri Lanka', tier: 'Key Account', payment_terms: '30-Day Credit', blacklisted: false, credit_hold: true,  min_margin_pct: 5, kyc_status: 'approved', notes: 'Credit hold — finance to clear before next quote', contact_email: 'exports@dilmahtea.com', contact_phone: '+94112345005' },
-  { id: 'CUS-006', name: 'Hela Apparel',      location: 'Katunayake, Sri Lanka', tier: 'Regular',  payment_terms: 'Pay Upfront',   blacklisted: false, credit_hold: false, min_margin_pct: 7, kyc_status: 'pending_customer', contact_email: 'info@helaapparel.lk', contact_phone: '+94112345006' },
-  { id: 'CUS-007', name: 'Vanguard Shippers', location: 'Karachi, Pakistan',  tier: 'Walk-in',     payment_terms: 'Pay Upfront',   blacklisted: true,  credit_hold: false, min_margin_pct: 10, kyc_status: 'approved', notes: 'Blacklisted — repeated payment defaults in 2025', contact_email: 'ops@vanguardshippers.pk', contact_phone: '+92213456789' },
+  { id: 'CUS-001', name: 'Hayleys Logistics', location: 'Colombo, Sri Lanka', tier: 'Key Account', payment_terms: '30-Day Credit', blacklisted: false, credit_hold: false, min_margin_pct: 5, kyc_status: 'approved', contact_email: 'shipping@hayleys.lk', contact_phone: '+94112345001', contact_person: 'Samantha Perera', customer_type: 'Shipper', assigned_salesperson_id: 1 },
+  { id: 'CUS-002', name: 'Brandix Apparel',   location: 'Colombo, Sri Lanka', tier: 'Key Account', payment_terms: '30-Day Credit', blacklisted: false, credit_hold: false, min_margin_pct: 5, kyc_status: 'approved', contact_email: 'logistics@brandix.com', contact_phone: '+94112345002', contact_person: 'Kavinda Silva', customer_type: 'Shipper', assigned_salesperson_id: 1 },
+  { id: 'CUS-003', name: 'Customer ABC',      location: 'Colombo, Sri Lanka', tier: 'Regular',     payment_terms: 'Pay Upfront',   blacklisted: false, credit_hold: false, min_margin_pct: 7, kyc_status: 'approved', contact_email: 'contact@customerabc.com', contact_phone: '+94112345003', contact_person: 'Rajan Kumar', customer_type: 'Buyer', assigned_salesperson_id: 1 },
+  { id: 'CUS-004', name: 'MAS Holdings',      location: 'Colombo, Sri Lanka', tier: 'Key Account', payment_terms: '60-Day Credit', blacklisted: false, credit_hold: false, min_margin_pct: 4, kyc_status: 'approved', notes: 'Strategic account — large monthly volume', contact_email: 'shipping@masholdings.com', contact_phone: '+94112345004', contact_person: 'Dinesh Fernando', customer_type: 'Shipper', assigned_salesperson_id: 3 },
+  { id: 'CUS-005', name: 'Dilmah Tea',        location: 'Peliyagoda, Sri Lanka', tier: 'Key Account', payment_terms: '30-Day Credit', blacklisted: false, credit_hold: true,  min_margin_pct: 5, kyc_status: 'approved', notes: 'Credit hold — finance to clear before next quote', contact_email: 'exports@dilmahtea.com', contact_phone: '+94112345005', contact_person: 'Nalin Wickramasinghe', customer_type: 'Shipper', assigned_salesperson_id: 1 },
+  { id: 'CUS-006', name: 'Hela Apparel',      location: 'Katunayake, Sri Lanka', tier: 'Regular',  payment_terms: 'Pay Upfront',   blacklisted: false, credit_hold: false, min_margin_pct: 7, kyc_status: 'pending_customer', contact_email: 'info@helaapparel.lk', contact_phone: '+94112345006', contact_person: 'Amali Jayasuriya', customer_type: 'Shipper', assigned_salesperson_id: 3 },
+  { id: 'CUS-007', name: 'Vanguard Shippers', location: 'Karachi, Pakistan',  tier: 'Walk-in',     payment_terms: 'Pay Upfront',   blacklisted: true,  credit_hold: false, min_margin_pct: 10, kyc_status: 'approved', notes: 'Blacklisted — repeated payment defaults in 2025', contact_email: 'ops@vanguardshippers.pk', contact_phone: '+92213456789', contact_person: 'Imran Ali', customer_type: 'Trader', assigned_salesperson_id: 1 },
 ]
 
 export function findCustomer(name: string, customers: Customer[]): Customer | undefined {
@@ -272,6 +343,11 @@ export const SEED_INQUIRIES: Inquiry[] = [
     status: 'pending',
     created_at: '2026-05-02 09:14',
     workflow_stage: 'rate-check',
+    priority: 'High',
+    commodity_type: 'Food',
+    container_type: '20 REEFER',
+    container_qty: 12,
+    special_equipment: 'Reefer',
   },
   {
     id: 'INQ-1040',
@@ -287,6 +363,11 @@ export const SEED_INQUIRIES: Inquiry[] = [
     status: 'pending',
     created_at: '2026-05-02 08:42',
     workflow_stage: 'quotation-prep',
+    priority: 'Medium',
+    commodity_type: 'Textiles',
+    container_type: '40 GP',
+    container_qty: 4,
+    special_equipment: 'None',
   },
   {
     id: 'INQ-1039',
@@ -304,6 +385,11 @@ export const SEED_INQUIRIES: Inquiry[] = [
     completed_at: '2026-05-01 17:22',
     followup_note: 'Quoted, booking confirmed.',
     workflow_stage: 'completed',
+    priority: 'Medium',
+    commodity_type: 'General',
+    container_type: '20 GP',
+    container_qty: 10,
+    special_equipment: 'None',
   },
   {
     id: 'INQ-1038',
@@ -316,11 +402,16 @@ export const SEED_INQUIRIES: Inquiry[] = [
     channel: 'Email',
     sbu: 'Ocean Exports',
     employee_id: 3,
-    status: 'quoted',
+    status: 'pending',
     created_at: '2026-05-01 10:20',
-    completed_at: null,
+    completed_at: undefined,
     followup_note: 'Quotation sent, awaiting customer response.',
     workflow_stage: 'customer-response',
+    priority: 'Medium',
+    commodity_type: 'Textiles',
+    container_type: '40 HC',
+    container_qty: 6,
+    special_equipment: 'None',
   },
   {
     id: 'INQ-1037',
@@ -338,6 +429,11 @@ export const SEED_INQUIRIES: Inquiry[] = [
     completed_at: '2026-04-30 15:10',
     followup_note: 'Space confirmed.',
     workflow_stage: 'completed',
+    priority: 'High',
+    commodity_type: 'Food',
+    container_type: '40 GP',
+    container_qty: 8,
+    special_equipment: 'None',
   },
   {
     id: 'INQ-1036',
@@ -353,6 +449,11 @@ export const SEED_INQUIRIES: Inquiry[] = [
     status: 'pending',
     created_at: '2026-04-30 09:02',
     workflow_stage: 'procurement-request',
+    priority: 'Urgent',
+    commodity_type: 'Textiles',
+    container_type: '20 GP',
+    container_qty: 3,
+    special_equipment: 'None',
   },
 ]
 
@@ -407,6 +508,120 @@ export interface RateRecord {
   valid_from: string
   valid_to: string
   source_system: string
+}
+
+// ==================== UNIFIED RATE (from all DB rate tables) ====================
+export type RateSourceType = 'Contracted' | 'FAK' | 'Spot' | 'Vessel-by-Vessel' | 'Tariff Rate' | 'NAC' | 'Special'
+
+export type ServiceScope = 'Import' | 'Export' | 'Within'
+
+export interface UnifiedRate {
+  id: string                          // e.g. "contracted_fak_rate:1"
+  source_type: RateSourceType
+  liner_name: string | null
+  origin: string | null
+  destination: string | null
+  container_type: string | null
+  rate: number | null
+  currency: string
+  valid_from: string | null
+  valid_to: string | null
+  trade_lane: string | null
+  vessel_name: string | null
+  departure_date: string | null
+  is_sold: boolean | null
+  service_scope: ServiceScope | null  // IWE: Import / Within / Export
+  // NAC-specific
+  client_name: string | null
+  contact_person_name: string | null
+  employee_name: string | null
+  // Special-specific
+  commodity_name: string | null
+  commodity_type: string | null
+  remark: string | null
+}
+
+export interface PortRecord {
+  port_id: number
+  name: string
+  country: string
+}
+
+/** UN/LOCODE lookup — keyed by port name (matches PortRecord.name) */
+export const PORT_UNLOCODES: Record<string, string> = {
+  'Colombo': 'LKCMB',
+  'Hamburg': 'DEHAM',
+  'Rotterdam': 'NLRTM',
+  'Singapore': 'SGSIN',
+  'Dubai': 'AEDXB',
+  'Mumbai': 'INBOM',
+  'Shanghai': 'CNSHA',
+  'Antwerp': 'BEANR',
+  'Felixstowe': 'GBFXT',
+  'Jebel Ali': 'AEJEA',
+  'Nhava Sheva': 'INNSA',
+  'Chennai': 'INMAA',
+}
+
+/** Build datalist <option> elements for a port list — provides both Port/Country and UNLOCODE entries */
+export function portOptions(ports: PortRecord[]): { value: string; label?: string }[] {
+  const opts: { value: string; label?: string }[] = []
+  for (const p of ports) {
+    const display = `${p.name}/${p.country}`
+    const code = PORT_UNLOCODES[p.name]
+    opts.push({ value: display, label: code })
+    if (code) opts.push({ value: code, label: display })
+  }
+  return opts
+}
+
+export interface LinerRecord {
+  lin_id: number
+  name: string
+  is_on_inttra: boolean
+  has_portal: boolean
+}
+
+export interface TradeLaneRecord {
+  trln_id: number
+  trln_name: string
+}
+
+export interface ContactPersonRecord {
+  cp_id: number
+  name: string | null
+  email: string | null
+  whatsapp: string | null
+  wechat: string | null
+  cli_id: number
+  client_name: string
+}
+
+export interface EmployeeRecord {
+  emp_id: number
+  name: string
+  desig: string | null
+  dept: string | null
+}
+
+export interface ClientRecord {
+  cli_id: number
+  name: string
+  vat_no: string | null
+  credit_limit: number | null
+  kyc_completed: boolean
+  city: string | null
+}
+
+// Badge colors per rate source type
+export const RATE_SOURCE_COLORS: Record<RateSourceType, string> = {
+  Contracted: '#2563eb',
+  FAK: '#7c3aed',
+  Spot: '#dc2626',
+  'Vessel-by-Vessel': '#ea580c',
+  'Tariff Rate': '#0891b2',
+  NAC: '#059669',
+  Special: '#64748b',
 }
 
 // ---- INTTRA Rates → Spot response shape ---------------------------------
@@ -509,7 +724,7 @@ export function toInttraCard(offer: InttraSpotRate): InttraSpotRateCard {
 }
 
 // ==================== QUOTATIONS ====================
-export type RateType = 'Spot' | 'Contractual' | 'NAC' | 'Convoy'
+export type RateType = 'Spot' | 'Contractual' | 'NAC' | 'Volume-based' | 'Convoy'
 export type QuoteType = 'FCA' | 'Domestic Included' | 'Drayage' | 'DDP'
 export type QuoteStatus = 'Draft' | 'Awaiting Approval' | 'Approved' | 'Sent' | 'Confirmed' | 'Lost'
 
@@ -687,7 +902,7 @@ export const SEED_BOOKINGS: Booking[] = [
     shipping_line: 'Hapag-Lloyd',
     vessel_name: 'Stuttgart Express',
     voyage_number: 'VOY-2026-038',
-    container_type: "20'GP",
+    container_type: '20 GP',
     quantity: 5,
     status: 'Liner Confirmed',
     is_urgent: false,
@@ -712,7 +927,7 @@ export const SEED_BOOKINGS: Booking[] = [
     shipping_line: 'Maersk',
     vessel_name: 'Maersk Seletar',
     voyage_number: 'VOY-2026-031',
-    container_type: "40'HC",
+    container_type: '40 HC',
     quantity: 2,
     status: 'Released',
     is_urgent: true,
@@ -728,8 +943,6 @@ export const SEED_BOOKINGS: Booking[] = [
     bl_cutoff_date: '2026-06-01',
     si_requested: true,
     si_submitted: true,
-    draft_bl_sent: true,
-    bl_status: 'approved',
     delivery_type: 'door-to-door',
   },
 ]
@@ -1024,6 +1237,70 @@ export function findCustomerCandidates(name: string, existing: string[]): {
   }
   scored.sort((a, b) => b.score - a.score)
   return { exact: null, candidates: scored.slice(0, 4).map(s => s.name) }
+}
+
+// Enhanced duplicate detection — fuzzy match on name, email, phone, address, contact person.
+// Returns potential duplicates with match reasons so the UI can warn before creation.
+export function findDuplicateCustomers(
+  newCust: { name: string; email?: string; phone?: string; address?: string; contact_person?: string },
+  existing: Customer[]
+): { customer: Customer; reasons: string[]; score: number }[] {
+  const results: { customer: Customer; reasons: string[]; score: number }[] = []
+  const normName = normaliseCustomer(newCust.name)
+  const normNameTokens = new Set(normName.split(' ').filter(t => t.length >= 2))
+  const normEmail = newCust.email?.toLowerCase().trim() ?? ''
+  const normPhone = newCust.phone?.replace(/[\s\-()+ ]/g, '') ?? ''
+  const normAddress = newCust.address?.toLowerCase().trim() ?? ''
+  const normContact = newCust.contact_person?.toLowerCase().trim() ?? ''
+
+  for (const c of existing) {
+    const reasons: string[] = []
+    let score = 0
+
+    // Name matching (fuzzy)
+    const cn = normaliseCustomer(c.name)
+    if (cn === normName) { reasons.push('Exact name match'); score += 50 }
+    else if (cn.includes(normName) || normName.includes(cn)) { reasons.push('Similar name'); score += 35 }
+    else {
+      const overlap = cn.split(' ').filter(t => normNameTokens.has(t)).length
+      if (overlap > 0) { reasons.push(`Name token overlap (${overlap} words)`); score += 15 + overlap * 10 }
+    }
+
+    // Email matching
+    if (normEmail && c.contact_email) {
+      const ce = c.contact_email.toLowerCase().trim()
+      if (ce === normEmail) { reasons.push('Same email'); score += 40 }
+      else if (ce.split('@')[1] === normEmail.split('@')[1] && normEmail.includes('@')) {
+        reasons.push('Same email domain'); score += 15
+      }
+    }
+
+    // Phone matching (strip formatting)
+    if (normPhone && c.contact_phone) {
+      const cp = c.contact_phone.replace(/[\s\-()+ ]/g, '')
+      if (cp === normPhone || cp.endsWith(normPhone.slice(-7)) || normPhone.endsWith(cp.slice(-7))) {
+        reasons.push('Same phone number'); score += 35
+      }
+    }
+
+    // Address matching
+    if (normAddress && c.location) {
+      const cl = c.location.toLowerCase().trim()
+      if (cl === normAddress) { reasons.push('Same address'); score += 25 }
+      else if (cl.includes(normAddress) || normAddress.includes(cl)) { reasons.push('Similar address'); score += 10 }
+    }
+
+    // Contact person matching
+    if (normContact && c.contact_person) {
+      const cc = c.contact_person.toLowerCase().trim()
+      if (cc === normContact) { reasons.push('Same contact person'); score += 20 }
+    }
+
+    if (score > 0) results.push({ customer: c, reasons, score })
+  }
+
+  results.sort((a, b) => b.score - a.score)
+  return results.filter(r => r.score >= 15) // minimum threshold to be considered a potential duplicate
 }
 
 // ==================== CHAT — INTENT DETECTION ====================

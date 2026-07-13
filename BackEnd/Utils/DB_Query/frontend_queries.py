@@ -510,6 +510,9 @@ def create_fe_customer(payload: dict) -> dict:
         "customer_type": "new",
         "contact_email": "",
         "contact_phone": "",
+        "contact_person": payload.get("contact_person", "").strip(),
+        "contact_channel": payload.get("contact_channel", ""),
+        "contact_channel_value": payload.get("contact_channel_value", ""),
         "kyc_status": "not_started",
         "kyc_completed_at": None,
         "created_at": _now_iso(),
@@ -532,6 +535,9 @@ def create_fe_customer(payload: dict) -> dict:
         "blacklisted": False,
         "credit_hold": False,
         "min_margin_pct": margin,
+        "contact_person": new_cust["contact_person"],
+        "contact_channel": new_cust["contact_channel"],
+        "contact_channel_value": new_cust["contact_channel_value"],
     }
 
 
@@ -544,7 +550,7 @@ def update_fe_customer(name: str, patch: dict) -> bool:
         return False
 
     # Apply patch — only allow known fields
-    allowed = {"tier", "payment_terms", "location", "blacklisted", "credit_hold", "min_margin_pct", "notes", "kyc_status"}
+    allowed = {"tier", "payment_terms", "location", "blacklisted", "credit_hold", "min_margin_pct", "notes", "kyc_status", "contact_person", "contact_channel", "contact_channel_value"}
     for k, v in patch.items():
         if k in allowed:
             target[k] = v

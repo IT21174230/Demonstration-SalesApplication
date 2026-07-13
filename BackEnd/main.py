@@ -7,6 +7,8 @@ from fastapi.staticfiles import StaticFiles
 from starlette.types import ASGIApp, Receive, Scope, Send
 from Utils.Chat.init_chat import send_response
 from routes.frontend_api import router as frontend_router
+from Data.db_conn import pool
+
 
 app = FastAPI()
 

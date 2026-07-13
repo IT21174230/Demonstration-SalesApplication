@@ -6,12 +6,16 @@ import Sidebar from './components/layout/Sidebar'
 import Dashboard from './components/pages/Dashboard'
 import ChatAssistant from './components/pages/ChatAssistant'
 import InquiryList from './components/pages/InquiryList'
+import RateList from './components/pages/RateList'
 import Followups from './components/pages/Followups'
 import Customers from './components/pages/Customers'
 import Quotations from './components/pages/Quotations'
 import Shipments from './components/pages/Shipments'
 import KYCForm from './components/pages/KYCForm'
 import Workspace from './components/pages/Workspace'
+import NewInquiry from './components/pages/NewInquiry'
+import RecordRate from './components/pages/RecordRate'
+import RateCheck from './components/pages/RateCheck'
 import {
   SEED_INQUIRIES, SEED_TASKS, SEED_MISSING_ITEMS, SEED_FOLLOWUPS, SEED_CUSTOMERS,
   SEED_QUOTES, SEED_SHIPMENTS, SEED_BOOKINGS, SEED_ACTIVITY_LOG,
@@ -20,7 +24,7 @@ import {
   WORKFLOW_STAGES,
   type PageId, type Inquiry, type Task, type Followup, type Customer,
   type Quote, type QuoteStatus, type Shipment, type ShipmentStatus, type Booking,
-  type MissingItem, type UserRole, type WorkflowStage, type ActivityEntry,
+  type MissingItem, type UserRole, type WorkflowStage, type ActivityEntry, type ContainerLine,
 } from './mockData'
 import { RoleContext, type RoleContextValue } from './RoleContext'
 import {
@@ -29,6 +33,7 @@ import {
   apiCreateQuote, apiSetQuoteStatus,
   apiCreateTask, apiCompleteTask,
   apiAdvanceShipmentLeg, apiRecordShipmentPOD,
+  apiCreateInquiry,
   apiCreateActivity, apiCreateBooking, apiConfirmBooking, apiReleaseBooking, apiNotifyProcurement,
   apiSetBookingSiCutoff, apiMarkSiRequested,
   apiSetBookingBlCutoff, apiMarkSiSubmitted, apiMarkDraftBlSent, apiSetBlStatus,
@@ -45,7 +50,6 @@ export default function App() {
   const activeRole: UserRole = EMPLOYEE_ROLE_MAP[activeEmployeeId] ?? 'CS'
 
   const canAccessPage = (page: PageId) => ROLE_PAGE_ACCESS[activeRole].includes(page)
-  const hasPermission = (action: string) => ROLE_ACTIONS[activeRole].includes(action as any)
 
   const navigateTo = (page: PageId) => {
     if (canAccessPage(page)) {
@@ -54,6 +58,11 @@ export default function App() {
       setCurrentPage('dashboard')
       flash(`Access denied: ${PAGE_LABELS[page]} requires ${ROLE_LABELS[activeRole]} does not have access`)
     }
+  }
+
+  const startRateCheck = (inquiry: Inquiry, container?: ContainerLine, variant: 'procurement' | 'cs-sales' = 'procurement') => {
+    setRateCheckContext({ inquiry, container, variant })
+    setCurrentPage('rate-check')
   }
 
   // Redirect if current page becomes inaccessible after role switch
@@ -86,6 +95,7 @@ export default function App() {
   const [backendReady, setBackendReady] = useState(false)
   // Lets the chat tell the Quotations page to open its builder pre-filled with a customer.
   const [quotePrefillCustomer, setQuotePrefillCustomer] = useState<string | null>(null)
+  const [rateCheckContext, setRateCheckContext] = useState<{ inquiry: Inquiry; container?: ContainerLine; variant: 'procurement' | 'cs-sales' } | null>(null)
   const [toast, setToast] = useState<{ message: string; action?: { label: string; onClick: () => void } } | null>(null)
 
   // ---- Fetch all data from the backend on mount ----
@@ -139,7 +149,7 @@ export default function App() {
 
   const flash = (msg: string, action?: { label: string; onClick: () => void }) => {
     setToast({ message: msg, action })
-    setTimeout(() => setToast(null), action ? 5000 : 2200)
+    setTimeout(() => setToast(null), action ? 8000 : 3500)
   }
 
   const addFollowup = (
@@ -446,6 +456,52 @@ export default function App() {
     return newId
   }
 
+  const addInquiry = (data: Omit<Inquiry, 'id' | 'created_at' | 'status' | 'completed_at' | 'followup_note' | 'inquiry_text'>): Inquiry => {
+    const stamp = nowStamp()
+    const newInq: Inquiry = {
+      ...data,
+      id: `INQ-${305 + inquiries.length - SEED_INQUIRIES.length}`,
+      inquiry_text: data.request,
+      status: 'pending',
+      created_at: stamp,
+      workflow_stage: 'inquiry-received',
+      recorded_by: activeEmployeeId,
+    }
+    setInquiries(prev => [newInq, ...prev])
+    apiCreateInquiry({
+      customer_name: data.customer_name,
+      request: data.request,
+      origin: data.origin,
+      destination: data.destination,
+      delivery_type: data.delivery_type,
+      channel: data.channel,
+      sbu: data.sbu,
+      employee_id: data.employee_id,
+      priority: data.priority,
+      commodity_type: data.commodity_type,
+      container_type: data.container_type,
+      container_qty: data.container_qty,
+      special_equipment: data.special_equipment,
+      cargo_weight: data.cargo_weight,
+      is_fcl: data.is_fcl,
+      remark: data.remark,
+      contact_person: data.contact_person,
+      contact_channel_id: data.contact_channel_id,
+      containers: data.containers,
+      preferred_liners: data.preferred_liners,
+    }).catch(() => console.warn('API: create inquiry failed'))
+    flash(`Inquiry ${newInq.id} created for ${data.customer_name}`)
+    return newInq
+  }
+
+  const updateCustomer = (customerName: string, patch: Partial<Omit<Customer, 'id'>>) => {
+    setCustomers(prev => prev.map(c =>
+      c.name === customerName ? { ...c, ...patch } : c
+    ))
+    apiUpdateCustomer(customerName, patch)
+      .catch(() => console.warn('API: update customer failed'))
+  }
+
   const updateCustomerKyc = (customerName: string, kycStatus: 'not_started' | 'pending_customer' | 'approved') => {
     setCustomers(prev => prev.map(c =>
       c.name === customerName ? { ...c, kyc_status: kycStatus } : c
@@ -519,8 +575,13 @@ export default function App() {
             quotes={quotes}
             onCompleteById={completeInquiryById}
             onAdvanceWorkflow={advanceWorkflow}
+            onUpdateCustomer={updateCustomer}
+            onAddFollowup={addFollowup}
+            onFlash={flash}
           />
         )
+      case 'rate-list':
+        return <RateList />
       case 'followups':
         return (
           <Followups
@@ -534,7 +595,7 @@ export default function App() {
           />
         )
       case 'customers':
-        return <Customers inquiries={inquiries} customers={customers} />
+        return <Customers inquiries={inquiries} customers={customers} onUpdateCustomer={updateCustomer} onFlash={flash} />
       case 'kyc':
         return <KYCForm customers={customers} onFlash={flash} />
       case 'workspace':
@@ -545,6 +606,7 @@ export default function App() {
             quotes={quotes}
             customers={customers}
             activityLog={activityLog}
+            onGoTo={navigateTo}
             onAdvanceWorkflow={advanceWorkflow}
             onConfirmBooking={confirmBooking}
             onReleaseBooking={releaseBooking}
@@ -563,8 +625,39 @@ export default function App() {
             onAutoAdvanceForCustomer={autoAdvanceForCustomer}
             onLogActivity={logActivity}
             onFlash={flash}
+            onStartRateCheck={startRateCheck}
           />
         )
+      case 'new-inquiry':
+        return (
+          <NewInquiry
+            customers={customers}
+            activeEmployee={activeEmployee}
+            onCreateInquiry={addInquiry}
+            onFlash={flash}
+            onGoBack={() => navigateTo('workspace')}
+          />
+        )
+      case 'record-rate':
+        return (
+          <RecordRate
+            onFlash={flash}
+            onGoBack={() => navigateTo('workspace')}
+          />
+        )
+      case 'rate-check':
+        return rateCheckContext ? (
+          <RateCheck
+            inquiry={rateCheckContext.inquiry}
+            container={rateCheckContext.container}
+            customers={customers}
+            variant={rateCheckContext.variant}
+            onAdvanceWorkflow={advanceWorkflow}
+            onLogActivity={logActivity}
+            onFlash={flash}
+            onGoBack={() => { setRateCheckContext(null); navigateTo('workspace') }}
+          />
+        ) : null
     }
   }
 

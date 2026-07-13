@@ -1,0 +1,1264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CLS Updated Process Flow Charts — Post-Meeting Revision</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700;0,9..40,800;1,9..40,400&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#f4f5f8;
+    --card:#ffffff;
+    --ink:#0f1729;
+    --muted:#596575;
+    --line:#d1d8e3;
+    --blue:#1a5cff;
+    --blue-soft:#e8f0ff;
+    --green:#0d7a3e;
+    --green-soft:#e5f6ed;
+    --orange:#b93a04;
+    --orange-soft:#fff3e8;
+    --purple:#5b21b6;
+    --purple-soft:#efe8fd;
+    --red:#ad1a1a;
+    --red-soft:#fdeaea;
+    --gray-soft:#eef1f6;
+    --teal:#0f766e;
+    --teal-soft:#e6f6f5;
+    --change:#d97706;
+    --change-soft:#fffbeb;
+    --new:#7c3aed;
+    --new-soft:#f5f0ff;
+  }
+  *{box-sizing:border-box;margin:0}
+  body{
+    font-family:'DM Sans',system-ui,sans-serif;
+    background:var(--bg);
+    color:var(--ink);
+    line-height:1.5;
+  }
+  .page{
+    max-width:1300px;
+    margin:0 auto;
+    padding:32px 24px 72px;
+  }
+  .hero{
+    background:linear-gradient(135deg,#0a1128 0%,#102a6a 50%,#1a3f8f 100%);
+    color:#fff;
+    border-radius:20px;
+    padding:36px 42px;
+    margin-bottom:24px;
+    position:relative;
+    overflow:hidden;
+  }
+  .hero::after{
+    content:'';position:absolute;top:-60px;right:-40px;width:260px;height:260px;
+    border-radius:50%;background:rgba(255,255,255,.04);pointer-events:none;
+  }
+  h1{font-size:30px;font-weight:800;letter-spacing:-.03em;margin-bottom:6px}
+  .hero p{color:#b8ccf0;font-size:15px;max-width:900px}
+  .hero .version{
+    display:inline-block;
+    margin-top:12px;
+    padding:5px 14px;
+    border-radius:999px;
+    background:rgba(255,255,255,.12);
+    font-size:12px;
+    font-weight:700;
+    letter-spacing:.04em;
+    color:#93b4f5;
+  }
+  .legend{
+    display:flex;flex-wrap:wrap;gap:10px;
+    margin:0 0 28px;
+  }
+  .legend-item{
+    display:flex;align-items:center;gap:6px;
+    font-size:12px;font-weight:600;color:var(--muted);
+  }
+  .legend-dot{width:14px;height:14px;border-radius:6px;flex-shrink:0}
+  .note{
+    background:#fff;
+    border-left:5px solid var(--blue);
+    border-radius:14px;
+    padding:15px 18px;
+    margin:0 0 26px;
+    color:var(--muted);
+    font-size:14px;
+  }
+  h2{font-size:22px;font-weight:800;letter-spacing:-.02em;margin:0 0 4px}
+  h3{font-size:15px;font-weight:700;margin:0 0 6px}
+  .section{
+    background:#fff;
+    border:1px solid #dfe4ed;
+    border-radius:18px;
+    padding:26px;
+    margin:22px 0;
+    box-shadow:0 4px 16px rgba(15,23,42,.04);
+  }
+  .section-head{display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap}
+
+  /* Badges */
+  .badge{
+    display:inline-flex;align-items:center;gap:4px;
+    font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;
+    padding:3px 10px;border-radius:999px;flex-shrink:0;
+  }
+  .badge-changed{background:var(--change-soft);color:var(--change);border:1px solid #fde68a}
+  .badge-new{background:var(--new-soft);color:var(--new);border:1px solid #ddd6fe}
+  .badge-removed{background:var(--red-soft);color:var(--red);border:1px solid #fecaca}
+
+  .flow{
+    display:flex;
+    flex-wrap:wrap;
+    align-items:stretch;
+    gap:10px;
+    margin:14px 0 8px;
+  }
+  .step{
+    min-width:155px;
+    flex:1 1 160px;
+    background:var(--gray-soft);
+    border:1px solid #dfe4ed;
+    border-radius:14px;
+    padding:13px 13px 12px;
+    position:relative;
+  }
+  .step .role{
+    display:inline-block;
+    font-size:10px;
+    font-weight:800;
+    text-transform:uppercase;
+    letter-spacing:.06em;
+    color:var(--muted);
+    margin-bottom:5px;
+  }
+  .step .title{font-weight:800;margin-bottom:4px;font-size:13.5px}
+  .step .desc{color:var(--muted);font-size:12.5px;line-height:1.45}
+  .step .change-note{
+    margin-top:6px;padding:5px 8px;
+    border-radius:8px;font-size:11px;font-weight:600;line-height:1.4;
+  }
+  .change-note.changed{background:var(--change-soft);color:#92400e;border:1px solid #fde68a}
+  .change-note.new{background:var(--new-soft);color:#5b21b6;border:1px solid #ddd6fe}
+  .arrow{align-self:center;color:#94a3b8;font-size:22px;font-weight:800}
+  .decision{background:var(--orange-soft);border-color:#fed7aa}
+  .system{background:var(--blue-soft);border-color:#bfdbfe}
+  .doc{background:var(--green-soft);border-color:#bbf7d0}
+  .risk{background:var(--red-soft);border-color:#fecaca}
+  .special{background:var(--purple-soft);border-color:#ddd6fe}
+  .teal{background:var(--teal-soft);border-color:#99f6e4}
+
+  .split{
+    display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(310px,1fr));
+    gap:16px;
+    margin-top:14px;
+  }
+  .mini{
+    background:#f8fafc;
+    border:1px dashed #c7cfdb;
+    border-radius:16px;
+    padding:16px;
+  }
+  .mini-title{font-weight:800;margin-bottom:10px;color:#1e293b;font-size:14px;display:flex;align-items:center;gap:8px}
+  .mini-flow{display:flex;flex-direction:column;gap:7px}
+  .mini-step{
+    background:#fff;
+    border:1px solid #e2e8f0;
+    border-radius:10px;
+    padding:9px 12px;
+    font-size:13px;
+    line-height:1.4;
+  }
+  .mini-arrow{text-align:center;color:#94a3b8;font-weight:800;font-size:13px}
+  .callout{
+    margin-top:14px;
+    padding:12px 15px;
+    background:#fff7ed;
+    border:1px solid #fed7aa;
+    border-radius:12px;
+    color:#7c2d12;
+    font-size:13px;
+    line-height:1.5;
+  }
+  .callout-blue{background:var(--blue-soft);border-color:#bfdbfe;color:#1e3a8a}
+  .callout-green{background:var(--green-soft);border-color:#bbf7d0;color:#14532d}
+  .callout-purple{background:var(--new-soft);border-color:#ddd6fe;color:#3b0764}
+
+  table{
+    width:100%;
+    border-collapse:separate;
+    border-spacing:0;
+    overflow:hidden;
+    border:1px solid #dfe4ed;
+    border-radius:14px;
+    background:#fff;
+    margin-top:14px;
+  }
+  th,td{
+    padding:11px 14px;
+    border-bottom:1px solid #eef1f6;
+    vertical-align:top;
+    text-align:left;
+    font-size:13px;
+  }
+  th{
+    background:#0f1729;
+    color:#e2e8f0;
+    font-size:11px;
+    letter-spacing:.06em;
+    text-transform:uppercase;
+    font-weight:700;
+  }
+  tr:last-child td{border-bottom:none}
+  td:first-child{font-weight:700;color:#1e293b;width:180px}
+  .footer{
+    margin-top:32px;
+    color:#94a3b8;
+    font-size:12px;
+    text-align:center;
+  }
+  /* Feedback trigger button in section header */
+  .fb-trigger{
+    margin-left:auto;
+    display:inline-flex;align-items:center;gap:6px;
+    padding:5px 14px;
+    border:1.5px solid #cbd5e1;
+    border-radius:999px;
+    background:#f8fafc;
+    cursor:pointer;
+    font-family:'DM Sans',system-ui,sans-serif;
+    font-size:12px;font-weight:700;
+    color:var(--muted);
+    transition:all .15s;
+    flex-shrink:0;
+  }
+  .fb-trigger:hover{
+    background:var(--blue-soft);border-color:var(--blue);color:var(--blue);
+  }
+  .fb-trigger .fb-icon{font-size:14px}
+  .fb-trigger .fb-count{
+    display:inline-flex;align-items:center;justify-content:center;
+    min-width:18px;height:18px;
+    border-radius:999px;
+    background:var(--blue);
+    color:#fff;
+    font-size:10px;font-weight:800;
+    padding:0 5px;
+  }
+  .fb-trigger .fb-count:empty{display:none}
+
+  /* Side panel overlay */
+  .panel-overlay{
+    position:fixed;inset:0;
+    background:rgba(15,23,42,.35);
+    z-index:999;
+    opacity:0;
+    pointer-events:none;
+    transition:opacity .25s;
+  }
+  .panel-overlay.open{opacity:1;pointer-events:auto}
+
+  /* Side panel */
+  .feedback-panel{
+    position:fixed;top:0;right:0;bottom:0;
+    width:420px;max-width:92vw;
+    background:#fff;
+    z-index:1000;
+    transform:translateX(100%);
+    transition:transform .3s cubic-bezier(.4,0,.2,1);
+    display:flex;flex-direction:column;
+    box-shadow:-8px 0 30px rgba(15,23,42,.12);
+  }
+  .feedback-panel.open{transform:translateX(0)}
+  .panel-header{
+    display:flex;align-items:center;gap:10px;
+    padding:20px 24px 16px;
+    border-bottom:1px solid #eef1f6;
+    flex-shrink:0;
+  }
+  .panel-header h3{
+    font-size:16px;font-weight:800;color:#1e293b;margin:0;flex:1;
+  }
+  .panel-close{
+    width:32px;height:32px;
+    display:flex;align-items:center;justify-content:center;
+    border:none;border-radius:10px;
+    background:#f1f5f9;
+    cursor:pointer;
+    font-size:18px;color:#64748b;
+    transition:background .15s;
+    flex-shrink:0;
+  }
+  .panel-close:hover{background:#e2e8f0}
+  .panel-body{
+    flex:1;overflow-y:auto;
+    padding:20px 24px;
+    display:flex;flex-direction:column;gap:16px;
+  }
+  .panel-form{display:flex;flex-direction:column;gap:12px}
+  .panel-field{display:flex;flex-direction:column;gap:4px}
+  .panel-field label{
+    font-size:11px;font-weight:700;text-transform:uppercase;
+    letter-spacing:.06em;color:var(--muted);
+  }
+  .panel-field input,
+  .panel-field textarea{
+    font-family:'DM Sans',system-ui,sans-serif;
+    font-size:13px;
+    padding:10px 12px;
+    border:1.5px solid #d1d8e3;
+    border-radius:10px;
+    background:#fff;
+    color:var(--ink);
+    outline:none;
+    transition:border-color .15s,box-shadow .15s;
+  }
+  .panel-field input:focus,
+  .panel-field textarea:focus{
+    border-color:var(--blue);
+    box-shadow:0 0 0 3px rgba(26,92,255,.1);
+  }
+  .panel-field textarea{resize:vertical;min-height:80px}
+  .panel-submit{
+    font-family:'DM Sans',system-ui,sans-serif;
+    font-size:13px;font-weight:700;
+    padding:10px 20px;
+    border:none;border-radius:10px;
+    background:linear-gradient(135deg,#1a5cff 0%,#3b7aff 100%);
+    color:#fff;cursor:pointer;
+    transition:opacity .15s,transform .1s;
+    align-self:flex-start;
+  }
+  .panel-submit:hover{opacity:.9}
+  .panel-submit:active{transform:scale(.97)}
+  .panel-divider{
+    border:none;border-top:1px solid #eef1f6;margin:4px 0;
+  }
+  .panel-comments-title{
+    font-size:12px;font-weight:700;text-transform:uppercase;
+    letter-spacing:.06em;color:var(--muted);margin:0;
+  }
+  .panel-comments{display:flex;flex-direction:column;gap:8px}
+  .panel-comments:empty::after{
+    content:'No comments yet. Be the first to share feedback.';
+    font-size:13px;color:#94a3b8;font-style:italic;
+  }
+  .fb-entry{
+    background:#f8fafc;
+    border:1px solid #e2e8f0;
+    border-radius:10px;
+    padding:10px 14px;
+    font-size:13px;line-height:1.45;
+  }
+  .fb-entry .fb-meta{
+    display:flex;gap:10px;flex-wrap:wrap;margin-bottom:4px;
+  }
+  .fb-entry .fb-role{font-weight:700;color:var(--blue);font-size:12px}
+  .fb-entry .fb-dept{font-weight:600;color:var(--muted);font-size:12px}
+  .fb-entry .fb-time{font-size:11px;color:#94a3b8;margin-left:auto}
+  .fb-entry .fb-text{color:#334155}
+
+  @media print{
+    body{background:#fff}
+    .section,.hero{box-shadow:none}
+    .page{max-width:none;padding:14px}
+    .section{break-inside:avoid}
+    .fb-trigger,.feedback-panel,.panel-overlay{display:none!important}
+  }
+  @media(max-width:700px){
+    .flow{flex-direction:column}
+    .arrow{transform:rotate(90deg);align-self:center}
+    .split{grid-template-columns:1fr}
+    .hero{padding:24px 20px}
+    h1{font-size:24px}
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="hero">
+    <h1>CLS Process Flow Charts — Updated</h1>
+    <p>Revised process flows incorporating all decisions and changes from the May 29, 2026 requirements meeting with CL Synergy, plus feedback from the CL Synergy Workflow Review. Changes are highlighted with badges so the team can see exactly what moved.</p>
+    <div class="version">Post-Feedback Revision · June 2026 · Based on CL Connect Transcript + Workflow Feedback</div>
+  </div>
+
+  <div class="legend">
+    <div class="legend-item"><div class="legend-dot" style="background:var(--change-soft);border:2px solid var(--change)"></div>Changed from AS-IS</div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--new-soft);border:2px solid var(--new)"></div>New requirement</div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--red-soft);border:2px solid var(--red)"></div>Risk / pain point</div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--blue-soft);border:2px solid var(--blue)"></div>System / integration</div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--green-soft);border:2px solid var(--green)"></div>Document step</div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--teal-soft);border:2px solid var(--teal)"></div>Checkpoint / gate</div>
+  </div>
+
+  <div class="note">
+    <strong>How to read this:</strong> Each box shows who does the work, what happens, and what system is involved. <span style="color:var(--change);font-weight:700">Orange-badged</span> items have changed from the original AS-IS flow. <span style="color:var(--new);font-weight:700">Purple-badged</span> items are entirely new requirements from the meeting.
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════ -->
+  <!-- FLOW 1 -->
+  <!-- ═══════════════════════════════════════════════════ -->
+  <div class="section">
+    <div class="section-head">
+      <h2>Flow 1 — Customer Inquiry to Quotation</h2>
+      <span class="badge badge-changed">Changed</span>
+      <button type="button" class="fb-trigger" data-flow="flow-1" data-title="Flow 1 — Customer Inquiry to Quotation"><span class="fb-icon">💬</span> Feedback <span class="fb-count"></span></button>
+    </div>
+    <div class="flow">
+      <div class="step">
+        <span class="role">Customer</span>
+        <div class="title">Sends inquiry</div>
+        <div class="desc">Customer asks for a rate or booking by email, WhatsApp, or phone.</div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="step decision">
+        <span class="role">Sales / CS</span>
+        <div class="title">New or existing customer?</div>
+        <div class="desc">New customers need KYC checks first. Existing customers move faster.</div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="step">
+        <span class="role">CS / Sales</span>
+        <div class="title">Log inquiry + set priority</div>
+        <div class="desc">Inquiry is logged with origin, destination, commodity, container type, and special equipment needs. Priority level is assigned.</div>
+        <div class="change-note changed">▲ Priority can be set at creation and changed mid-workflow by Sales or CS. Commodity type and special equipment (open top, flat rack, reefer) now captured at inquiry level.</div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="step doc">
+        <span class="role">CS / Finance</span>
+        <div class="title">KYC / background check</div>
+        <div class="desc">For new customers, Finance reviews KYC. Existing approved customers skip this.</div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="step system">
+        <span class="role">CS / Sales</span>
+        <div class="title">Multi-step rate check</div>
+        <div class="desc">Rates checked across multiple sources: AMS contracted/monthly rates → spot rates (liner portal / INTTRA) → volume-based rates → NAC rates (restricted). Best available options collected.</div>
+        <div class="change-note changed">▲ Now a multi-source check: AMS for contracted rates, liner portals / INTTRA for real-time spot rates, volume-based rates where applicable, NAC rates for named accounts (restricted to assigned salesperson + procurement). Sales has full access to spot rates alongside CS.</div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="step decision">
+        <span class="role">CS / Sales / Procurement</span>
+        <div class="title">Rate available? Escalate?</div>
+        <div class="desc">If no rate found, escalate to Procurement. Even if rates exist, can still escalate for better options or spot rate opportunities.</div>
+        <div class="change-note changed">▲ Escalation to Procurement is always optional — even when rates exist. Procurement can also proactively surface spot rates that beat contracted rates.</div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="step">
+        <span class="role">Sales / CS</span>
+        <div class="title">Send multiple quotation options</div>
+        <div class="desc">Multiple liner options compiled and sent to the customer. Customer selects preferred liner/rate. Sent via email or WhatsApp. Can include a mix of contracted, spot, and volume-based rates from different liners.</div>
+        <div class="change-note changed">▲ Not a single quote — multiple liner options sent so the customer can choose. Both Sales and CS can send. Procurement can manually add spot options alongside system-generated ones.</div>
+      </div>
+    </div>
+
+    <div class="split">
+      <div class="mini">
+        <div class="mini-title">Rate types &amp; checking sequence <span class="badge badge-changed">Changed</span></div>
+        <div class="mini-flow">
+          <div class="mini-step"><strong>1. Contracted rate</strong> — Monthly or quarterly validity, from liner agreements. Procurement maintains in AMS. Checked first.</div>
+          <div class="mini-step"><strong>2. Spot rate</strong> — 24 hours to vessel-specific validity. Changes every minute for some liners. Checked at inquiry AND booking — everyone (Sales, CS, Procurement) should have real-time access. Not maintained in AMS.</div>
+          <div class="mini-step"><strong>3. Volume-based rate</strong> — Based on shipment volume commitments. Not maintained in AMS — needs new system support.</div>
+          <div class="mini-step"><strong>4. NAC rate</strong> — Special rates for ~10 named accounts per trade lane. Valid 6–12 months. Restricted visibility: only assigned salesperson + procurement. No price-request process needed.</div>
+          <div class="mini-step"><strong>5. China rates</strong> — Vessel-by-vessel, overnight changes. Different from the European monthly model.</div>
+        </div>
+      </div>
+      <div class="mini">
+        <div class="mini-title">Rate Maintenance workflow <span class="badge badge-new">New Flow</span></div>
+        <div class="mini-flow">
+          <div class="mini-step"><strong>Liner publishes rate</strong> — via email, WhatsApp commercial group, or liner portal. Contracted rates monthly/quarterly, spot rates change every minute for some liners.</div><div class="mini-arrow">↓</div>
+          <div class="mini-step"><strong>Pricing team receives &amp; enters</strong> — currently manual via Excel. System must support Excel bulk upload for rate ingestion and manual entry fallback.</div><div class="mini-arrow">↓</div>
+          <div class="mini-step"><strong>INTTRA / WiseTech auto-pull</strong> — spot rates and schedules auto-populated via middleware (available within ~4 months). Removes manual entry for supported liners.</div><div class="mini-arrow">↓</div>
+          <div class="mini-step"><strong>Rate validated &amp; categorized</strong> — tagged as contracted, spot, volume-based, or NAC. Commodity premiums (food, hazardous) and container-size rates (20ft vs 40ft) applied.</div><div class="mini-arrow">↓</div>
+          <div class="mini-step"><strong>Rate available in system</strong> — searchable by CS, Sales, Procurement. NAC rates restricted. Spot rates visible to all (Sales, CS, Procurement).</div><div class="mini-arrow">↓</div>
+          <div class="mini-step risk"><strong>Key gap:</strong> Spot rates and volume-based rates are NOT in AMS today. No structured database exists yet. Rate database architecture is the biggest unresolved item.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="callout"><strong>Meeting decision:</strong> Surcharges should be presented as all-in rates (base + surcharges combined) — CLS does not need an itemized surcharge breakdown on the quotation.</div>
+
+    <div class="split">
+      <div class="mini">
+        <div class="mini-title">Customer master creation — duplicate prevention <span class="badge badge-new">New</span></div>
+        <div class="mini-flow">
+          <div class="mini-step"><strong>New customer request</strong> — CS or Sales initiates customer registration via workspace or command center</div><div class="mini-arrow">↓</div>
+          <div class="mini-step"><strong>Duplicate check</strong> — system performs fuzzy match on company name, address, contact person, email, phone. If potential duplicate found, user is prompted to link to existing record instead of creating new</div><div class="mini-arrow">↓</div>
+          <div class="mini-step"><strong>Customer details captured</strong> — name, email, address, telephone, contact person, customer type (shipper/buyer/agent/trader). Linked to salesperson assignment</div><div class="mini-arrow">↓</div>
+          <div class="mini-step"><strong>Finance KYC approval</strong> — submitted to Finance for background/credit check. Finance approves or rejects. No inquiry can proceed until Finance approves</div><div class="mini-arrow">↓</div>
+          <div class="mini-step"><strong>Customer code generated</strong> — master record created in system. Synced to GenSoft and AMS. Customer available for future inquiries without re-registration</div>
+        </div>
+      </div>
+      <div class="mini">
+        <div class="mini-title">Duplicate risk &amp; current gaps <span class="badge badge-new">New</span></div>
+        <div class="mini-flow">
+          <div class="mini-step risk"><strong>Problem:</strong> Same customer can be registered multiple times across AMS, GenSoft, and new system if no cross-system check exists</div>
+          <div class="mini-step risk"><strong>Problem:</strong> Different salespeople may independently register the same company under slightly different names (e.g. "CL Synergy" vs "CLS" vs "C.L. Synergy Pvt Ltd")</div>
+          <div class="mini-step"><strong>Solution:</strong> Single point of customer creation with fuzzy matching. All downstream systems (GenSoft, AMS, CL Connect) reference the same master ID</div>
+          <div class="mini-step"><strong>Solution:</strong> Finance approval gate prevents unapproved customers from entering any workflow. Approval status visible to CS and Sales</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════ -->
+  <!-- FLOW 2 -->
+  <!-- ═══════════════════════════════════════════════════ -->
+  <div class="section">
+    <div class="section-head">
+      <h2>Flow 2 — Customer Response, Booking, and Confirmation</h2>
+      <span class="badge badge-changed">Changed</span>
+      <button type="button" class="fb-trigger" data-flow="flow-2" data-title="Flow 2 — Customer Response, Booking, and Confirmation"><span class="fb-icon">💬</span> Feedback <span class="fb-count"></span></button>
+    </div>
+    <div class="flow">
+      <div class="step">
+        <span class="role">Customer</span>
+        <div class="title">Accepts / rejects quote</div>
+        <div class="desc">Customer confirms by WhatsApp, email, or phone call — often just "confirm CMA option."</div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="step">
+        <span class="role">Sales / CS</span>
+        <div class="title">Record customer response</div>
+        <div class="desc">Either Sales or CS can record the acceptance or rejection in the system.</div>
+        <div class="change-note changed">▲ Both Sales and CS can record responses. Customers contact whichever team they have a relationship with.</div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="step doc">
+        <span class="role">CS</span>
+        <div class="title">Prepare booking request</div>
+        <div class="desc">CS compiles booking details (customer, containers, RA number if applicable) and sends to Procurement.</div>
+        <div class="change-note changed">▲ RA numbers must be included for contract-rate bookings. Data carries forward from the inquiry — no re-entry needed.</div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="step teal">
+        <span class="role">Procurement</span>
+        <div class="title">Review + edit before submission</div>
+        <div class="desc">Procurement reviews all booking details on an editable screen. Verifies RA numbers, container details, and makes amendments before pushing to the liner.</div>
+        <div class="change-note new">★ New editable checkpoint. Not one-click — Procurement must review and can amend before liner submission.</div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="step system">
+        <span class="role">Procurement → Liner</span>
+        <div class="title">Submit booking to liner</div>
+        <div class="desc">Booking submitted via INTTRA middleware or liner portal. Manual email fallback for liners without online systems (PIL, some Indian lines).</div>
+        <div class="change-note changed">▲ INTTRA integration planned as primary path. Manual/email fallback always maintained.</div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="step system">
+        <span class="role">Liner</span>
+        <div class="title">Booking confirmed</div>
+        <div class="desc">Shipping line confirms space on the vessel and assigns vessel/voyage.</div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="step">
+        <span class="role">System</span>
+        <div class="title">Notify Sales + CS</div>
+        <div class="desc">Automatic notification sent to assigned salesperson, CS team, and procurement that booking is confirmed.</div>
+        <div class="change-note new">★ New: auto-notification to all three parties. Customer is NOT informed yet — only after Release Order.</div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="step doc">
+        <span class="role">Procurement / CS</span>
+        <div class="title">Issue Release Order</div>
+        <div class="desc">Formal release order prepared and sent to customer. This is the customer-facing confirmation.</div>
+        <div class="change-note changed">▲ Clarified: there can be hours to days between liner confirmation and release order. Customer only notified at this step.</div>
+      </div>
+    </div>
+
+    <div class="split">
+      <div class="mini">
+        <div class="mini-title">Normal booking path <span class="badge badge-changed">Updated</span></div>
+        <div class="mini-flow">
+          <div class="mini-step">Customer confirms quotation</div><div class="mini-arrow">↓</div>
+          <div class="mini-step">Sales or CS records response</div><div class="mini-arrow">↓</div>
+          <div class="mini-step">CS sends booking request to Procurement</div><div class="mini-arrow">↓</div>
+          <div class="mini-step" style="border-color:var(--teal);border-width:2px"><strong>Procurement reviews on editable screen</strong> — verifies RA#, containers, amends if needed</div><div class="mini-arrow">↓</div>
+          <div class="mini-step">Procurement submits to liner (INTTRA or portal or email)</div><div class="mini-arrow">↓</div>
+          <div class="mini-step">Liner confirms → auto-notify Sales + CS</div><div class="mini-arrow">↓</div>
+          <div class="mini-step doc">Release Order issued to customer</div>
+        </div>
+      </div>
+      <div class="mini">
+        <div class="mini-title">Spot booking — with inquiry <span class="badge badge-changed">Updated</span></div>
+        <div class="mini-flow">
+          <div class="mini-step">Spot rate identified as better than contract rate</div><div class="mini-arrow">↓</div>
+          <div class="mini-step">Sales, CS, or Procurement can initiate spot booking</div><div class="mini-arrow">↓</div>
+          <div class="mini-step">Procurement makes the final booking decision on cost</div><div class="mini-arrow">↓</div>
+          <div class="mini-step">Booking placed → notify all parties</div><div class="mini-arrow">↓</div>
+          <div class="mini-step risk">Risk: cancellation charges apply if booking is unused</div>
+        </div>
+      </div>
+      <div class="mini">
+        <div class="mini-title">Speculative spot booking — no inquiry <span class="badge badge-new">New</span></div>
+        <div class="mini-flow">
+          <div class="mini-step">Market spot rate significantly below current rate (e.g. $1,000 less)</div><div class="mini-arrow">↓</div>
+          <div class="mini-step">Procurement proactively books space without a linked inquiry</div><div class="mini-arrow">↓</div>
+          <div class="mini-step">Sales team notified to find customers to fill the space</div><div class="mini-arrow">↓</div>
+          <div class="mini-step">Booking linked to an inquiry later, or cancelled if unused</div><div class="mini-arrow">↓</div>
+          <div class="mini-step risk">Cancellation charges apply — this is a commercial risk decision</div>
+        </div>
+      </div>
+      <div class="mini">
+        <div class="mini-title">Contract space / slot utilization tracking <span class="badge badge-new">New</span></div>
+        <div class="mini-flow">
+          <div class="mini-step"><strong>Total contracted space</strong> — contracted TEU/container allocation per trade lane per period, pulled from liner agreements</div><div class="mini-arrow">↓</div>
+          <div class="mini-step"><strong>Confirmed bookings</strong> — bookings placed against contracted space. System tracks count at booking level (e.g. 500 of 1,000 TEU confirmed)</div><div class="mini-arrow">↓</div>
+          <div class="mini-step"><strong>Actual containers shipped (BL level)</strong> — variance tracked at BL stage. If 5 containers booked but only 4 shipped, difference logged</div><div class="mini-arrow">↓</div>
+          <div class="mini-step"><strong>"Balance to sell"</strong> — remaining capacity visible to Sales. Salesperson can follow up with customer on unused containers or find new cargo</div><div class="mini-arrow">↓</div>
+          <div class="mini-step risk"><strong>Risk visibility:</strong> CL Synergy-initiated speculative bookings vs customer-requested bookings must be tracked separately. Cancellation charge exposure and fill rate reported to management</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="callout callout-purple"><strong>New requirement — Booking amendments &amp; utilization:</strong> After a booking is placed, customers may request container quantity changes (e.g. 5→10 containers). The system must support amendments to existing bookings, not just new bookings. Container variance tracking is needed: if 5 booked but only 4 shipped, the difference is logged at BL level and visible to Sales as "balance to sell." Contract space utilization (contracted vs booked vs shipped) must be reportable per trade lane, per liner, per period — see Flow 8 for reporting details.</div>
+
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════ -->
+  <!-- FLOW 3 -->
+  <!-- ═══════════════════════════════════════════════════ -->
+  <div class="section">
+    <div class="section-head">
+      <h2>Flow 3 — Cut-offs, SI, and Liner Portal Entry</h2>
+      <span class="badge badge-changed">Changed</span>
+      <button type="button" class="fb-trigger" data-flow="flow-3" data-title="Flow 3 — Cut-offs, SI, and Liner Portal Entry"><span class="fb-icon">💬</span> Feedback <span class="fb-count"></span></button>
+    </div>
+    <div class="flow">
+      <div class="step">
+        <span class="role">Liner</span>
+        <div class="title">Sends cut-off schedule</div>
+        <div class="desc">Deadlines for SI, BL, VGM, gate-in, etc. Same vessel can have different cut-offs for different carriers.</div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="step system">
+        <span class="role">System</span>
+        <div class="title">Track cut-offs + auto-reminders</div>
+        <div class="desc">Cut-off dates stored in the system. Automated reminders sent 2 days before each deadline.</div>
+        <div class="change-note new">★ Replaces manual Excel tracker. 2-day auto-reminders for SI, BL, and all cut-offs — currently done manually every day.</div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="step">
+        <span class="role">CS</span>
+        <div class="title">Remind customer for SI</div>
+        <div class="desc">CS asks customer to send SI. SI typically due 4 days before EDI cut-off.</div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="step doc">
+        <span class="role">Customer</span>
+        <div class="title">Send SI</div>
+        <div class="desc">Customer sends shipment details via PDF, Excel, Word, email, or plain text. System accepts all formats.</div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="step teal">
+        <span class="role">CS / Docs</span>
+        <div class="title">House BL check — edit checkpoint</div>
+        <div class="desc">If customer takes a House BL: shipper, consignee, and delivery agent must be changed before liner submission. If Liner BL only: can go direct.</div>
+        <div class="change-note new">★ Conditional checkpoint: House BL requires editing (CLS becomes shipper, agent becomes consignee). Liner BL goes straight through.</div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="step system">
+        <span class="role">CS / Docs</span>
+        <div class="title">Submit SI to liner</div>
+        <div class="desc">SI entered into liner portal or submitted via INTTRA. Email fallback for liners without online systems.</div>
+        <div class="change-note changed">▲ Some liners (Maersk) may reject INTTRA and require direct portal entry. Some (PIL, Indian lines) have no online system — email only.</div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="step system">
+        <span class="role">Liner</span>
+        <div class="title">BL draft generated</div>
+        <div class="desc">Liner sends a draft BL for checking and correction.</div>
+      </div>
+    </div>
+
+    <div class="callout callout-purple"><strong>New requirement — AMS filing for US-bound shipments:</strong> Documentation must be filed with US Customs 48–72 hours before vessel arrival at the first US port. This filing deadline needs tracking and reminders in the system, separate from SI/BL cut-offs.</div>
+
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════ -->
+  <!-- FLOW 4 -->
+  <!-- ═══════════════════════════════════════════════════ -->
+  <div class="section">
+    <div class="section-head">
+      <h2>Flow 4 — BL Creation, Customer Approval, and GenSoft Handoff</h2>
+      <span class="badge badge-changed">Changed</span>
+      <button type="button" class="fb-trigger" data-flow="flow-4" data-title="Flow 4 — BL Creation, Customer Approval, and GenSoft Handoff"><span class="fb-icon">💬</span> Feedback <span class="fb-count"></span></button>
+    </div>
+    <div class="split">
+      <div class="mini">
+        <div class="mini-title">Direct / Liner BL shipment</div>
+        <div class="mini-flow">
+          <div class="mini-step">SI submitted to liner</div><div class="mini-arrow">↓</div>
+          <div class="mini-step">Liner creates direct BL (actual shipper, consignee, notify party details)</div><div class="mini-arrow">↓</div>
+          <div class="mini-step">Customer checks BL draft — can be sent as PDF, Excel, or email body depending on customer preference</div><div class="mini-arrow">↓</div>
+          <div class="mini-step">Corrections / amendments if needed — may cycle multiple times</div><div class="mini-arrow">↓</div>
+          <div class="mini-step doc">Final BL issued → replicated in GenSoft</div>
+        </div>
+      </div>
+      <div class="mini">
+        <div class="mini-title">House / Master BL shipment <span class="badge badge-changed">Updated</span></div>
+        <div class="mini-flow">
+          <div class="mini-step">Liner issues Master BL → CLS is shipper, agent is consignee/notify</div><div class="mini-arrow">↓</div>
+          <div class="mini-step" style="border-color:var(--teal);border-width:2px"><strong>Checkpoint:</strong> Docs create House BL in GenSoft — actual shipper, consignee, notify party. Delivery agent at destination added.</div><div class="mini-arrow">↓</div>
+          <div class="mini-step">Customer checks House BL draft (PDF / Excel / email body)</div><div class="mini-arrow">↓</div>
+          <div class="mini-step">Amendments handled — Finance approval may be required for credit-related holds</div><div class="mini-arrow">↓</div>
+          <div class="mini-step doc">Final House BL shared with customer</div>
+        </div>
+      </div>
+      <div class="mini">
+        <div class="mini-title">One Master, multiple House BLs <span class="badge badge-new">New</span></div>
+        <div class="mini-flow">
+          <div class="mini-step">Single booking from a buyer/trader with multiple suppliers</div><div class="mini-arrow">↓</div>
+          <div class="mini-step">One container, one Master BL</div><div class="mini-arrow">↓</div>
+          <div class="mini-step">Two or more House BLs created — one per supplier/shipper</div><div class="mini-arrow">↓</div>
+          <div class="mini-step">Each House BL tracked independently in the system</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="callout callout-blue"><strong>GenSoft handoff:</strong> The new system handles the workflow up to BL creation. From BL stage onward, data is replicated in GenSoft for job creation, invoicing, costing, and document management. API integration with GenSoft is planned to avoid duplicate entry. Documentation team works primarily in GenSoft for HBL creation and customer invoicing.</div>
+
+    <div class="split">
+      <div class="mini">
+        <div class="mini-title">Vessel creation &amp; tracking <span class="badge badge-new">New</span></div>
+        <div class="mini-flow">
+          <div class="mini-step"><strong>Booking confirmed</strong> — vessel/voyage assigned by liner at booking confirmation</div><div class="mini-arrow">↓</div>
+          <div class="mini-step"><strong>Check if vessel exists</strong> — system checks if vessel + voyage + POD (port of discharge) combo already exists in GenSoft. Same vessel/voyage can serve multiple bookings</div><div class="mini-arrow">↓</div>
+          <div class="mini-step"><strong>If new: create vessel record</strong> — currently manual in GenSoft. Vessel created per trade lane, per voyage, per POD. One-time creation — others reuse it</div><div class="mini-arrow">↓</div>
+          <div class="mini-step system"><strong>INTTRA integration (target)</strong> — vessel schedules, ETD/ETA, and voyage data should be auto-pulled from INTTRA to eliminate manual vessel creation. Tracking updates also via INTTRA</div><div class="mini-arrow">↓</div>
+          <div class="mini-step"><strong>Job creation proceeds</strong> — once vessel record exists, documentation team can create jobs in GenSoft without re-entering vessel details</div>
+        </div>
+      </div>
+      <div class="mini">
+        <div class="mini-title">Reporting / list creation <span class="badge badge-new">New</span></div>
+        <div class="mini-flow">
+          <div class="mini-step"><strong>Pending BL drafts</strong> — list of BLs awaiting customer approval, sortable by cut-off urgency</div><div class="mini-arrow">↓</div>
+          <div class="mini-step"><strong>Amendment tracking</strong> — BL correction cycles logged. How many rounds per customer, average time to finalize</div><div class="mini-arrow">↓</div>
+          <div class="mini-step"><strong>Finance approval queue</strong> — BLs held for credit-related or payment approval. Visible to Finance and Docs teams</div><div class="mini-arrow">↓</div>
+          <div class="mini-step"><strong>Filing deadlines</strong> — US AMS filings, EBL requirements, cut-off compliance. Queryable via Command Center</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="callout callout-purple" style="margin-top:10px"><strong>EBL readiness (2028):</strong> European boards will mandate Electronic Bills of Lading from 2028 — €65 penalty per paper BL. The INTTRA module supports MBL functions for EBL. WiseTech/Citra/E2O platforms being evaluated for integration.</div>
+
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════ -->
+  <!-- FLOW 5 -->
+  <!-- ═══════════════════════════════════════════════════ -->
+  <div class="section">
+    <div class="section-head">
+      <h2>Flow 5 — Cross-Trading, Switch BL, and Agent Operations</h2>
+      <span class="badge badge-changed">Changed</span>
+      <button type="button" class="fb-trigger" data-flow="flow-5" data-title="Flow 5 — Cross-Trading, Switch BL, and Agent Operations"><span class="fb-icon">💬</span> Feedback <span class="fb-count"></span></button>
+    </div>
+    <div class="flow">
+      <div class="step special">
+        <span class="role">Customer / CS</span>
+        <div class="title">Cross-trade shipment</div>
+        <div class="desc">Shipment between two foreign countries, arranged by CLS Colombo.</div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="step system">
+        <span class="role">CS / Docs</span>
+        <div class="title">Create cross-trade job</div>
+        <div class="desc">Shipment is created in GenSoft under cross-trading module.</div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="step doc">
+        <span class="role">Docs</span>
+        <div class="title">Prepare first-leg BL</div>
+        <div class="desc">First BL shows original supplier/shipper details.</div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="step doc">
+        <span class="role">Docs</span>
+        <div class="title">Prepare second / third-leg BL</div>
+        <div class="desc">Switch BL replaces shipper details to hide original supplier. Can have 2–3 legs if multiple traders are involved.</div>
+        <div class="change-note changed">▲ Clarified: Switch BLs can have up to 3 legs (first, second, third). Only shipper details can be hidden — port of loading/discharge cannot be changed.</div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="step risk">
+        <span class="role">CS / Docs</span>
+        <div class="title">Send correct BL to correct party</div>
+        <div class="desc">High confidentiality risk. Wrong BL to wrong party can expose supplier identity.</div>
+      </div>
+    </div>
+
+    <div class="split">
+      <div class="mini">
+        <div class="mini-title">Agent rate sourcing — non-Colombo origins <span class="badge badge-new">New</span></div>
+        <div class="mini-flow">
+          <div class="mini-step">Shipment originates from East Asia, Philippines, India, or other overseas location</div><div class="mini-arrow">↓</div>
+          <div class="mini-step">CS writes to multiple overseas agents to get rates — done via email, outside current system</div><div class="mini-arrow">↓</div>
+          <div class="mini-step">Agent rates typically have 1-month validity due to surcharge volatility at destination</div><div class="mini-arrow">↓</div>
+          <div class="mini-step risk">Currently fully manual and outside any system. Needs to be brought into the platform.</div>
+        </div>
+      </div>
+      <div class="mini">
+        <div class="mini-title">LCL / consolidation scenario <span class="badge badge-new">New</span></div>
+        <div class="mini-flow">
+          <div class="mini-step">Multiple shippers consolidated into one container (FCL for one consignee, two shippers)</div><div class="mini-arrow">↓</div>
+          <div class="mini-step">Loading instructions and tally sheets managed per shipper</div><div class="mini-arrow">↓</div>
+          <div class="mini-step">One Master BL, multiple House BLs — tracked separately</div><div class="mini-arrow">↓</div>
+          <div class="mini-step">LCL operations managed by a different team — documentation workflow is similar to FCL</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════ -->
+  <!-- FLOW 6 -->
+  <!-- ═══════════════════════════════════════════════════ -->
+  <div class="section">
+    <div class="section-head">
+      <h2>Flow 6 — Access Control and Customer Assignment</h2>
+      <span class="badge badge-new">New</span>
+      <button type="button" class="fb-trigger" data-flow="flow-6" data-title="Flow 6 — Access Control and Customer Assignment"><span class="fb-icon">💬</span> Feedback <span class="fb-count"></span></button>
+    </div>
+    <div class="split">
+      <div class="mini">
+        <div class="mini-title">Sales customer assignment <span class="badge badge-new">New</span></div>
+        <div class="mini-flow">
+          <div class="mini-step">Each salesperson has assigned customers — only they can see those customers' inquiries and data</div><div class="mini-arrow">↓</div>
+          <div class="mini-step">Other salespeople cannot access another salesperson's customers</div><div class="mini-arrow">↓</div>
+          <div class="mini-step">One customer can be handled by multiple salespeople in different contexts (e.g. nomination shipments from agents)</div><div class="mini-arrow">↓</div>
+          <div class="mini-step">Reassignment option available when a salesperson is on leave — backup person gets temporary access</div>
+        </div>
+      </div>
+      <div class="mini">
+        <div class="mini-title">CS and Documentation access <span class="badge badge-new">New</span></div>
+        <div class="mini-flow">
+          <div class="mini-step">CS team has full access to all customers across all salespeople</div><div class="mini-arrow">↓</div>
+          <div class="mini-step">Export Documentation team: full visibility within the team, but editing restricted to assigned person's work</div><div class="mini-arrow">↓</div>
+          <div class="mini-step">Doc team access: job creation, HBL, invoicing, costing in GenSoft</div><div class="mini-arrow">↓</div>
+          <div class="mini-step">Backup assignment: when someone is on leave, specific team members can be given temporary edit permission</div>
+        </div>
+      </div>
+      <div class="mini">
+        <div class="mini-title">Named Account rate visibility <span class="badge badge-new">New</span></div>
+        <div class="mini-flow">
+          <div class="mini-step">~10 key-account customers have special negotiated rates per trade lane</div><div class="mini-arrow">↓</div>
+          <div class="mini-step">Rates valid 6–12 months, no price-request process needed</div><div class="mini-arrow">↓</div>
+          <div class="mini-step risk">Visible ONLY to assigned salesperson + Procurement. Not visible to other sales or CS.</div><div class="mini-arrow">↓</div>
+          <div class="mini-step">If surcharges change or validity expires, Procurement updates the rate file</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="callout callout-blue"><strong>Authentication:</strong> Microsoft Outlook / Active Directory integration agreed for pulling organizational structure and setting up role-based permissions automatically.</div>
+
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════ -->
+  <!-- FLOW 7 -->
+  <!-- ═══════════════════════════════════════════════════ -->
+  <div class="section">
+    <div class="section-head">
+      <h2>Flow 7 — Systems and Integration Architecture</h2>
+      <span class="badge badge-changed">Changed</span>
+      <button type="button" class="fb-trigger" data-flow="flow-7" data-title="Flow 7 — Systems and Integration Architecture"><span class="fb-icon">💬</span> Feedback <span class="fb-count"></span></button>
+    </div>
+    <div class="flow">
+      <div class="step system">
+        <span class="role">New Platform</span>
+        <div class="title">CL Connect (Inquiry → BL)</div>
+        <div class="desc">Handles inquiry, quotation, booking, SI, and BL workflows. Primary operating interface for CS, Sales, and Procurement.</div>
+        <div class="change-note new">★ This is the new system being built — replaces Excel trackers, WhatsApp coordination, and fragmented email workflows.</div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="step system">
+        <span class="role">Middleware</span>
+        <div class="title">INTTRA / WiseTech</div>
+        <div class="desc">Middleware for liner connectivity — rates, schedules, bookings, SI submission, and vessel tracking. Recently acquired by WiseTech (CargoWise parent). Spot rates available within ~4 months.</div>
+        <div class="change-note changed">▲ Primary integration path. Vessel schedules, ETD/ETA, and voyage data to be auto-pulled to eliminate manual vessel creation in GenSoft. Not all liners supported — manual fallback always required.</div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="step system">
+        <span class="role">Liner portals</span>
+        <div class="title">Carrier booking and SI</div>
+        <div class="desc">Fallback for liners not on INTTRA or when INTTRA has technical issues. Some liners (Maersk) may prefer direct portal over INTTRA.</div>
+      </div>
+      <div class="arrow">+</div>
+      <div class="step system">
+        <span class="role">GenSoft</span>
+        <div class="title">Jobs, House BL, invoicing</div>
+        <div class="desc">Existing ERP. Handles job creation, HBL, costing, customer invoicing from BL stage onward. API integration planned.</div>
+      </div>
+      <div class="arrow">+</div>
+      <div class="step system">
+        <span class="role">AMS</span>
+        <div class="title">Rate database (current)</div>
+        <div class="desc">Current rate and customer system. Will be replaced/absorbed by the new platform's rate module.</div>
+      </div>
+    </div>
+
+    <div class="split">
+      <div class="mini">
+        <div class="mini-title">Communication channels <span class="badge badge-changed">Updated</span></div>
+        <div class="mini-flow">
+          <div class="mini-step"><strong>WhatsApp Business API</strong> — Individual employee accounts connected to the system. Not a general company number.</div>
+          <div class="mini-step"><strong>Email</strong> — Individual work email connected per employee. System can send quotations, confirmations, reminders through connected email.</div>
+          <div class="mini-step"><strong>WhatsApp commercial group</strong> — Existing internal group for rate updates and trade information. Will be integrated alongside the system interface — both kept for transition period.</div>
+          <div class="mini-step"><strong>Customer portal (future)</strong> — Option for customers to accept/reject quotations via a secure link without logging in. Kept as optional, not mandatory.</div>
+        </div>
+      </div>
+      <div class="mini">
+        <div class="mini-title">Multi-office operations <span class="badge badge-new">New</span></div>
+        <div class="mini-flow">
+          <div class="mini-step">Colombo is the hub — entire workflow for all global offices happens here</div>
+          <div class="mini-step">Overseas offices (India, Australia, Dubai, UK, US) focus on sales activities</div>
+          <div class="mini-step">Operations, documentation, procurement, and finance are centralized in Colombo</div>
+          <div class="mini-step">System currently scoped for Colombo only, but architecture should support multi-office expansion</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════ -->
+  <!-- FLOW 8 -->
+  <!-- ═══════════════════════════════════════════════════ -->
+  <div class="section">
+    <div class="section-head">
+      <h2>Flow 8 — Command Center, Reporting &amp; Analytics</h2>
+      <span class="badge badge-new">New</span>
+      <button type="button" class="fb-trigger" data-flow="flow-8" data-title="Flow 8 — Command Center, Reporting &amp; Analytics"><span class="fb-icon">💬</span> Feedback <span class="fb-count"></span></button>
+    </div>
+    <div class="flow">
+      <div class="step system">
+        <span class="role">All Roles</span>
+        <div class="title">Command Center</div>
+        <div class="desc">Chat-based interface for natural language queries. Role-specific quick commands: new inquiry, follow up, pending items. Users type queries like "what are my pending jobs" and get structured results.</div>
+        <div class="change-note new">★ One of three primary operating interfaces alongside Dashboard and Workspace. Each role (CS, Sales, Procurement, Docs) gets role-specific quick commands and query access.</div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="step">
+        <span class="role">System</span>
+        <div class="title">List generation</div>
+        <div class="desc">Queries return structured lists: pending inquiries, overdue SIs, upcoming cut-offs, bookings awaiting confirmation, BLs pending approval. Filterable by date, customer, salesperson, trade lane.</div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="step doc">
+        <span class="role">All Roles</span>
+        <div class="title">Reports &amp; exports</div>
+        <div class="desc">Lists exportable as reports. KPIs configurable per role. Pending jobs, quotation conversion rates, booking fill rates, cut-off compliance — all queryable.</div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="step system">
+        <span class="role">Management</span>
+        <div class="title">Dashboard KPIs</div>
+        <div class="desc">Role-customized dashboards. CS sees pending inquiries and SI status. Sales sees quotation pipeline and customer activity. Procurement sees booking fill rates and contract utilization. Management sees cross-team overview.</div>
+        <div class="change-note new">★ Dashboards configurable — KPIs and metrics can be changed per role without development.</div>
+      </div>
+    </div>
+
+    <div class="split">
+      <div class="mini">
+        <div class="mini-title">Command Center quick commands <span class="badge badge-new">New</span></div>
+        <div class="mini-flow">
+          <div class="mini-step"><strong>Customer Service:</strong> new customer, new inquiry, follow up on inquiry, pending SI reminders, cut-off status</div>
+          <div class="mini-step"><strong>Sales:</strong> my pending quotations, customer activity this week, balance to sell, named account status</div>
+          <div class="mini-step"><strong>Procurement:</strong> pending booking requests, contract utilization %, spot rate opportunities, liner performance</div>
+          <div class="mini-step"><strong>Documentation:</strong> pending BL drafts, amendment cycles, filing deadlines (AMS/EBL), jobs awaiting vessel creation</div>
+        </div>
+      </div>
+      <div class="mini">
+        <div class="mini-title">Analytics &amp; tracking <span class="badge badge-new">New</span></div>
+        <div class="mini-flow">
+          <div class="mini-step"><strong>Contract utilization</strong> — contracted space vs confirmed bookings vs actual shipped. By trade lane, by liner, by period</div>
+          <div class="mini-step"><strong>Booking variance</strong> — booked containers vs actual containers at BL level. "Balance to sell" per booking visible to Sales</div>
+          <div class="mini-step"><strong>Speculative booking risk</strong> — CL Synergy-initiated bookings: fill rate, cancellation charges incurred, revenue impact</div>
+          <div class="mini-step"><strong>Quotation pipeline</strong> — inquiries → quotations sent → accepted → booked → shipped. Conversion at each stage, by salesperson</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="callout callout-blue"><strong>AI feature (optional):</strong> Natural language processing in Command Center allows free-text queries. Level of AI integration to be decided — can start with quick commands and structured queries, with natural language as an enhancement layer.</div>
+
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════ -->
+  <!-- GLOSSARY -->
+  <!-- ═══════════════════════════════════════════════════ -->
+  <!-- <div class="section">
+    <div class="section-head">
+      <h2>Glossary of Domain Terms</h2>
+      <span class="badge badge-changed">Updated</span>
+    </div>
+    <table>
+      <thead><tr><th>Term</th><th>Meaning</th></tr></thead>
+      <tbody>
+        <tr><td>SI</td><td><strong>Shipping Instructions.</strong> The shipment details the customer provides so the liner can prepare the BL. Includes shipper, consignee, cargo details, packages, weight, container number, seal number, etc.</td></tr>
+        <tr><td>BL</td><td><strong>Bill of Lading.</strong> The main shipping document — proof that cargo was shipped. Shows sender, receiver, and carrier.</td></tr>
+        <tr><td>Draft BL</td><td>A draft version of the BL sent for checking before the final is issued. Can be sent as PDF, Excel, or email body depending on customer preference.</td></tr>
+        <tr><td>Direct / Liner BL</td><td>A BL issued directly by the shipping line to the customer for a simple shipment.</td></tr>
+        <tr><td>Master BL</td><td>The BL issued by the shipping line to the freight forwarder (CLS). CLS is the shipper; the destination agent is the consignee.</td></tr>
+        <tr><td>House BL</td><td>The BL issued by the freight forwarder (CLS) to the customer. Uses the actual shipper, consignee, and notify party details.</td></tr>
+        <tr><td>Switch BL</td><td>A replacement BL with changed shipper details, used in trading to hide the original supplier from the final buyer. Can have up to 3 legs (first, second, third leg BL). Port details cannot be changed — only shipper identity.</td></tr>
+        <tr><td>EBL</td><td><strong>Electronic Bill of Lading.</strong> Digital version of BL. Mandated in Europe from 2028 — €65 penalty per paper BL after that date.</td></tr>
+        <tr><td>Release Order</td><td>Document that allows the customer to collect a container or proceed with shipment. This is the customer-facing booking confirmation — separate from internal booking confirmation.</td></tr>
+        <tr><td>Cut-off</td><td>The final deadline to complete a required task before the vessel process moves forward.</td></tr>
+        <tr><td>SI Cut-off</td><td>Last time to submit Shipping Instructions to the liner. System sends auto-reminders 2 days before.</td></tr>
+        <tr><td>BL Cut-off</td><td>Last time to finalize BL details with the liner.</td></tr>
+        <tr><td>VGM Cut-off</td><td>Last time to submit the verified container weight.</td></tr>
+        <tr><td>Gate-in / CY Cut-off</td><td>Deadline for the loaded container to enter the port/terminal.</td></tr>
+        <tr><td>CFS Cut-off</td><td>Deadline for loose/LCL cargo to reach the consolidation warehouse.</td></tr>
+        <tr><td>RA Number</td><td><strong>Rate Agreement Number.</strong> Reference number for a contracted rate with a liner. Must be included in booking requests for contract-rate shipments.</td></tr>
+        <tr><td>NAC Rate</td><td><strong>Named Account Contract.</strong> Special negotiated rates for key-account customers (~10 accounts). Valid 6–12 months. Restricted visibility — only assigned salesperson + procurement.</td></tr>
+        <tr><td>Spot Rate</td><td>A short-validity rate for a specific vessel or date. Can change every minute. Mainly relevant at booking time, not quotation time.</td></tr>
+        <tr><td>Contract / Monthly Rate</td><td>A pre-agreed rate with longer validity (15 days to 1 month). Standard for European trade lanes.</td></tr>
+        <tr><td>All-in Rate</td><td>A combined rate including base freight + all surcharges. CLS prefers all-in rates over itemized breakdowns.</td></tr>
+        <tr><td>AMS (Customs)</td><td><strong>Advanced Manifest System.</strong> US Customs filing required 48–72 hours before vessel arrival at the first US port.</td></tr>
+        <tr><td>AMS (Internal)</td><td>CLS internal pricing/customer system. Used for rates and customer records. Being replaced by the new platform.</td></tr>
+        <tr><td>Liner</td><td>Shipping line/carrier — MSC, CMA CGM, Maersk, OOCL, HMM, Hapag-Lloyd, ONE, Evergreen, etc.</td></tr>
+        <tr><td>Liner Portal</td><td>Shipping line's online system for bookings, SI entry, BL drafts, and tracking. Not all liners have one.</td></tr>
+        <tr><td>GenSoft</td><td>CLS internal ERP. Handles job creation, House BL, documents, costing, invoicing. The new system hands off to GenSoft at BL stage.</td></tr>
+        <tr><td>INTTRA / WiseTech</td><td>Middleware platform connecting freight forwarders to multiple liner systems. Recently merged under WiseTech (CargoWise parent). Primary integration path for the new system.</td></tr>
+        <tr><td>Shipper</td><td>The party sending the cargo. In a House BL, this is the actual shipper. In a Master BL, CLS is the shipper.</td></tr>
+        <tr><td>Consignee</td><td>The party receiving the cargo.</td></tr>
+        <tr><td>Destination Agent</td><td>Overseas partner/agent who handles the shipment at destination. Appears as consignee on the Master BL.</td></tr>
+        <tr><td>Cross-trading</td><td>A shipment between two foreign countries arranged by CLS without cargo physically involving Colombo.</td></tr>
+        <tr><td>KYC</td><td><strong>Know Your Customer.</strong> Compliance checks done before accepting a new customer. Finance approves or rejects.</td></tr>
+        <tr><td>LCL</td><td><strong>Less than Container Load.</strong> Multiple shippers' cargo consolidated into one container. Managed by a separate operations team.</td></tr>
+        <tr><td>FCL</td><td><strong>Full Container Load.</strong> One customer's cargo fills the entire container.</td></tr>
+      </tbody>
+    </table>
+  </div> -->
+
+  <div class="footer">Updated from AS-IS process flows based on the CL Connect meeting transcript and CL Synergy Workflow Feedback — June 2026. Changes highlighted with badges.</div>
+</div>
+
+<!-- Feedback side panel -->
+<div class="panel-overlay" id="panelOverlay"></div>
+<div class="feedback-panel" id="feedbackPanel">
+  <div class="panel-header">
+    <h3 id="panelTitle">Feedback</h3>
+    <button type="button" class="panel-close" id="panelClose">✕</button>
+  </div>
+  <div class="panel-body">
+    <form class="panel-form" id="panelForm">
+      <div class="panel-field">
+        <label for="panel-name">Name</label>
+        <input type="text" id="panel-name" name="name" placeholder="e.g. John Silva">
+      </div>
+      <div class="panel-field">
+        <label for="panel-contact">Contact No</label>
+        <input type="text" id="panel-contact" name="contact" placeholder="e.g. +94 77 123 4567">
+      </div>
+      <div class="panel-field">
+        <label for="panel-role">Role</label>
+        <input type="text" id="panel-role" name="role" placeholder="e.g. Sales Manager, CS Lead">
+      </div>
+      <div class="panel-field">
+        <label for="panel-dept">Department</label>
+        <input type="text" id="panel-dept" name="dept" placeholder="e.g. Procurement, Documentation">
+      </div>
+      <div class="panel-field">
+        <label for="panel-comment">Comment</label>
+        <textarea id="panel-comment" name="comment" placeholder="Share your feedback on this flow…" rows="4"></textarea>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <button type="submit" class="panel-submit" id="panelSubmitBtn">Submit Feedback</button>
+        <span id="panelStatus" style="font-size:12px;font-weight:600"></span>
+      </div>
+    </form>
+    <hr class="panel-divider">
+    <p class="panel-comments-title">Previous Comments</p>
+    <div class="panel-comments" id="panelComments"></div>
+  </div>
+</div>
+
+<script>
+(function(){
+  var STORAGE_KEY = 'cls_flow_feedback';
+  var panel = document.getElementById('feedbackPanel');
+  var overlay = document.getElementById('panelOverlay');
+  var panelTitle = document.getElementById('panelTitle');
+  var panelForm = document.getElementById('panelForm');
+  var panelComments = document.getElementById('panelComments');
+  var activeFlow = null;
+
+  function load(){
+    try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {}; }
+    catch(e){ return {}; }
+  }
+
+  function save(data){
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  }
+
+  function esc(s){
+    var d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  function renderComments(flowId){
+    var all = load();
+    var entries = all[flowId] || [];
+    panelComments.innerHTML = '';
+    entries.forEach(function(c){
+      var div = document.createElement('div');
+      div.className = 'fb-entry';
+      div.innerHTML =
+        '<div class="fb-meta">' +
+          (c.name ? '<span style="font-weight:700;color:#1e293b;font-size:12px">' + esc(c.name) + '</span>' : '') +
+          '<span class="fb-role">' + esc(c.role) + '</span>' +
+          '<span class="fb-dept">' + esc(c.dept) + '</span>' +
+          (c.contact ? '<span style="font-size:11px;color:#64748b">' + esc(c.contact) + '</span>' : '') +
+          '<span class="fb-time">' + esc(c.time) + '</span>' +
+        '</div>' +
+        '<div class="fb-text">' + esc(c.comment) + '</div>';
+      panelComments.appendChild(div);
+    });
+  }
+
+  function updateAllCounts(){
+    var all = load();
+    document.querySelectorAll('.fb-trigger').forEach(function(btn){
+      var flowId = btn.getAttribute('data-flow');
+      var count = (all[flowId] || []).length;
+      var span = btn.querySelector('.fb-count');
+      span.textContent = count > 0 ? count : '';
+    });
+  }
+
+  function openPanel(flowId, title){
+    activeFlow = flowId;
+    panelTitle.textContent = title;
+    panelForm.reset();
+    renderComments(flowId);
+    panel.classList.add('open');
+    overlay.classList.add('open');
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closePanel(){
+    panel.classList.remove('open');
+    overlay.classList.remove('open');
+    document.body.style.overflow = '';
+    activeFlow = null;
+  }
+
+  // Trigger buttons
+  document.querySelectorAll('.fb-trigger').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      var flowId = btn.getAttribute('data-flow');
+      var title = btn.getAttribute('data-title');
+      openPanel(flowId, title);
+    });
+  });
+
+  // Close
+  document.getElementById('panelClose').addEventListener('click', closePanel);
+  overlay.addEventListener('click', closePanel);
+  document.addEventListener('keydown', function(e){
+    if(e.key === 'Escape' && panel.classList.contains('open')) closePanel();
+  });
+
+  // Submit — Google Form backend
+  // ============================================================
+  // SETUP: Replace these placeholders with your Google Form details.
+  //   1. Create a Google Form with 4 fields: Role, Department, Comment, Flow Section
+  //   2. Open the form's preview, view page source, and search for "entry." to find IDs
+  //   3. Paste the form ID and entry IDs below
+  // ============================================================
+  var GFORM_ID    = '1FAIpQLSc_ABZCHDeyH8GEGsgBg6NRhvsiWcAZEAsK3pkRDey7oNrOkg';
+  var ENTRY_ROLE  = 'entry.645553895';      // e.g. 'entry.1234567890'
+  var ENTRY_NAME = 'entry.1480546603';
+  var ENTRY_CONTACT= 'entry.570678711';
+  var ENTRY_DEPT  = 'entry.2037853029';      // e.g. 'entry.987654321'
+  var ENTRY_COMMENT = 'entry.1597722029'; // e.g. 'entry.1122334455'
+  var ENTRY_FLOW  = 'entry.1548117655';      // e.g. 'entry.5566778899'
+  var GFORM_URL   = 'https://docs.google.com/forms/d/e/' + GFORM_ID + '/formResponse';
+
+  var submitBtn = document.getElementById('panelSubmitBtn');
+  var statusEl = document.getElementById('panelStatus');
+
+  panelForm.addEventListener('submit', function(e){
+    e.preventDefault();
+    var feedbackName = panelForm.querySelector('[name="name"]').value.trim();
+    var contact = panelForm.querySelector('[name="contact"]').value.trim();
+    var role = panelForm.querySelector('[name="role"]').value.trim();
+    var dept = panelForm.querySelector('[name="dept"]').value.trim();
+    var comment = panelForm.querySelector('[name="comment"]').value.trim();
+
+    if(!role || !dept || !comment){
+      alert('Please fill in all fields: Role, Department, and Comment.');
+      return;
+    }
+
+    var time = new Date().toLocaleString();
+
+    // Disable button and show sending state
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Sending…';
+    statusEl.textContent = '';
+    statusEl.style.color = '';
+
+    // Submit via hidden iframe to bypass CORS restrictions
+    var iframeName = 'gform-iframe-' + Date.now();
+    var iframe = document.createElement('iframe');
+    iframe.name = iframeName;
+    iframe.style.display = 'none';
+    document.body.appendChild(iframe);
+
+    var hiddenForm = document.createElement('form');
+    hiddenForm.method = 'POST';
+    hiddenForm.action = GFORM_URL;
+    hiddenForm.target = iframeName;
+    hiddenForm.style.display = 'none';
+
+    var fields = {};
+    fields[ENTRY_NAME] = feedbackName;
+    fields[ENTRY_CONTACT] = contact;
+    fields[ENTRY_ROLE] = role;
+    fields[ENTRY_DEPT] = dept;
+    fields[ENTRY_COMMENT] = comment;
+    fields[ENTRY_FLOW] = activeFlow + ' — ' + document.getElementById('panelTitle').textContent;
+
+    for(var name in fields){
+      var input = document.createElement('input');
+      input.type = 'hidden';
+      input.name = name;
+      input.value = fields[name];
+      hiddenForm.appendChild(input);
+    }
+
+    document.body.appendChild(hiddenForm);
+    hiddenForm.submit();
+
+    // Clean up iframe and form after a short delay, treat as success
+    setTimeout(function(){
+      document.body.removeChild(iframe);
+      document.body.removeChild(hiddenForm);
+    }, 2000);
+
+    // Save locally and update UI
+    var all = load();
+    if(!all[activeFlow]) all[activeFlow] = [];
+    all[activeFlow].push({ name: feedbackName, contact: contact, role: role, dept: dept, comment: comment, time: time });
+    save(all);
+    renderComments(activeFlow);
+    updateAllCounts();
+    panelForm.reset();
+    statusEl.style.color = '#0d7a3e';
+    statusEl.textContent = 'Submitted successfully';
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Submit Feedback';
+    setTimeout(function(){ statusEl.textContent = ''; }, 3000);
+  });
+
+  // Init badge counts
+  updateAllCounts();
+})();
+</script>
+</body>
+</html>

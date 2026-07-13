@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(docker tag:*)",
+      "Bash(docker push:*)"
+    ]
+  }
+}

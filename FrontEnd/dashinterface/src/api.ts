@@ -8,7 +8,9 @@
 import type {
   Inquiry, Customer, Task, MissingItem, Followup, Quote, Shipment, Employee, Booking,
   QuoteStatus, CustomerTier, PaymentTerms, SBU, QuoteLine, ActivityEntry, KycStatus, RateRecord,
-  InttraSpotRate, DeliveryType,
+  InttraSpotRate, DeliveryType, UnifiedRate, PortRecord,
+  LinerRecord, TradeLaneRecord, ContactPersonRecord, EmployeeRecord, ClientRecord,
+  ContainerLine,
 } from './mockData'
 
 const BASE = import.meta.env.VITE_API_BASE || '/api'
@@ -78,6 +80,18 @@ export function apiCreateInquiry(data: {
   channel?: string
   sbu?: SBU
   employee_id?: number
+  priority?: string
+  commodity_type?: string
+  container_type?: string
+  container_qty?: number
+  special_equipment?: string
+  cargo_weight?: number
+  is_fcl?: boolean
+  remark?: string
+  contact_person?: string
+  contact_channel_id?: string
+  containers?: ContainerLine[]
+  preferred_liners?: string[]
 }): Promise<Inquiry> {
   return post<Inquiry>('/inquiries', data)
 }
@@ -116,6 +130,11 @@ export function apiCreateCustomer(data: {
   tier?: CustomerTier
   payment_terms?: PaymentTerms
   location?: string
+  contact_person?: string
+  contact_channel?: string
+  contact_channel_value?: string
+  customer_type?: string
+  assigned_salesperson_id?: number
 }): Promise<Customer> {
   return post<Customer>('/customers', data)
 }
@@ -129,6 +148,11 @@ export function apiUpdateCustomer(name: string, patch_data: {
   min_margin_pct?: number
   notes?: string
   kyc_status?: KycStatus
+  contact_email?: string
+  contact_phone?: string
+  contact_person?: string
+  customer_type?: string
+  assigned_salesperson_id?: number
 }): Promise<{ success: boolean }> {
   return patch<{ success: boolean }>(`/customers/${encodeURIComponent(name)}`, patch_data)
 }
@@ -296,6 +320,50 @@ export function apiSearchRates(params: {
   if (params.liner_name) qs.set('liner_name', params.liner_name)
   if (params.rate_type) qs.set('rate_type', params.rate_type)
   return get<RateRecord[]>(`/rates/search?${qs.toString()}`)
+}
+
+// ---------------------------------------------------------------------------
+// Unified Rate Search (all DB rate tables)
+// ---------------------------------------------------------------------------
+
+export function apiSearchAllRates(params: {
+  origin?: string
+  destination?: string
+  container_type?: string
+}): Promise<UnifiedRate[]> {
+  const qs = new URLSearchParams()
+  if (params.origin) qs.set('origin', params.origin)
+  if (params.destination) qs.set('destination', params.destination)
+  if (params.container_type) qs.set('container_type', params.container_type)
+  return get<UnifiedRate[]>(`/rates/search-all?${qs.toString()}`)
+}
+
+export function apiUpdateRate(rateId: string, data: Record<string, unknown>): Promise<{ success: boolean }> {
+  return patch<{ success: boolean }>(`/rates/${encodeURIComponent(rateId)}`, data)
+}
+
+export function apiGetPorts(): Promise<PortRecord[]> {
+  return get<PortRecord[]>('/ports')
+}
+
+export function apiGetLiners(): Promise<LinerRecord[]> {
+  return get<LinerRecord[]>('/liners')
+}
+
+export function apiGetTradeLanes(): Promise<TradeLaneRecord[]> {
+  return get<TradeLaneRecord[]>('/trade-lanes')
+}
+
+export function apiGetContactPersons(): Promise<ContactPersonRecord[]> {
+  return get<ContactPersonRecord[]>('/contact-persons')
+}
+
+export function apiGetEmployeesDb(): Promise<EmployeeRecord[]> {
+  return get<EmployeeRecord[]>('/employees')
+}
+
+export function apiGetClientsDb(): Promise<ClientRecord[]> {
+  return get<ClientRecord[]>('/clients')
 }
 
 // ---------------------------------------------------------------------------

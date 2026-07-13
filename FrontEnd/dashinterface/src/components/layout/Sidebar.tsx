@@ -4,7 +4,7 @@ import {
   Users, FileText, Ship, LogOut, ShieldCheck, HelpCircle, X,
   UserPlus, PackagePlus, MessageSquarePlus,
   ListPlus, FileSpreadsheet, Search, ShieldAlert, CreditCard,
-  ArrowUpDown, Zap, Lock, Anchor, PackageCheck, AlertTriangle, Inbox,
+  ArrowUpDown, Zap, Lock, Anchor, PackageCheck, AlertTriangle, Inbox, DollarSign,
 } from 'lucide-react'
 import {
   ROLE_PAGE_ACCESS, ROLE_QUICK_COMMANDS, ROLE_ACTIONS, ROLE_COLORS,
@@ -22,6 +22,7 @@ const NAV_ITEMS: { id: PageId; label: string; icon: typeof MessageSquare }[] = [
   { id: 'chat', label: 'Command Center', icon: MessageSquare },
   { id: 'workspace', label: 'Workspace', icon: Inbox },
   { id: 'inquiry-list', label: 'Inquiry List', icon: ListChecks },
+  { id: 'rate-list', label: 'Rate List', icon: DollarSign },
   { id: 'quotations', label: 'Quotations', icon: FileText },
   { id: 'shipments', label: 'Shipments', icon: Ship },
   { id: 'followups', label: 'Operations', icon: ClipboardList },

@@ -1,5 +1,5 @@
 import { ChevronRight, Check, Clock } from 'lucide-react'
-import { WORKFLOW_STAGES, ROLE_LABELS, ROLE_COLORS, type WorkflowStage, type UserRole } from '../../mockData'
+import { WORKFLOW_STAGES, ROLE_LABELS, ROLE_COLORS, type WorkflowStage } from '../../mockData'
 import { useRole } from '../../RoleContext'
 
 interface WorkflowStepperProps {
@@ -20,44 +20,59 @@ export default function WorkflowStepper({ currentStage, onAdvance }: WorkflowSte
 
   return (
     <div className="wf-stepper">
-      <div className="wf-stepper-track">
+      <div className="wf-timeline">
         {WORKFLOW_STAGES.map((stage, idx) => {
           const done = idx < currentIdx
           const active = idx === currentIdx
           const pending = idx > currentIdx
           const roleColor = ROLE_COLORS[stage.role]
+          const isLast = idx === WORKFLOW_STAGES.length - 1
 
           return (
-            <div key={stage.id} className="wf-step-wrapper">
-              <div className={`wf-step ${done ? 'done' : ''} ${active ? 'active' : ''} ${pending ? 'pending' : ''}`}>
+            <div key={stage.id} className={`wf-tl-row ${done ? 'done' : ''} ${active ? 'active' : ''} ${pending ? 'pending' : ''}`}>
+              {/* Dot + vertical connector */}
+              <div className="wf-tl-track">
                 <div
-                  className="wf-step-dot"
+                  className="wf-tl-dot"
                   style={{
                     background: done ? roleColor : active ? roleColor : 'var(--border)',
                     borderColor: done || active ? roleColor : 'var(--border)',
+                    boxShadow: active ? `0 0 0 3px ${roleColor}20` : undefined,
                   }}
                 >
-                  {done ? <Check size={10} strokeWidth={3} color="#fff" /> : (
+                  {done ? <Check size={9} strokeWidth={3} color="#fff" /> : (
                     <span style={{ fontSize: 8, color: active ? '#fff' : 'var(--text-muted)', fontWeight: 700 }}>
                       {stage.step}
                     </span>
                   )}
                 </div>
-                <div className="wf-step-label" style={{ color: active ? 'var(--text)' : done ? 'var(--text-secondary)' : 'var(--text-muted)' }}>
-                  {stage.label}
-                </div>
-                <div
-                  className="wf-step-role"
+                {!isLast && (
+                  <div className="wf-tl-line" style={{ background: done ? roleColor : 'var(--border)' }} />
+                )}
+              </div>
+
+              {/* Label + role */}
+              <div className="wf-tl-content">
+                <span
+                  className="wf-tl-label"
                   style={{
-                    color: roleColor,
-                    opacity: pending ? 0.5 : 1,
+                    color: active ? 'var(--text)' : done ? 'var(--text-secondary)' : 'var(--text-muted)',
+                    fontWeight: active ? 700 : done ? 500 : 400,
                   }}
                 >
+                  {stage.label}
+                </span>
+                <span
+                  className="wf-tl-role"
+                  style={{ color: roleColor, opacity: pending ? 0.5 : 1 }}
+                >
                   {ROLE_LABELS[stage.role]}
-                </div>
+                </span>
               </div>
-              {idx < WORKFLOW_STAGES.length - 1 && (
-                <div className="wf-step-connector" style={{ background: done ? roleColor : 'var(--border)' }} />
+
+              {/* Active indicator */}
+              {active && (
+                <span className="wf-tl-current">Current</span>
               )}
             </div>
           )

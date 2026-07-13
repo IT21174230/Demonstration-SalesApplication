@@ -1661,41 +1661,46 @@
   font-weight: 600;
 }
 
-/* ==================== Workflow Stepper ==================== */
+/* ==================== Workflow Stepper (vertical timeline) ==================== */
 
 .wf-stepper {
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: 10px;
-  padding: 16px;
+  padding: 16px 18px;
 }
 
-.wf-stepper-track {
+.wf-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.wf-tl-row {
   display: flex;
   align-items: flex-start;
-  overflow-x: auto;
-  padding-bottom: 4px;
+  gap: 12px;
+  min-height: 32px;
 }
 
-.wf-step-wrapper {
-  display: flex;
-  align-items: flex-start;
-  flex: 1;
-  min-width: 0;
+.wf-tl-row.active {
+  background: rgba(79,70,229,0.03);
+  margin: 0 -18px;
+  padding: 4px 18px;
+  border-radius: 6px;
 }
 
-.wf-step {
+.wf-tl-track {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
-  min-width: 72px;
   flex-shrink: 0;
+  width: 20px;
 }
 
-.wf-step-dot {
-  width: 22px;
-  height: 22px;
+.wf-tl-dot {
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
   border: 2px solid;
   display: flex;
@@ -1705,36 +1710,54 @@
   transition: all 0.2s;
 }
 
-.wf-step.active .wf-step-dot {
-  box-shadow: 0 0 0 3px rgba(79,70,229,0.15);
-}
-
-.wf-step-label {
-  font-size: 9px;
-  font-weight: 600;
-  text-align: center;
-  line-height: 1.2;
-  max-width: 80px;
-}
-
-.wf-step-role {
-  font-size: 8px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.wf-step-connector {
-  height: 2px;
+.wf-tl-line {
+  width: 2px;
   flex: 1;
-  min-width: 12px;
-  margin-top: 11px;
+  min-height: 12px;
   border-radius: 1px;
   transition: background 0.2s;
 }
 
+.wf-tl-content {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  padding: 1px 0;
+}
+
+.wf-tl-label {
+  font-size: 12px;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+
+.wf-tl-role {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
+.wf-tl-current {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--accent);
+  background: rgba(79,70,229,0.08);
+  padding: 2px 8px;
+  border-radius: 4px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
 .wf-stepper-action {
-  margin-top: 12px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
   display: flex;
   justify-content: flex-end;
 }

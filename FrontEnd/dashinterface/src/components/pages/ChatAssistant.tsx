@@ -2,15 +2,21 @@ import { useEffect, useRef, useState } from 'react'
 import {
   Send, Sparkles, User as UserIcon, Wifi, WifiOff,
   UserPlus, PackagePlus, MessageSquarePlus, ListPlus,
-  FileSpreadsheet, Search, X, ChevronRight, Lock,
+  FileSpreadsheet, Search, X, ChevronRight, Lock, Plus,
   ShieldAlert, CreditCard, ArrowUpDown, Zap,
   Anchor, Ship, PackageCheck,
 } from 'lucide-react'
 import { usePersistentState } from '../../hooks'
+import TagInput from '../shared/TagInput'
 import {
   nowStamp, SBUS, ROLE_QUICK_COMMANDS, ROLE_LABELS, ROLE_COLORS,
+  INQUIRY_PRIORITIES, COMMODITY_TYPES, CONTAINER_TYPES, SPECIAL_EQUIPMENT_OPTIONS, CUSTOMER_TYPES,
+  findDuplicateCustomers, emptyContainerLine,
   type Inquiry, type Customer, type SBU, type CustomerTier, type PaymentTerms, type DeliveryType,
+  type InquiryPriority, type CommodityType, type ContainerType, type SpecialEquipment, type CustomerType,
+  type LinerRecord, type ContainerLine,
 } from '../../mockData'
+import { apiGetLiners } from '../../api'
 import { useRole } from '../../RoleContext'
 import { useWebSocket } from '../../useWebSocket'
 
@@ -44,8 +50,8 @@ const QUICK_COMMANDS: QuickCommand[] = [
 /* ------------------------------------------------------------------ */
 /*  Form state types                                                   */
 /* ------------------------------------------------------------------ */
-interface NewCustomerForm { name: string; location: string; tier: CustomerTier; payment: PaymentTerms }
-interface NewInquiryForm  { customer: string; request: string; origin: string; destination: string; channel: 'WhatsApp' | 'Email' | 'Phone'; sbu: SBU; deliveryType: DeliveryType }
+interface NewCustomerForm { name: string; location: string; tier: CustomerTier; payment: PaymentTerms; customerType: CustomerType; contactPerson: string; contactChannel: 'Email' | 'WhatsApp' | 'WeChat' | ''; contactChannelValue: string }
+interface NewInquiryForm  { customer: string; request: string; origin: string; channel: 'WhatsApp' | 'Email' | 'Phone'; sbu: SBU; deliveryType: DeliveryType; priority: InquiryPriority; specialEquipment: SpecialEquipment; contactPerson: string; contactChannelId: string; preferredLiners: string[]; remark: string; containers: ContainerLine[] }
 interface FollowUpForm    { customer: string; note: string; markComplete: boolean }
 interface NewTaskForm     { customer: string; task: string; dueDate: string }
 interface QuoteForm       { customer: string }
@@ -99,8 +105,9 @@ export default function ChatAssistant({
   const [activeCmd, setActiveCmd] = useState<string | null>(null)
 
   // Form states
-  const [custForm, setCustForm]           = useState<NewCustomerForm>({ name: '', location: '', tier: 'Regular', payment: 'Pay Upfront' })
-  const [inqForm, setInqForm]             = useState<NewInquiryForm>({ customer: '', request: '', origin: '', destination: '', channel: 'Email', sbu: 'Ocean Exports', deliveryType: 'port-to-port' })
+  const [custForm, setCustForm]           = useState<NewCustomerForm>({ name: '', location: '', tier: 'Regular', payment: 'Pay Upfront', customerType: 'Shipper', contactPerson: '', contactChannel: '', contactChannelValue: '' })
+  const defaultInqForm: NewInquiryForm = { customer: '', request: '', origin: '', channel: 'Email', sbu: 'Ocean Exports', deliveryType: 'port-to-port', priority: 'Medium', specialEquipment: 'None', contactPerson: '', contactChannelId: '', preferredLiners: [], remark: '', containers: [emptyContainerLine()] }
+  const [inqForm, setInqForm]             = useState<NewInquiryForm>(defaultInqForm)
   const [fuForm, setFuForm]               = useState<FollowUpForm>({ customer: '', note: '', markComplete: false })
   const [taskForm, setTaskForm]           = useState<NewTaskForm>({ customer: '', task: '', dueDate: '' })
   const [quoteForm, setQuoteForm]         = useState<QuoteForm>({ customer: '' })
@@ -114,6 +121,8 @@ export default function ChatAssistant({
   const [releaseBkgForm, setReleaseBkgForm] = useState<ReleaseBookingForm>({ bookingId: '', note: '' })
 
   const customerNames = customers.map(c => c.name)
+  const [linerList, setLinerList] = useState<LinerRecord[]>([])
+  useEffect(() => { apiGetLiners().then(setLinerList).catch(() => {}) }, [])
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
@@ -187,8 +196,8 @@ export default function ChatAssistant({
   const openCommand = (id: string) => {
     setActiveCmd(id)
     // Reset forms when opening
-    setCustForm({ name: '', location: '', tier: 'Regular', payment: 'Pay Upfront' })
-    setInqForm({ customer: '', request: '', origin: '', destination: '', channel: 'Email', sbu: 'Ocean Exports', deliveryType: 'port-to-port' })
+    setCustForm({ name: '', location: '', tier: 'Regular', payment: 'Pay Upfront', customerType: 'Shipper', contactPerson: '', contactChannel: '', contactChannelValue: '' })
+    setInqForm({ ...defaultInqForm, containers: [emptyContainerLine()] })
     setFuForm({ customer: '', note: '', markComplete: false })
     setTaskForm({ customer: '', task: '', dueDate: '' })
     setQuoteForm({ customer: '' })
@@ -209,12 +218,14 @@ export default function ChatAssistant({
     switch (activeCmd) {
       case 'new-customer':
         if (!custForm.name.trim()) return
-        message = `[CMD /new customer] name=${custForm.name} | location=${custForm.location || 'Colombo, Sri Lanka'} | tier=${custForm.tier} | payment_terms=${custForm.payment}`
+        message = `[CMD /new customer] name=${custForm.name} | location=${custForm.location || 'Colombo, Sri Lanka'} | tier=${custForm.tier} | payment_terms=${custForm.payment} | customer_type=${custForm.customerType} | contact_person=${custForm.contactPerson || ''} | contact_channel=${custForm.contactChannel || ''} | contact_channel_value=${custForm.contactChannelValue || ''}`
         break
-      case 'new-inquiry':
+      case 'new-inquiry': {
         if (!inqForm.customer.trim() || !inqForm.request.trim()) return
-        message = `[CMD /new inquiry] customer=${inqForm.customer} | request=${inqForm.request} | origin=${inqForm.origin || 'TBD'} | destination=${inqForm.destination || 'TBD'} | channel=${inqForm.channel} | sbu=${inqForm.sbu} | delivery_type=${inqForm.deliveryType}`
+        const containersStr = inqForm.containers.map((c, i) => `container_${i + 1}=[type=${c.containerType}, qty=${c.quantity}, weight=${c.weight || ''}, commodity_type=${c.commodityType}, commodity_name=${c.commodityName || ''}, destination=${c.destination || 'TBD'}, fcl_lcl=${c.isFcl ? 'FCL' : 'LCL'}, zip_code=${c.zipCode || ''}, door_agents=${c.doorAgents.join(';') || ''}, free_time=${c.freeTime || ''}]`).join(' | ')
+        message = `[CMD /new inquiry] customer=${inqForm.customer} | request=${inqForm.request} | origin=${inqForm.origin || 'TBD'} | channel=${inqForm.channel} | sbu=${inqForm.sbu} | delivery_type=${inqForm.deliveryType} | priority=${inqForm.priority} | special_equipment=${inqForm.specialEquipment} | contact_person=${inqForm.contactPerson || ''} | contact_channel_id=${inqForm.contactChannelId || ''} | preferred_liners=${inqForm.preferredLiners.join(';') || ''} | remark=${inqForm.remark || ''} | ${containersStr}`
         break
+      }
       case 'follow-up':
         if (!fuForm.customer.trim() || !fuForm.note.trim()) return
         message = `[CMD /follow up] customer=${fuForm.customer} | note=${fuForm.note} | mark_complete=${fuForm.markComplete}`
@@ -281,12 +292,201 @@ export default function ChatAssistant({
           </div>
           <button className="qc-form-close" onClick={closeCommand}><X size={14} /></button>
         </div>
-        <div className="qc-form-body">
-          {activeCmd === 'new-customer' && (
+        <div className="qc-form-body" style={activeCmd === 'new-inquiry' ? { maxHeight: 500 } : undefined}>
+          {activeCmd === 'new-inquiry' && (
+            <>
+              <FormField label="Customer Name" required>
+                <input className="qc-input" list="qc-cust-list" placeholder="Select or type customer name" value={inqForm.customer} onChange={e => setInqForm(p => ({ ...p, customer: e.target.value }))} autoFocus />
+                <datalist id="qc-cust-list">{customerNames.map(n => <option key={n} value={n} />)}</datalist>
+              </FormField>
+              <FormField label="Contact Person">
+                <input className="qc-input" placeholder="Name of the person making the inquiry" value={inqForm.contactPerson} onChange={e => setInqForm(p => ({ ...p, contactPerson: e.target.value }))} />
+              </FormField>
+              <FormField label="Request / Description" required>
+                <input className="qc-input" placeholder="e.g. 2x 40 HC Colombo to Hamburg — garments" value={inqForm.request} onChange={e => setInqForm(p => ({ ...p, request: e.target.value }))} />
+              </FormField>
+              <div className="qc-form-row">
+                <FormField label="Origin">
+                  <input className="qc-input" placeholder="e.g. Colombo" value={inqForm.origin} onChange={e => setInqForm(p => ({ ...p, origin: e.target.value }))} />
+                </FormField>
+                <FormField label="Priority">
+                  <select className="qc-select" value={inqForm.priority} onChange={e => setInqForm(p => ({ ...p, priority: e.target.value as InquiryPriority }))}>
+                    {INQUIRY_PRIORITIES.map(p => <option key={p} value={p}>{p}</option>)}
+                  </select>
+                </FormField>
+              </div>
+              <div className="qc-form-row">
+                <FormField label="Channel">
+                  <select className="qc-select" value={inqForm.channel} onChange={e => { setInqForm(p => ({ ...p, channel: e.target.value as 'WhatsApp' | 'Email' | 'Phone', contactChannelId: '' })) }}>
+                    <option>Email</option><option>WhatsApp</option><option>Phone</option>
+                  </select>
+                </FormField>
+                <FormField label={inqForm.channel === 'Email' ? 'Email Address' : inqForm.channel === 'WhatsApp' ? 'WhatsApp Number' : 'Phone Number'}>
+                  <input className="qc-input" type={inqForm.channel === 'Email' ? 'email' : 'tel'} value={inqForm.contactChannelId} onChange={e => setInqForm(p => ({ ...p, contactChannelId: e.target.value }))} placeholder={inqForm.channel === 'Email' ? 'e.g. john@acme.com' : inqForm.channel === 'WhatsApp' ? 'e.g. +94 77 123 4567' : 'e.g. +94 11 234 5678'} />
+                </FormField>
+              </div>
+              <div className="qc-form-row">
+                <FormField label="SBU">
+                  <select className="qc-select" value={inqForm.sbu} onChange={e => setInqForm(p => ({ ...p, sbu: e.target.value as SBU }))}>
+                    {SBUS.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </FormField>
+                <FormField label="Delivery Type">
+                  <select className="qc-select" value={inqForm.deliveryType} onChange={e => setInqForm(p => ({ ...p, deliveryType: e.target.value as DeliveryType }))}>
+                    <option value="port-to-port">Port to Port</option>
+                    <option value="door-to-door">Door to Door</option>
+                  </select>
+                </FormField>
+              </div>
+              <div className="qc-form-row">
+                <FormField label="Special Equipment">
+                  <select className="qc-select" value={inqForm.specialEquipment} onChange={e => setInqForm(p => ({ ...p, specialEquipment: e.target.value as SpecialEquipment }))}>
+                    {SPECIAL_EQUIPMENT_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </FormField>
+                <FormField label="Preferred Liners">
+                  <TagInput
+                    values={inqForm.preferredLiners}
+                    onChange={preferredLiners => setInqForm(p => ({ ...p, preferredLiners }))}
+                    suggestions={linerList.map(l => l.name)}
+                    placeholder="Type to add liners..."
+                  />
+                </FormField>
+                <FormField label="Remarks">
+                  <input className="qc-input" value={inqForm.remark} onChange={e => setInqForm(p => ({ ...p, remark: e.target.value }))} placeholder="Any special instructions or notes" />
+                </FormField>
+              </div>
+
+              {/* Containers */}
+              <div style={{ marginTop: 10, borderTop: '1px solid var(--border)', paddingTop: 10 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)', marginBottom: 8 }}>Containers</div>
+                {inqForm.containers.map((c, idx) => (
+                  <div key={idx} style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 10, marginBottom: 8, background: 'var(--bg)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                      <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)' }}>Container {idx + 1}</span>
+                      {inqForm.containers.length > 1 && (
+                        <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 2 }} onClick={() => setInqForm(p => ({ ...p, containers: p.containers.filter((_, i) => i !== idx) }))}>
+                          <X size={12} />
+                        </button>
+                      )}
+                    </div>
+                    <div className="qc-form-row" style={{ marginBottom: 6 }}>
+                      <FormField label="Commodity Type">
+                        <select className="qc-select" value={c.commodityType} onChange={e => setInqForm(p => ({ ...p, containers: p.containers.map((cc, i) => i === idx ? { ...cc, commodityType: e.target.value as CommodityType } : cc) }))}>
+                          {COMMODITY_TYPES.map(ct => <option key={ct} value={ct}>{ct}</option>)}
+                        </select>
+                      </FormField>
+                      <FormField label="Commodity Name">
+                        <input className="qc-input" value={c.commodityName} onChange={e => setInqForm(p => ({ ...p, containers: p.containers.map((cc, i) => i === idx ? { ...cc, commodityName: e.target.value } : cc) }))} placeholder="e.g. Cotton T-shirts" />
+                      </FormField>
+                    </div>
+                    <div className="qc-form-row" style={{ marginBottom: 6 }}>
+                      <FormField label="Destination">
+                        <input className="qc-input" value={c.destination} onChange={e => setInqForm(p => ({ ...p, containers: p.containers.map((cc, i) => i === idx ? { ...cc, destination: e.target.value } : cc) }))} placeholder="e.g. Hamburg" />
+                      </FormField>
+                      <FormField label="Container Type">
+                        <select className="qc-select" value={c.containerType} onChange={e => setInqForm(p => ({ ...p, containers: p.containers.map((cc, i) => i === idx ? { ...cc, containerType: e.target.value as ContainerType } : cc) }))}>
+                          {CONTAINER_TYPES.map(ct => <option key={ct} value={ct}>{ct}</option>)}
+                        </select>
+                      </FormField>
+                    </div>
+                    <div className="qc-form-row">
+                      <FormField label="Qty">
+                        <input className="qc-input" type="number" value={c.quantity} onChange={e => setInqForm(p => ({ ...p, containers: p.containers.map((cc, i) => i === idx ? { ...cc, quantity: Math.max(1, Number(e.target.value)) } : cc) }))} min={1} />
+                      </FormField>
+                      <FormField label="Weight (kg)">
+                        <input className="qc-input" type="number" value={c.weight} onChange={e => setInqForm(p => ({ ...p, containers: p.containers.map((cc, i) => i === idx ? { ...cc, weight: e.target.value === '' ? '' : Number(e.target.value) } : cc) }))} min={0} placeholder="e.g. 18000" />
+                      </FormField>
+                      <FormField label="FCL / LCL">
+                        <select className="qc-select" value={c.isFcl ? 'FCL' : 'LCL'} onChange={e => setInqForm(p => ({ ...p, containers: p.containers.map((cc, i) => i === idx ? { ...cc, isFcl: e.target.value === 'FCL' } : cc) }))}>
+                          <option value="FCL">FCL</option>
+                          <option value="LCL">LCL</option>
+                        </select>
+                      </FormField>
+                    </div>
+                    <div className="qc-form-row" style={{ marginBottom: 6 }}>
+                      <FormField label="Zip Code">
+                        <input className="qc-input" value={c.zipCode} onChange={e => setInqForm(p => ({ ...p, containers: p.containers.map((cc, i) => i === idx ? { ...cc, zipCode: e.target.value } : cc) }))} placeholder="e.g. 20095" />
+                      </FormField>
+                      <FormField label="Free Time (days)">
+                        <input className="qc-input" type="number" value={c.freeTime} onChange={e => setInqForm(p => ({ ...p, containers: p.containers.map((cc, i) => i === idx ? { ...cc, freeTime: e.target.value === '' ? '' : Number(e.target.value) } : cc) }))} min={0} placeholder="e.g. 14" />
+                      </FormField>
+                    </div>
+                    <div className="qc-form-row" style={{ marginBottom: 6 }}>
+                      <FormField label="Door Agent">
+                        <TagInput
+                          values={c.doorAgents}
+                          onChange={doorAgents => setInqForm(p => ({ ...p, containers: p.containers.map((cc, i) => i === idx ? { ...cc, doorAgents } : cc) }))}
+                          suggestions={linerList.map(l => l.name)}
+                          placeholder="Type to add agents..."
+                        />
+                      </FormField>
+                    </div>
+                  </div>
+                ))}
+                <button
+                  style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--accent)', background: 'none', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 10px', cursor: 'pointer' }}
+                  onClick={() => {
+                    const first = inqForm.containers[0]
+                    setInqForm(p => ({ ...p, containers: [...p.containers, { ...emptyContainerLine(), commodityType: first?.commodityType ?? 'General', commodityName: first?.commodityName ?? '', destination: first?.destination ?? '' }] }))
+                  }}
+                >
+                  <Plus size={11} /> Add Container
+                </button>
+              </div>
+            </>
+          )}
+          {activeCmd === 'new-customer' && (() => {
+            const dupes = custForm.name.trim().length >= 2
+              ? findDuplicateCustomers({ name: custForm.name.trim(), contact_person: custForm.contactPerson || undefined }, customers)
+              : []
+            return (
             <>
               <FormField label="Customer Name" required>
                 <input className="qc-input" placeholder="e.g. Lanka Exports" value={custForm.name} onChange={e => setCustForm(p => ({ ...p, name: e.target.value }))} autoFocus />
               </FormField>
+              {dupes.length > 0 && (
+                <div style={{ padding: '8px 12px', background: 'rgba(217,119,6,0.06)', border: '1px solid rgba(217,119,6,0.2)', borderRadius: 8, fontSize: 11, marginBottom: 8 }}>
+                  <div style={{ fontWeight: 700, color: '#b45309', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <ShieldAlert size={12} /> Possible duplicate{dupes.length > 1 ? 's' : ''} detected
+                  </div>
+                  {dupes.slice(0, 3).map(d => (
+                    <div key={d.customer.id} style={{ color: 'var(--text-secondary)', marginTop: 2 }}>
+                      <strong>{d.customer.name}</strong> ({d.customer.id}) — {d.reasons.join(', ')} · score {d.score}
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="qc-form-row">
+                <FormField label="Customer Type">
+                  <select className="qc-select" value={custForm.customerType} onChange={e => setCustForm(p => ({ ...p, customerType: e.target.value as CustomerType }))}>
+                    {CUSTOMER_TYPES.map(t => <option key={t}>{t}</option>)}
+                  </select>
+                </FormField>
+                <FormField label="Contact Person">
+                  <input className="qc-input" placeholder="e.g. John Silva" value={custForm.contactPerson} onChange={e => setCustForm(p => ({ ...p, contactPerson: e.target.value }))} />
+                </FormField>
+              </div>
+              <div className="qc-form-row">
+                <FormField label="Contact Channel">
+                  <select className="qc-select" value={custForm.contactChannel} onChange={e => setCustForm(p => ({ ...p, contactChannel: e.target.value as NewCustomerForm['contactChannel'], contactChannelValue: '' }))}>
+                    <option value="">— None —</option>
+                    <option value="Email">Email</option>
+                    <option value="WhatsApp">WhatsApp</option>
+                    <option value="WeChat">WeChat</option>
+                  </select>
+                </FormField>
+                {custForm.contactChannel && (
+                  <FormField label={custForm.contactChannel === 'Email' ? 'Email Address' : custForm.contactChannel === 'WhatsApp' ? 'WhatsApp Number' : 'WeChat ID'}>
+                    <input
+                      className="qc-input"
+                      placeholder={custForm.contactChannel === 'Email' ? 'e.g. john@lanka.lk' : custForm.contactChannel === 'WhatsApp' ? 'e.g. +94 77 123 4567' : 'e.g. john_silva_lk'}
+                      value={custForm.contactChannelValue}
+                      onChange={e => setCustForm(p => ({ ...p, contactChannelValue: e.target.value }))}
+                    />
+                  </FormField>
+                )}
+              </div>
               <FormField label="Location">
                 <input className="qc-input" placeholder="e.g. Colombo, Sri Lanka" value={custForm.location} onChange={e => setCustForm(p => ({ ...p, location: e.target.value }))} />
               </FormField>
@@ -303,44 +503,9 @@ export default function ChatAssistant({
                 </FormField>
               </div>
             </>
-          )}
-          {activeCmd === 'new-inquiry' && (
-            <>
-              <FormField label="Customer" required>
-                <input className="qc-input" list="qc-cust-list" placeholder="Select or type customer name" value={inqForm.customer} onChange={e => setInqForm(p => ({ ...p, customer: e.target.value }))} autoFocus />
-                <datalist id="qc-cust-list">{customerNames.map(n => <option key={n} value={n} />)}</datalist>
-              </FormField>
-              <FormField label="Request Details" required>
-                <input className="qc-input" placeholder="e.g. 12 reefer containers" value={inqForm.request} onChange={e => setInqForm(p => ({ ...p, request: e.target.value }))} />
-              </FormField>
-              <div className="qc-form-row">
-                <FormField label="Origin">
-                  <input className="qc-input" placeholder="e.g. Colombo" value={inqForm.origin} onChange={e => setInqForm(p => ({ ...p, origin: e.target.value }))} />
-                </FormField>
-                <FormField label="Destination">
-                  <input className="qc-input" placeholder="e.g. Hamburg" value={inqForm.destination} onChange={e => setInqForm(p => ({ ...p, destination: e.target.value }))} />
-                </FormField>
-              </div>
-              <div className="qc-form-row">
-                <FormField label="Channel">
-                  <select className="qc-select" value={inqForm.channel} onChange={e => setInqForm(p => ({ ...p, channel: e.target.value as 'WhatsApp' | 'Email' | 'Phone' }))}>
-                    <option>Email</option><option>WhatsApp</option><option>Phone</option>
-                  </select>
-                </FormField>
-                <FormField label="SBU">
-                  <select className="qc-select" value={inqForm.sbu} onChange={e => setInqForm(p => ({ ...p, sbu: e.target.value as SBU }))}>
-                    {SBUS.map(s => <option key={s}>{s}</option>)}
-                  </select>
-                </FormField>
-              </div>
-              <FormField label="Delivery Type">
-                <select className="qc-select" value={inqForm.deliveryType} onChange={e => setInqForm(p => ({ ...p, deliveryType: e.target.value as DeliveryType }))}>
-                  <option value="port-to-port">Port-to-Port</option>
-                  <option value="door-to-door">Door-to-Door</option>
-                </select>
-              </FormField>
-            </>
-          )}
+            )
+          })()}
+          {/* new-inquiry is handled by renderNewInquiryModal() */}
           {activeCmd === 'follow-up' && (
             <>
               <FormField label="Customer" required>
@@ -494,6 +659,7 @@ export default function ChatAssistant({
   }
 
   return (
+    <>
     <div className="db-page-anim ca-wrap">
       <div className="db-page-head">
         <div className="db-page-head-row">
@@ -585,6 +751,7 @@ export default function ChatAssistant({
         </div>
       </div>
     </div>
+    </>
   )
 }
 

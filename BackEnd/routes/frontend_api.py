@@ -8,7 +8,7 @@ surface uses REST, chat surface uses WebSocket (unchanged).
 import os
 import resend
 from datetime import datetime
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Body, HTTPException
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
@@ -33,6 +33,11 @@ from Utils.DB_Query.frontend_queries import (
     get_fe_activity_log, create_fe_activity,
     search_fe_rates, simulate_inttra_spot_rates, simulate_inttra_booking,
     update_fe_inquiry_stage,
+)
+from Utils.DB_Query.rate_queries import (
+    search_all_rates, update_rate,
+    get_ports, get_liners, get_trade_lanes,
+    get_contact_persons, get_employees_db, get_clients,
 )
 
 router = APIRouter(prefix="/api")
@@ -137,6 +142,9 @@ class CustomerCreate(BaseModel):
     tier: str = "Regular"
     payment_terms: str = "Pay Upfront"
     location: str = "Colombo, Sri Lanka"
+    contact_person: str = ""
+    contact_channel: str = ""
+    contact_channel_value: str = ""
 
 
 @router.post("/customers")
@@ -183,6 +191,64 @@ def rate_search(
         container_type=container_type, liner_name=liner_name,
         rate_type=rate_type,
     )
+
+
+@router.get("/rates/search-all")
+def rate_search_all(
+    origin: str | None = None,
+    destination: str | None = None,
+    container_type: str | None = None,
+):
+    """Unified rate search across all DB rate tables."""
+    return search_all_rates(
+        origin=origin, destination=destination,
+        container_type=container_type,
+    )
+
+
+@router.patch("/rates/{rate_id:path}")
+def update_rate_endpoint(rate_id: str, body: dict = Body(...)):
+    """Update a rate by its composite ID (e.g. 'contracted_fak_rate:3')."""
+    ok = update_rate(rate_id, body)
+    if not ok:
+        raise HTTPException(404, "Rate not found")
+    return {"success": True}
+
+
+@router.get("/ports")
+def list_ports():
+    """Return all known ports for autocomplete."""
+    return get_ports()
+
+
+@router.get("/liners")
+def list_liners():
+    """Return all liners for dropdown selection."""
+    return get_liners()
+
+
+@router.get("/trade-lanes")
+def list_trade_lanes():
+    """Return all trade lanes for dropdown selection."""
+    return get_trade_lanes()
+
+
+@router.get("/contact-persons")
+def list_contact_persons():
+    """Return all contact persons (with client name) for dropdown selection."""
+    return get_contact_persons()
+
+
+@router.get("/employees")
+def list_employees():
+    """Return all employees from the DB for dropdown selection."""
+    return get_employees_db()
+
+
+@router.get("/clients")
+def list_clients():
+    """Return all clients for dropdown selection."""
+    return get_clients()
 
 
 # ---------------------------------------------------------------------------

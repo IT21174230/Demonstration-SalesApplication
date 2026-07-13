@@ -1,10 +1,20 @@
-import { useMemo } from 'react'
-import { ShieldAlert, AlertTriangle } from 'lucide-react'
-import type { Inquiry, Customer, CustomerTier } from '../../mockData'
+import { useMemo, useState } from 'react'
+import { ShieldAlert, AlertTriangle, Edit3 } from 'lucide-react'
+import { EMPLOYEES, type Inquiry, type Customer, type CustomerTier, type CustomerType } from '../../mockData'
+import CustomerEditModal from '../shared/CustomerEditModal'
+
+const CTYPE_BADGE: Record<CustomerType, string> = {
+  'Shipper': 'db-badge accent',
+  'Buyer':   'db-badge purple',
+  'Agent':   'db-badge muted',
+  'Trader':  'db-badge warning',
+}
 
 interface CustomersProps {
   inquiries: Inquiry[]
   customers: Customer[]
+  onUpdateCustomer: (customerName: string, patch: Partial<Omit<Customer, 'id'>>) => void
+  onFlash: (msg: string) => void
 }
 
 interface CustomerRow extends Customer {
@@ -24,7 +34,8 @@ const TIER_BADGE: Record<CustomerTier, string> = {
 // Order tiers Key Account → Regular → Walk-in when sorting.
 const TIER_ORDER: Record<CustomerTier, number> = { 'Key Account': 0, 'Regular': 1, 'Walk-in': 2 }
 
-export default function Customers({ inquiries, customers }: CustomersProps) {
+export default function Customers({ inquiries, customers, onUpdateCustomer, onFlash }: CustomersProps) {
+  const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null)
   const rows = useMemo<CustomerRow[]>(() => {
     // Aggregate inquiry stats per customer name (case-insensitive).
     const stats = new Map<string, { totalInquiries: number; pending: number; completed: number; channels: Set<string>; lastContact: string }>()
@@ -101,14 +112,16 @@ export default function Customers({ inquiries, customers }: CustomersProps) {
             <thead>
               <tr style={{ textAlign: 'left', color: 'var(--text-muted)', textTransform: 'uppercase', fontSize: 10, letterSpacing: '0.06em' }}>
                 <th style={{ padding: '10px 8px', borderBottom: '1px solid var(--border)' }}>Customer</th>
+                <th style={{ padding: '10px 8px', borderBottom: '1px solid var(--border)' }}>Type</th>
                 <th style={{ padding: '10px 8px', borderBottom: '1px solid var(--border)' }}>Location</th>
                 <th style={{ padding: '10px 8px', borderBottom: '1px solid var(--border)' }}>Tier</th>
                 <th style={{ padding: '10px 8px', borderBottom: '1px solid var(--border)' }}>Payment</th>
                 <th style={{ padding: '10px 8px', borderBottom: '1px solid var(--border)' }}>Min Margin</th>
                 <th style={{ padding: '10px 8px', borderBottom: '1px solid var(--border)' }}>Status</th>
+                <th style={{ padding: '10px 8px', borderBottom: '1px solid var(--border)' }}>Salesperson</th>
                 <th style={{ padding: '10px 8px', borderBottom: '1px solid var(--border)' }}>Inquiries</th>
-                <th style={{ padding: '10px 8px', borderBottom: '1px solid var(--border)' }}>Channels</th>
                 <th style={{ padding: '10px 8px', borderBottom: '1px solid var(--border)' }}>Last Contact</th>
+                <th style={{ padding: '10px 8px', borderBottom: '1px solid var(--border)' }}>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -127,13 +140,16 @@ export default function Customers({ inquiries, customers }: CustomersProps) {
                     <td style={{ padding: '12px 8px', color: 'var(--text)', fontWeight: 600 }}>
                       {c.name}
                       <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 400, marginTop: 2 }}>
-                        {c.id}
+                        {c.id}{c.contact_person ? ` · ${c.contact_person}` : ''}
                       </div>
                       {c.notes && (
                         <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 400, marginTop: 2, fontStyle: 'italic' }}>
                           {c.notes}
                         </div>
                       )}
+                    </td>
+                    <td style={{ padding: '12px 8px' }}>
+                      {c.customer_type ? <span className={CTYPE_BADGE[c.customer_type]}>{c.customer_type}</span> : <span style={{ color: 'var(--text-muted)' }}>—</span>}
                     </td>
                     <td style={{ padding: '12px 8px', color: 'var(--text-secondary)', fontSize: 12, whiteSpace: 'nowrap' }}>
                       {c.location}
@@ -156,22 +172,31 @@ export default function Customers({ inquiries, customers }: CustomersProps) {
                       )}
                       {!blocked && !warned && <span style={{ color: 'var(--text-muted)' }}>—</span>}
                     </td>
+                    <td style={{ padding: '12px 8px', color: 'var(--text-secondary)', fontSize: 11 }}>
+                      {c.assigned_salesperson_id ? (EMPLOYEES.find(e => e.id === c.assigned_salesperson_id)?.name ?? '—') : '—'}
+                    </td>
                     <td style={{ padding: '12px 8px', color: 'var(--text-secondary)' }}>
                       {c.totalInquiries}
                       {c.pending > 0 && (
                         <span className="lt-pill pending" style={{ marginLeft: 6 }}>{c.pending} pending</span>
                       )}
                     </td>
-                    <td style={{ padding: '12px 8px', color: 'var(--text-muted)', fontSize: 11 }}>
-                      {c.channels.size > 0 ? Array.from(c.channels).join(', ') : '—'}
-                    </td>
                     <td style={{ padding: '12px 8px', color: 'var(--text-muted)' }}>{c.lastContact || '—'}</td>
+                    <td style={{ padding: '12px 8px' }}>
+                      <button
+                        className="lt-icon-btn"
+                        title="Edit Customer"
+                        onClick={() => setEditingCustomer(c)}
+                      >
+                        <Edit3 size={12} />
+                      </button>
+                    </td>
                   </tr>
                 )
               })}
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={9} style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
+                  <td colSpan={10} style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
                     No customers yet.
                   </td>
                 </tr>
@@ -180,6 +205,14 @@ export default function Customers({ inquiries, customers }: CustomersProps) {
           </table>
         </div>
       </div>
+
+      {editingCustomer && (
+        <CustomerEditModal
+          customer={editingCustomer}
+          onSave={(name, patch) => { onUpdateCustomer(name, patch); onFlash(`Updated customer ${name}`) }}
+          onClose={() => setEditingCustomer(null)}
+        />
+      )}
     </div>
   )
 }

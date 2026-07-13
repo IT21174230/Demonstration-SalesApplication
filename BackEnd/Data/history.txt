@@ -111,3 +111,7 @@
 {"role": "assistant", "content": "Logged inquiry for Indo-Asia Trading: 10 gp, Colombo \u2192 London."}
 {"role": "user", "content": "[ROLE: Customer Service | User: Anjali Silva] [CMD /new inquiry] customer=Indo-Asia Trading | request=10 gp | origin=colombo | destination=london | channel=Email | sbu=Ocean Exports | delivery_type=door-to-door"}
 {"role": "assistant", "content": "Logged inquiry for Indo-Asia Trading: Colombo \u2192 London."}
+{"role": "user", "content": "[ROLE: Customer Service | User: Anjali Silva] [CMD /new inquiry] customer=Lanka Textiles (Pvt) Ltd | request=1 gp | origin=colombo | destination=manila | channel=Email | sbu=Ocean Exports | delivery_type=door-to-door"}
+{"role": "assistant", "content": "Logged inquiry for Lanka Textiles (Pvt) Ltd: 1 gp, Colombo \u2192 Manila."}
+{"role": "user", "content": "[ROLE: Customer Service | User: Anjali Silva] [CMD /new inquiry] customer=Lanka Textiles (Pvt) Ltd | request=10 gp | origin=colombo | destination=london | channel=Email | sbu=Ocean Exports | delivery_type=port-to-port"}
+{"role": "assistant", "content": "Logged inquiry for Lanka Textiles (Pvt) Ltd: 10 gp, Colombo \u2192 London."}

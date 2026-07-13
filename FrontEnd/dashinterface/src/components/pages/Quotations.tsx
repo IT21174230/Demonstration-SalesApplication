@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { FileText, Plus, ShieldCheck, X, Send, Trash2, CheckCircle2, Loader2, Lock } from 'lucide-react'
 import {
-  EMPLOYEES, findCustomer, ROLE_LABELS,
+  EMPLOYEES, findCustomer,
   type Quote, type QuoteLine, type QuoteStatus, type QuoteType, type RateType,
   type Customer, type Inquiry,
 } from '../../mockData'
@@ -20,7 +20,7 @@ interface QuotationsProps {
   onPreFillConsumed?: () => void
 }
 
-const RATE_TYPES: RateType[] = ['Spot', 'Contractual', 'NAC', 'Convoy']
+const RATE_TYPES: RateType[] = ['Spot', 'Contractual', 'NAC', 'Volume-based', 'Convoy']
 const QUOTE_TYPES: QuoteType[] = ['FCA', 'Domestic Included', 'Drayage', 'DDP']
 
 const STATUS_BADGE: Record<QuoteStatus, string> = {
@@ -38,7 +38,7 @@ const BIG_SCHEDULE_LINES = ['Maersk', 'CMA CGM', 'MSC', 'Hapag-Lloyd', 'ONE', 'E
 export default function Quotations({
   quotes, customers, inquiries, onAddQuote, onSetQuoteStatus, onFlash, preFillCustomer, onPreFillConsumed,
 }: QuotationsProps) {
-  const { hasPermission, activeRole } = useRole()
+  const { hasPermission } = useRole()
   const canCreate = hasPermission('quote:create')
   const canApprove = hasPermission('quote:approve')
   const canSendQuote = hasPermission('quote:send')
