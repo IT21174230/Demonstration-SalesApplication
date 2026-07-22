@@ -98,7 +98,7 @@ type EditDraft = {
   containers: ContainerDraft[]
 }
 
-export default function InquiryList({ inquiries, followups, customers, quotes, onCompleteById, onAdvanceWorkflow, onUpdateCustomer, onAddFollowup, onFlash, onPatchInquiry, onDeleteInquiry }: InquiryListProps) {
+export default function InquiryList({ inquiries, followups, customers, quotes, onCompleteById, onUpdateCustomer, onAddFollowup, onFlash, onPatchInquiry, onDeleteInquiry }: InquiryListProps) {
   const { hasPermission, activeEmployee, activeRole } = useRole()
   const isProcurement = activeRole === 'Procurement'
   const canComplete = hasPermission('inquiry:complete')

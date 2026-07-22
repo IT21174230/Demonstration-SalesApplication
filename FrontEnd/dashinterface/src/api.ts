@@ -56,6 +56,14 @@ async function del<T>(path: string): Promise<T> {
 }
 
 // ---------------------------------------------------------------------------
+// Authentication
+// ---------------------------------------------------------------------------
+
+export function apiSwitchUser(empId: number): Promise<Employee> {
+  return post<Employee>(`/auth/switch-user/${empId}`, {})
+}
+
+// ---------------------------------------------------------------------------
 // Dashboard bulk load
 // ---------------------------------------------------------------------------
 
@@ -515,7 +523,7 @@ export function apiCreateWorkflowEntry(inqId: number): Promise<Record<string, un
 
 // Called on every stage transition — PATCHes the workflow row to the new stage.
 // If no workflow row exists yet (legacy inquiries), creates it first then retries.
-export async function apiAdvanceWorkflow(feId: string, stage: string, inqId?: number): Promise<{ success: boolean }> {
+export async function apiAdvanceWorkflow(_feId: string, stage: string, inqId?: number): Promise<{ success: boolean }> {
   const backendStage = STAGE_MAP[stage]
   if (!backendStage || !inqId) return { success: false }
   try {

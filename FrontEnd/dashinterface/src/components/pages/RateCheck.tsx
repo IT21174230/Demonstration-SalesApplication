@@ -196,7 +196,6 @@ export default function RateCheck({
         const o   = (inquiry.origin || '').toLowerCase()
         const d   = (dest           || '').toLowerCase()
         const ct  = (contType       || '').replace(/\s/g, '').toLowerCase()
-        const crd = inquiry.cargo_ready_date || ''   // ISO date e.g. "2025-08-01"
 
         const filtered = rates.filter(r => {
           const ro  = (r.origin         ?? '').toLowerCase()

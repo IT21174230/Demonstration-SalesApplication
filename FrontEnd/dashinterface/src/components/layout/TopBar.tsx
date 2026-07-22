@@ -1,18 +1,18 @@
-import { Bell, Settings, ChevronDown } from 'lucide-react'
-import { EMPLOYEES, EMPLOYEE_ROLE_MAP, ROLE_LABELS, ROLE_COLORS, type UserRole, type Employee } from '../../types'
+import { Bell, Settings } from 'lucide-react'
+import { ROLE_LABELS, ROLE_COLORS, type UserRole, type Employee } from '../../types'
 
 interface TopBarProps {
   currentPageLabel: string
   activeEmployee: Employee
   activeRole: UserRole
-  onSwitchEmployee: (id: number) => void
+  onNavigateProfile: () => void
 }
 
 function getInitials(name: string): string {
   return name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2)
 }
 
-export default function TopBar({ currentPageLabel, activeEmployee, activeRole, onSwitchEmployee }: TopBarProps) {
+export default function TopBar({ currentPageLabel, activeEmployee, activeRole, onNavigateProfile }: TopBarProps) {
   const today = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
   const roleColor = ROLE_COLORS[activeRole]
 
@@ -42,22 +42,6 @@ export default function TopBar({ currentPageLabel, activeEmployee, activeRole, o
           {ROLE_LABELS[activeRole]}
         </span>
 
-        {/* Role switcher */}
-        <div className="db-topbar-role-switch">
-          <select
-            value={activeEmployee.id}
-            onChange={e => onSwitchEmployee(Number(e.target.value))}
-            className="db-topbar-role-select"
-          >
-            {EMPLOYEES.map(emp => (
-              <option key={emp.id} value={emp.id}>
-                {emp.name} ({ROLE_LABELS[EMPLOYEE_ROLE_MAP[emp.id]]})
-              </option>
-            ))}
-          </select>
-          <ChevronDown size={10} className="db-topbar-role-chevron" />
-        </div>
-
         <button className="db-topbar-icon-btn" title="Notifications">
           <Bell size={14} />
         </button>
@@ -66,7 +50,12 @@ export default function TopBar({ currentPageLabel, activeEmployee, activeRole, o
           <Settings size={14} />
         </button>
 
-        <div className="db-topbar-user" style={{ gap: 8 }}>
+        <div
+          className="db-topbar-user"
+          style={{ gap: 8, cursor: 'pointer' }}
+          onClick={onNavigateProfile}
+          title="View profile"
+        >
           <div
             className="db-topbar-avatar"
             style={{ background: `linear-gradient(135deg, ${roleColor}, ${roleColor}cc)` }}

@@ -1,0 +1,9 @@
+version: "3.8"
+
+services:
+  freight-fe-beta:
+    image: thaarushi/freight-fe-beta:development
+    container_name: freight-fe-beta
+    ports:
+      - "6002:80"
+    restart: unless-stopped

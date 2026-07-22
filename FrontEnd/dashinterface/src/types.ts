@@ -13,6 +13,7 @@ export type PageId =
   | 'followups'
   | 'customers'
   | 'kyc'
+  | 'profile'
 
 export const PAGE_LABELS: Record<PageId, string> = {
   dashboard: 'Dashboard',
@@ -28,6 +29,7 @@ export const PAGE_LABELS: Record<PageId, string> = {
   followups: 'Operations',
   customers: 'Customers',
   kyc: 'KYC Form',
+  profile: 'Profile',
 }
 
 // ==================== IAM / ROLE DEFINITIONS ====================
@@ -51,11 +53,11 @@ export const ROLE_COLORS: Record<UserRole, string> = {
 }
 
 export const ROLE_PAGE_ACCESS: Record<UserRole, PageId[]> = {
-  CS:          ['dashboard', 'chat', 'workspace', 'new-inquiry', 'inquiry-list', 'rate-list', 'followups', 'customers', 'kyc'],
-  Sales:       ['dashboard', 'chat', 'workspace', 'new-inquiry', 'inquiry-list', 'rate-list', 'followups', 'customers'],
-  Finance:     ['dashboard', 'chat', 'workspace', 'customers', 'kyc'],
-  Procurement: ['dashboard', 'chat', 'workspace', 'inquiry-list', 'record-rate', 'rate-check', 'rate-list', 'followups'],
-  Admin:       ['dashboard', 'chat', 'workspace', 'new-inquiry', 'record-rate', 'rate-check', 'inquiry-list', 'rate-list', 'shipments', 'followups', 'customers', 'kyc'],
+  CS:          ['dashboard', 'chat', 'workspace', 'new-inquiry', 'inquiry-list', 'rate-list', 'followups', 'customers', 'kyc', 'profile'],
+  Sales:       ['dashboard', 'chat', 'workspace', 'new-inquiry', 'inquiry-list', 'rate-list', 'followups', 'customers', 'profile'],
+  Finance:     ['dashboard', 'chat', 'workspace', 'customers', 'kyc', 'profile'],
+  Procurement: ['dashboard', 'chat', 'workspace', 'inquiry-list', 'record-rate', 'rate-check', 'rate-list', 'followups', 'profile'],
+  Admin:       ['dashboard', 'chat', 'workspace', 'new-inquiry', 'record-rate', 'rate-check', 'inquiry-list', 'rate-list', 'shipments', 'followups', 'customers', 'kyc', 'profile'],
 }
 
 export const ROLE_QUICK_COMMANDS: Record<UserRole, string[]> = {
@@ -138,6 +140,9 @@ export const EMPLOYEE_ROLE_MAP: Record<number, UserRole> = {
   3: 'Sales',
   4: 'Finance',
   5: 'Procurement',
+  6: 'Finance',
+  7: 'CS',
+  8: 'Sales',
 }
 
 // ==================== WORKFLOW STAGES ====================
@@ -370,7 +375,10 @@ export const EMPLOYEES: Employee[] = [
   { id: 2, name: 'Anjali Silva',       role: 'Customer Service' },
   { id: 3, name: 'Rohan Fernando',     role: 'Sales Executive' },
   { id: 4, name: 'Priya Jayawardena',  role: 'Finance' },
-  { id: 5, name: 'Kamal Dissanayake',  role: 'Procurement' },
+  { id: 5, name: 'procu-test',         role: 'Procurement' },
+  { id: 6, name: 'fin-test',           role: 'Finance' },
+  { id: 7, name: 'cs-test',            role: 'Customer Service' },
+  { id: 8, name: 'sales-test',         role: 'Sales Executive' },
 ]
 
 // ==================== TASKS ====================

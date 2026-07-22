@@ -15,6 +15,8 @@ import Workspace from './components/pages/Workspace'
 import NewInquiry from './components/pages/NewInquiry'
 import RecordRate from './components/pages/RecordRate'
 import RateCheck from './components/pages/RateCheck'
+import Login from './components/pages/Login'
+import Profile from './components/pages/Profile'
 import {
   PAGE_LABELS, nowStamp,
   EMPLOYEES, EMPLOYEE_ROLE_MAP, ROLE_ACTIONS, ROLE_PAGE_ACCESS, ROLE_LABELS,
@@ -40,6 +42,7 @@ import {
   apiUpdateCustomer, apiAdvanceWorkflow, apiCreateWorkflowEntry,
   apiPatchInquiry, apiPatchCommodity, apiPatchContainer, apiDeleteInquiry,
   apiGetClientKycStatus, BE_STAGE_TO_FE,
+  apiSwitchUser,
 } from './api'
 
 // Container type codes the backend uses → frontend ContainerType labels
@@ -120,13 +123,35 @@ function mapInquiryRows(rows: InquiryRow[]): Inquiry[] {
 }
 
 export default function App() {
+  const [loggedInEmployeeId, setLoggedInEmployeeId] = useState<number | null>(
+    () => {
+      const stored = sessionStorage.getItem('loggedInEmployeeId')
+      return stored ? Number(stored) : null
+    }
+  )
+
+  const handleLogin = (empId: number) => {
+    sessionStorage.setItem('loggedInEmployeeId', String(empId))
+    setLoggedInEmployeeId(empId)
+    setActiveEmployeeId(empId)
+    apiSwitchUser(empId).catch(err => console.error('Failed to switch user on backend:', err))
+  }
+
+  const handleLogout = () => {
+    sessionStorage.removeItem('loggedInEmployeeId')
+    setLoggedInEmployeeId(null)
+  }
+
   const [currentPage, setCurrentPage] = useState<PageId>('workspace')
   // When navigating to workspace from rate-check, this tells Workspace which step to open on mount.
   // Cleared by a useEffect once workspace has mounted and captured the value.
   const [workspaceInitialStep, setWorkspaceInitialStep] = useState<string | null>(null)
 
   // ---- Role-based access control ----
-  const [activeEmployeeId, setActiveEmployeeId] = useState<number>(2) // default: Anjali (CS)
+  const [activeEmployeeId, setActiveEmployeeId] = useState<number>(() => {
+    const stored = sessionStorage.getItem('loggedInEmployeeId')
+    return stored ? Number(stored) : 2
+  })
   const activeEmployee = EMPLOYEES.find(e => e.id === activeEmployeeId) ?? EMPLOYEES[0]
   const activeRole: UserRole = EMPLOYEE_ROLE_MAP[activeEmployeeId] ?? 'CS'
 
@@ -205,7 +230,7 @@ export default function App() {
         blacklisted:   false,
         credit_hold:   false,
         min_margin_pct: 0,
-        kyc_status:    (r.kyc_completed ? 'approved' : 'not_started') as const,
+        kyc_status:    r.kyc_completed ? 'approved' as const : 'not_started' as const,
       })))
     }).catch(() => console.warn('[startup] Could not load client list'))
     apiGetContactPersons().then(setContactPersonList).catch(() => console.warn('[startup] Could not load contact persons'))
@@ -856,6 +881,8 @@ export default function App() {
             }}
           />
         ) : null
+      case 'profile':
+        return <Profile onLogout={handleLogout} />
     }
   }
 
@@ -889,6 +916,10 @@ export default function App() {
     canAccessPage,
   }
 
+  if (!loggedInEmployeeId) {
+    return <Login onLogin={handleLogin} />
+  }
+
   return (
     <RoleContext.Provider value={roleCtx}>
       <div className="db-app">
@@ -896,7 +927,7 @@ export default function App() {
           currentPageLabel={PAGE_LABELS[currentPage]}
           activeEmployee={activeEmployee}
           activeRole={activeRole}
-          onSwitchEmployee={setActiveEmployeeId}
+          onNavigateProfile={() => setCurrentPage('profile')}
         />
 
         <div className="db-body">

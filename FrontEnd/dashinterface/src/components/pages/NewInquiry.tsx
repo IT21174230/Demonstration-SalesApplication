@@ -22,7 +22,7 @@ interface NewInquiryProps {
   onGoBack: () => void
 }
 
-export default function NewInquiry({ clientList, contactPersonList, activeEmployee, onCreateInquiry, onFlash, onGoBack }: NewInquiryProps) {
+export default function NewInquiry({ clientList, contactPersonList, onCreateInquiry, onFlash, onGoBack }: NewInquiryProps) {
   // Inquiry-level state
   const [niCustomer, setNiCustomer] = useState('')
   const [niOrigin, setNiOrigin] = useState('')

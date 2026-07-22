@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from 'react'
 import {
   Inbox, ChevronRight, AlertTriangle, Check, Paperclip, ClipboardPaste,
   FileText, Ship, ShieldCheck, X, User, Mail, Loader2,
-  Globe, MessageCircle, Send, Edit3, Copy, ClipboardCheck,
+  Globe, MessageCircle, Edit3, Copy, ClipboardCheck,
 } from 'lucide-react'
 import {
   EMPLOYEES, WORKFLOW_STAGES, ROLE_LABELS, ROLE_COLORS,
@@ -13,7 +13,7 @@ import {
   type ContainerLine, type LinerRecord, type ClientRecord,
 } from '../../types'
 import { useRole } from '../../RoleContext'
-import { apiSendKyc, apiSendQuotation, apiGetLiners, apiCreateKycRequest } from '../../api'
+import { apiSendQuotation, apiGetLiners, apiCreateKycRequest } from '../../api'
 
 // ---------------------------------------------------------------------------
 // Props
@@ -184,7 +184,6 @@ export default function Workspace({
   const [formVoyage, setFormVoyage] = useState('')
   const [formNote, setFormNote] = useState('')
   const [formDecision, setFormDecision] = useState<'approve' | 'reject'>('approve')
-  const [formEmail, setFormEmail] = useState('')
   const [kycSending, setKycSending] = useState(false)
   // KYC document form state (Check Documents modal — CS/Sales fill in and submit to backend)
   const [kycBrNumber, setKycBrNumber] = useState('')
@@ -1071,7 +1070,6 @@ ABC Logistics (Pvt) Ltd`
         setFormVessel('')
         setFormVoyage('')
         setFormNote('')
-        setFormEmail('')
         setFormDecision('approve')
         setKycSending(false)
         setActionModal(item)
@@ -1198,7 +1196,7 @@ ABC Logistics (Pvt) Ltd`
           ref_type: 'inquiry',
           ref_id: inquiry.id,
           customer_name: inquiry.customer_name,
-          pushed_to: 'Customer',
+          pushed_to: 'CS',
           notes: formNote
             ? `${formNote} | Quotation:\n${quotationContent}`
             : `Quotation:\n${quotationContent}`,
