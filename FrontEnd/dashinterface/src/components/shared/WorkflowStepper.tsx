@@ -1,5 +1,5 @@
 import { ChevronRight, Check, Clock } from 'lucide-react'
-import { WORKFLOW_STAGES, ROLE_LABELS, ROLE_COLORS, type WorkflowStage } from '../../mockData'
+import { WORKFLOW_STAGES, ROLE_LABELS, ROLE_COLORS, type WorkflowStage } from '../../types'
 import { useRole } from '../../RoleContext'
 
 interface WorkflowStepperProps {

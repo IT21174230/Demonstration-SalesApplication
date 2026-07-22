@@ -9,7 +9,7 @@ import {
 import {
   ROLE_PAGE_ACCESS, ROLE_QUICK_COMMANDS, ROLE_ACTIONS, ROLE_COLORS,
   type PageId, type UserRole,
-} from '../../mockData'
+} from '../../types'
 
 interface SidebarProps {
   current: PageId
@@ -30,16 +30,26 @@ const NAV_ITEMS: { id: PageId; label: string; icon: typeof MessageSquare }[] = [
   { id: 'kyc', label: 'KYC Form', icon: ShieldCheck },
 ]
 
+const ROLE_NAV_VISIBLE: Partial<Record<UserRole, PageId[]>> = {
+  CS: ['workspace', 'inquiry-list', 'rate-list', 'customers'],
+  Sales: ['workspace', 'inquiry-list', 'rate-list', 'customers'],
+  Procurement: ['workspace', 'inquiry-list', 'rate-list'],
+  Finance: ['workspace'],
+}
+
 export default function Sidebar({ current, onNav, activeRole }: SidebarProps) {
   const [helpOpen, setHelpOpen] = useState(false)
   const accessiblePages = ROLE_PAGE_ACCESS[activeRole]
+  const visibleNavItems = ROLE_NAV_VISIBLE[activeRole]
+    ? NAV_ITEMS.filter(item => ROLE_NAV_VISIBLE[activeRole]!.includes(item.id))
+    : NAV_ITEMS
 
   return (
     <>
       <nav className="db-sidebar">
         <div className="db-sidebar-section">Menu</div>
 
-        {NAV_ITEMS.map(item => {
+        {visibleNavItems.map(item => {
           const Icon = item.icon
           const accessible = accessiblePages.includes(item.id)
           return (
@@ -86,7 +96,7 @@ export default function Sidebar({ current, onNav, activeRole }: SidebarProps) {
                 <p className="help-intro">Each page in the sidebar serves a specific purpose in your sales workflow.</p>
 
                 <div className="help-item-list">
-                  <HelpNavItem icon={<LayoutDashboard size={14} />} title="Dashboard" color="#4f46e5">
+                  <HelpNavItem icon={<LayoutDashboard size={14} />} title="Dashboard" color="#0f8fa8">
                     High-level overview of your sales performance — KPIs, pipeline stages, conversion funnel, and top-performing accounts. Use it for a quick morning check or when reporting to management.
                   </HelpNavItem>
                   <HelpNavItem icon={<MessageSquare size={14} />} title="Command Center" color="#7c3aed">
@@ -121,7 +131,7 @@ export default function Sidebar({ current, onNav, activeRole }: SidebarProps) {
                 </p>
 
                 <div className="help-cmd-grid">
-                  <HelpCmdItem icon={<UserPlus size={13} />} cmd="/new customer" color="#4f46e5">
+                  <HelpCmdItem icon={<UserPlus size={13} />} cmd="/new customer" color="#0f8fa8">
                     <strong>Fields:</strong> Name*, Location, Tier, Payment Terms<br />
                     Registers a new customer in the system with default settings.
                   </HelpCmdItem>

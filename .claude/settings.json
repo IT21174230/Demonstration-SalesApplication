@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "Bash(docker tag:*)",
-      "Bash(docker push:*)"
+      "Bash(docker push:*)",
+      "Read(//d/Neuball/FreightOS/**)",
+      "Bash(echo:*)"
     ]
   }
 }

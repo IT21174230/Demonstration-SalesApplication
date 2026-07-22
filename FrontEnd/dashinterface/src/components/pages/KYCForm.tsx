@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Printer, Send, Loader2, ShieldCheck } from 'lucide-react'
-import type { Customer } from '../../mockData'
+import type { Customer } from '../../types'
 import { useRole } from '../../RoleContext'
 import { apiSendKyc } from '../../api'
 

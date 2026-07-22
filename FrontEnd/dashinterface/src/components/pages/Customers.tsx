@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { ShieldAlert, AlertTriangle, Edit3 } from 'lucide-react'
-import { EMPLOYEES, type Inquiry, type Customer, type CustomerTier, type CustomerType } from '../../mockData'
+import { EMPLOYEES, type Inquiry, type Customer, type CustomerTier, type CustomerType } from '../../types'
 import CustomerEditModal from '../shared/CustomerEditModal'
 
 const CTYPE_BADGE: Record<CustomerType, string> = {
@@ -45,7 +45,7 @@ export default function Customers({ inquiries, customers, onUpdateCustomer, onFl
       existing.totalInquiries += 1
       if (inq.status === 'pending') existing.pending += 1
       else existing.completed += 1
-      existing.channels.add(inq.channel)
+      existing.channels.add(inq.channel ?? 'Unknown')
       if (inq.created_at > existing.lastContact) existing.lastContact = inq.created_at
       stats.set(key, existing)
     }
@@ -85,8 +85,8 @@ export default function Customers({ inquiries, customers, onUpdateCustomer, onFl
       <div style={{
         marginBottom: 18,
         padding: '12px 16px',
-        background: 'rgba(79,70,229,0.03)',
-        border: '1px dashed rgba(79,70,229,0.2)',
+        background: 'rgba(15,143,168,0.03)',
+        border: '1px dashed rgba(15,143,168,0.2)',
         borderRadius: 10,
         display: 'flex',
         alignItems: 'center',

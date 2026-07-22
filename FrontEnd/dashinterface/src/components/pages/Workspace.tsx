@@ -1,8 +1,8 @@
 import { useState, useMemo, useEffect } from 'react'
 import {
   Inbox, ChevronRight, AlertTriangle, Check, Paperclip, ClipboardPaste,
-  FileText, Ship, ShieldCheck, X, User, ArrowRight, Mail, Loader2, UserPlus,
-  Globe, MessageCircle, Send, Edit3, Plus, DollarSign,
+  FileText, Ship, ShieldCheck, X, User, Mail, Loader2,
+  Globe, MessageCircle, Send, Edit3, Copy, ClipboardCheck,
 } from 'lucide-react'
 import {
   EMPLOYEES, WORKFLOW_STAGES, ROLE_LABELS, ROLE_COLORS,
@@ -10,10 +10,10 @@ import {
   type Inquiry, type Booking, type Quote, type Customer,
   type ActivityEntry, type WorkflowStage,
   type QuoteStatus, type KycStatus,
-  type ContainerLine,
-} from '../../mockData'
+  type ContainerLine, type LinerRecord, type ClientRecord,
+} from '../../types'
 import { useRole } from '../../RoleContext'
-import { apiSendKyc, apiSendQuotation, apiBookInttra, apiSubmitSiInttra, type InttraBookingResult, type InttraSiResult } from '../../api'
+import { apiSendKyc, apiSendQuotation, apiGetLiners, apiCreateKycRequest } from '../../api'
 
 // ---------------------------------------------------------------------------
 // Props
@@ -24,8 +24,10 @@ interface WorkspaceProps {
   bookings: Booking[]
   quotes: Quote[]
   customers: Customer[]
+  clientList: ClientRecord[]
+  kycStatusMap: Record<number, boolean>
   activityLog: ActivityEntry[]
-  onGoTo: (page: import('../../mockData').PageId) => void
+  onGoTo: (page: import('../../types').PageId) => void
   onAdvanceWorkflow: (inquiryId: string, nextStage: WorkflowStage) => void
   onConfirmBooking: (bookingId: string, vesselName: string, voyageNumber: string) => void
   onReleaseBooking: (bookingId: string, note: string) => void
@@ -49,6 +51,7 @@ interface WorkspaceProps {
   onLogActivity: (entry: Omit<ActivityEntry, 'id' | 'timestamp'>) => void
   onFlash: (msg: string, action?: { label: string; onClick: () => void }) => void
   onStartRateCheck: (inquiry: Inquiry, container?: ContainerLine, variant?: 'procurement' | 'cs-sales') => void
+  initialStep?: string   // When set, Workspace opens directly on this step key (used after rate-check → Prepare Quotation)
 }
 
 // ---------------------------------------------------------------------------
@@ -71,13 +74,6 @@ interface WorkspaceItem {
   sourceData: any // eslint-disable-line @typescript-eslint/no-explicit-any
   /** Lower = more urgent. Used for cutoff-based sorting (e.g. SI reminders). */
   urgencySortKey?: number
-}
-
-const TYPE_ICON: Record<ItemType, typeof FileText> = {
-  inquiry: FileText,
-  booking: Ship,
-  quote: ShieldCheck,
-  customer: UserPlus,
 }
 
 const TYPE_BADGE_CLASS: Record<ItemType, string> = {
@@ -104,31 +100,35 @@ const CS_STEPS: StepDef[] = [
   { key: 'cs-rates',      label: 'Rates',       actionKinds: ['check-rates'],        stepNumber: 3 },
   { key: 'cs-send-quote', label: 'Send Quote',  actionKinds: ['send-to-customer'],   stepNumber: 4 },
   { key: 'cs-response',   label: 'Response',    actionKinds: ['customer-response'],  stepNumber: 5 },
-  { key: 'cs-booking',    label: 'Booking',     actionKinds: ['booking-request'],    stepNumber: 6 },
-  { key: 'cs-release',    label: 'Release',     actionKinds: ['release-booking'],    stepNumber: 7 },
-  { key: 'cs-cutoff',     label: 'Cutoff',      actionKinds: ['record-cutoff'],     stepNumber: 8 },
-  { key: 'cs-si',         label: 'SI Reminder', actionKinds: ['request-si'],         stepNumber: 9 },
-  { key: 'cs-submit-si',  label: 'Submit SI',   actionKinds: ['submit-si'],          stepNumber: 10 },
-  { key: 'cs-draft-bl',   label: 'Draft BL',    actionKinds: ['send-draft-bl'],      stepNumber: 11 },
-  { key: 'cs-master-bl', label: 'Master BL',   actionKinds: ['record-master-bl'],   stepNumber: 12 },
-  { key: 'cs-house-bl',  label: 'House BL',    actionKinds: ['create-house-bl'],    stepNumber: 13 },
-  { key: 'cs-bl-approval',label: 'BL Approval', actionKinds: ['bl-approval'],        stepNumber: 14 },
+  // Steps 6–14 hidden from CS step bar (comment back in to re-enable)
+  // { key: 'cs-booking',    label: 'Booking',     actionKinds: ['booking-request'],    stepNumber: 6 },
+  // { key: 'cs-release',    label: 'Release',     actionKinds: ['release-booking'],    stepNumber: 7 },
+  // { key: 'cs-cutoff',     label: 'Cutoff',      actionKinds: ['record-cutoff'],      stepNumber: 8 },
+  // { key: 'cs-si',         label: 'SI Reminder', actionKinds: ['request-si'],         stepNumber: 9 },
+  // { key: 'cs-submit-si',  label: 'Submit SI',   actionKinds: ['submit-si'],          stepNumber: 10 },
+  // { key: 'cs-draft-bl',   label: 'Draft BL',    actionKinds: ['send-draft-bl'],      stepNumber: 11 },
+  // { key: 'cs-master-bl',  label: 'Master BL',   actionKinds: ['record-master-bl'],   stepNumber: 12 },
+  // { key: 'cs-house-bl',   label: 'House BL',    actionKinds: ['create-house-bl'],    stepNumber: 13 },
+  // { key: 'cs-bl-approval',label: 'BL Approval', actionKinds: ['bl-approval'],        stepNumber: 14 },
 ]
 
 const FINANCE_STEPS: StepDef[] = [
   { key: 'fin-kyc',       label: 'KYC Review',  actionKinds: ['verify-kyc'],         stepNumber: 1 },
-  { key: 'fin-approvals', label: 'Approvals',   actionKinds: ['approve-quote'],      stepNumber: 2 },
+  // { key: 'fin-approvals', label: 'Approvals',   actionKinds: ['approve-quote'],      stepNumber: 2 },
 ]
 
 const PROCUREMENT_STEPS: StepDef[] = [
   { key: 'proc-rates',    label: 'Rate Check',  actionKinds: ['check-inttra-rates'],       stepNumber: 1 },
-  { key: 'proc-book',     label: 'Book Liner',  actionKinds: ['confirm-booking'],          stepNumber: 2 },
-  { key: 'proc-urgent',   label: 'Urgent',      actionKinds: ['acknowledge-procurement'],  stepNumber: 3 },
+  // { key: 'proc-book',     label: 'Book Liner',  actionKinds: ['confirm-booking'],          stepNumber: 2 },
+  // { key: 'proc-urgent',   label: 'Urgent',      actionKinds: ['acknowledge-procurement'],  stepNumber: 3 },
 ]
 
 const SALES_STEPS: StepDef[] = [
-  { key: 'sales-inquiry', label: 'Inquiry',     actionKinds: ['advance-workflow'],   stepNumber: 1 },
-  { key: 'sales-quote',   label: 'Quotation',   actionKinds: ['prepare-quotation'],  stepNumber: 2 },
+  { key: 'sales-inquiry',    label: 'Inquiry',           actionKinds: ['advance-workflow'],    stepNumber: 1 },
+  { key: 'sales-kyc',        label: 'KYC',               actionKinds: ['send-kyc'],            stepNumber: 2 },
+  { key: 'sales-rates',      label: 'Rates',             actionKinds: ['check-rates'],         stepNumber: 3 },
+  { key: 'sales-prep-quote', label: 'Prepare Quotation', actionKinds: ['prepare-quotation'],   stepNumber: 4 },
+  { key: 'sales-response',   label: 'Response',          actionKinds: ['customer-response'],   stepNumber: 5 },
 ]
 
 const ADMIN_STEPS: StepDef[] = [
@@ -167,13 +167,14 @@ const ROLE_STEP_MAP: Record<string, StepDef[]> = {
 // ---------------------------------------------------------------------------
 
 export default function Workspace({
-  inquiries, bookings, quotes, customers, activityLog,
+  inquiries, bookings, quotes, customers, clientList, kycStatusMap, activityLog,
   onGoTo, onAdvanceWorkflow, onConfirmBooking, onReleaseBooking,
   onAcknowledgeProcurement, onCreateBooking, onSetBookingSiCutoff, onMarkSiRequested,
   onSetBookingBlCutoff, onMarkSiSubmitted, onMarkDraftBlSent, onSetBlStatus,
   onRecordMasterBl, onCreateHouseBl,
   onSetQuoteStatus, onUpdateCustomerKyc,
   onAutoAdvanceForCustomer, onLogActivity, onFlash, onStartRateCheck,
+  initialStep,
 }: WorkspaceProps) {
   const { activeRole, activeEmployee } = useRole()
 
@@ -185,8 +186,34 @@ export default function Workspace({
   const [formDecision, setFormDecision] = useState<'approve' | 'reject'>('approve')
   const [formEmail, setFormEmail] = useState('')
   const [kycSending, setKycSending] = useState(false)
+  // KYC document form state (Check Documents modal — CS/Sales fill in and submit to backend)
+  const [kycBrNumber, setKycBrNumber] = useState('')
+  const [kycParentOrg, setKycParentOrg] = useState('')
+  const [kycDeadline, setKycDeadline] = useState('')
+  const [kycCliType, setKycCliType] = useState('')
+  const [kycCurrency, setKycCurrency] = useState('USD')
+  const [kycWebsite, setKycWebsite] = useState('')
+  const [kycSvatNo, setKycSvatNo] = useState('')
+  const [kycTaxExemptions, setKycTaxExemptions] = useState('N/A')
+  const [kycSeaImports, setKycSeaImports] = useState(false)
+  const [kycSeaExports, setKycSeaExports] = useState(false)
+  const [kycTradeLanes, setKycTradeLanes] = useState(false)
+  const [kycForwarding, setKycForwarding] = useState(false)
+  const [kycCrossTrade, setKycCrossTrade] = useState(false)
+  const [kycAirImports, setKycAirImports] = useState(false)
+  const [kycAirExports, setKycAirExports] = useState(false)
+  const [kycGeneralCargo, setKycGeneralCargo] = useState(false)
+  const [kycDangerousGoods, setKycDangerousGoods] = useState(false)
+  const [kycPerishableGoods, setKycPerishableGoods] = useState(false)
+  // Document checklist — backend accepts 'true' or 'false' as strings
+  const [kycDocBrForm, setKycDocBrForm] = useState('false')
+  const [kycDocVatCert, setKycDocVatCert] = useState('false')
+  const [kycDocSvatCert, setKycDocSvatCert] = useState('false')
+  const [kycDocTinCert, setKycDocTinCert] = useState('false')
+  const [kycDocForm20, setKycDocForm20] = useState('false')
   // Quotation prep state (Sales edits document)
   const [quotationContent, setQuotationContent] = useState('')
+  const [quoteCopied, setQuoteCopied] = useState(false)
   // Send-to-customer state (CS sends via Email or WhatsApp)
   const [sendMethod, setSendMethod] = useState<'email' | 'whatsapp'>('email')
   const [waConfirmed, setWaConfirmed] = useState(false)
@@ -202,9 +229,6 @@ export default function Workspace({
   const [bkIsUrgent, setBkIsUrgent] = useState(false)
   const [bkAttachmentName, setBkAttachmentName] = useState('')
   const [_bkAttachmentData, setBkAttachmentData] = useState('')
-  // InttraAPI booking confirmation state (Procurement books with liner)
-  const [inttraBooking, setInttraBooking] = useState(false)
-  const [inttraBookResult, setInttraBookResult] = useState<InttraBookingResult | null>(null)
 
   // Vessel cutoff schedule panel state
   // cutoffPanelOpen removed — cutoff is now a workflow step modal
@@ -213,6 +237,10 @@ export default function Workspace({
   const [cutoffMode, setCutoffMode] = useState<'paste' | 'upload'>('paste')
   const [cutoffContent, setCutoffContent] = useState('')
   const [cutoffFileName, setCutoffFileName] = useState('')
+
+  // Reference data
+  const [linerList, setLinerList] = useState<LinerRecord[]>([])
+  useEffect(() => { apiGetLiners().then(setLinerList).catch(() => {}) }, [])
   const [cutoffNotes, setCutoffNotes] = useState('')
   const [cutoffSiDate, setCutoffSiDate] = useState('')
   const [cutoffBlDate, setCutoffBlDate] = useState('')
@@ -221,7 +249,6 @@ export default function Workspace({
   const [siFileName, setSiFileName] = useState('')
   const [siMode, setSiMode] = useState<'paste' | 'upload'>('paste')
   const [inttraSiLoading, setInttraSiLoading] = useState(false)
-  const [inttraSiResult, setInttraSiResult] = useState<InttraSiResult | null>(null)
   // Draft BL state
   const [draftBlContent, setDraftBlContent] = useState('')
   const [draftBlFileName, setDraftBlFileName] = useState('')
@@ -237,8 +264,8 @@ export default function Workspace({
   const [houseBlShipper, setHouseBlShipper] = useState('')
   const [houseBlConsignee, setHouseBlConsignee] = useState('')
 
-  // Step navigation state
-  const [activeStep, setActiveStep] = useState<string | null>(null)
+  // Step navigation state — initialStep lets the parent jump directly to a specific step on mount
+  const [activeStep, setActiveStep] = useState<string | null>(initialStep ?? null)
   useEffect(() => { setActiveStep(null) }, [activeRole])
 
   const empName = (id: number) => EMPLOYEES.find(e => e.id === id)?.name ?? `EMP-${id}`
@@ -258,17 +285,17 @@ export default function Workspace({
     // CS sees customers needing KYC initiation (not_started)
     // Finance sees customers awaiting KYC verification (pending_customer)
     for (const cust of customers) {
-      if (cust.kyc_status === 'not_started' && (!role || role === 'CS')) {
+      if (cust.kyc_status === 'not_started' && (!role || role === 'CS' || role === 'Sales')) {
         pending.push({
           type: 'customer',
           refId: cust.id,
           customerName: cust.name,
-          title: `Send KYC form to ${cust.name}`,
+          title: `Check KYC documents for ${cust.name}`,
           subtitle: `${cust.tier} · ${cust.location} · KYC not yet initiated`,
           urgentFlag: false,
           createdAt: '',
           previousContext: findContext(cust.id),
-          actionLabel: 'Send KYC Form',
+          actionLabel: 'Check Documents',
           actionKind: 'send-kyc',
           sourceData: { customer: cust },
         })
@@ -297,20 +324,27 @@ export default function Workspace({
       if (inq.status === 'completed' || !inq.workflow_stage) continue
       const stage = WORKFLOW_STAGES.find(s => s.id === inq.workflow_stage)
       if (!stage) continue
-      if (role && stage.role !== role) continue
+      // CS and Sales both handle the full inquiry workflow (CS-roled and Sales-roled stages)
+      const isCSOrSales = role === 'CS' || role === 'Sales'
+      if (role && stage.role !== role && !(isCSOrSales && (stage.role === 'CS' || stage.role === 'Sales'))) continue
       if (inq.workflow_stage === 'completed') continue
 
-      // Skip inquiry-level KYC stages — KYC is now tracked on the customer
-      if (inq.workflow_stage === 'kyc-pending' || inq.workflow_stage === 'kyc-verification') continue
+      // KYC stages are shown as inquiry-level work items (send-kyc / verify-kyc)
+      // so that after clicking "Send to KYC" the item surfaces in the KYC tab
 
       // Determine the actual next stage (with KYC skip logic)
       let resolvedNextStage = WORKFLOW_STAGES.find(s => s.step === stage.step + 1)
       if (!resolvedNextStage) continue
 
-      // At customer-check, if customer KYC is already approved, skip to rate-check
-      // (CS checks Database rates first before escalating to Procurement)
-      const cust = customers.find(c => c.name.toLowerCase() === inq.customer_name.toLowerCase())
-      if (inq.workflow_stage === 'customer-check' && cust?.kyc_status === 'approved') {
+      const cust      = customers.find(c => c.name.toLowerCase() === inq.customer_name.toLowerCase())
+      // KYC is clear if:
+      //  1. The dedicated /kyc-status endpoint returned kyc_completed=true for this inquiry's client (primary source)
+      //  2. Finance approved KYC in this session (local customers state updated via updateCustomerKyc)
+      const kycClear = (inq.cli_id != null && kycStatusMap[inq.cli_id] === true)
+                    || cust?.kyc_status === 'approved'
+
+      // At inquiry-received or customer-check, skip directly to rate-check for cleared customers
+      if ((inq.workflow_stage === 'inquiry-received' || inq.workflow_stage === 'customer-check') && kycClear) {
         resolvedNextStage = WORKFLOW_STAGES.find(s => s.id === 'rate-check')!
       }
 
@@ -324,7 +358,7 @@ export default function Workspace({
                 containerType: inq.container_type ?? '20 GP',
                 quantity: inq.container_qty ?? 1,
                 weight: inq.cargo_weight ?? '',
-                commodityType: inq.commodity_type ?? 'General',
+                commodityType: inq.commodity_type ?? 'Miscellaneous manufactured articles — furniture, toys',
                 commodityName: '',
                 destination: inq.destination,
                 isFcl: inq.is_fcl ?? true,
@@ -345,14 +379,38 @@ export default function Workspace({
         let actionLabel = `Push to ${ROLE_LABELS[resolvedNextStage.role]}`
 
         switch (inq.workflow_stage) {
-          case 'inquiry-received':    title = `Process new inquiry from ${inq.customer_name}`; actionLabel = 'Process Inquiry'; break
+          case 'inquiry-received': {
+            if (kycClear) {
+              title = `Process inquiry from ${inq.customer_name} — existing customer, check rates`
+              actionLabel = 'Process & Check Rates'
+            } else {
+              title = `Process new inquiry from ${inq.customer_name}`
+              actionLabel = 'Process Inquiry'
+            }
+            break
+          }
           case 'customer-check': {
-            if (cust?.kyc_status === 'approved') {
-              title = `Customer ${inq.customer_name} verified (KYC approved) — check rates`
+            if (kycClear) {
+              title = `Customer ${inq.customer_name} verified — check rates`
               actionLabel = 'Check Rates'
             } else {
-              title = `Verify customer ${inq.customer_name}`
+              title = `New customer ${inq.customer_name} — initiate KYC before rate check`
+              actionLabel = 'Send to Finance for KYC'
             }
+            break
+          }
+          case 'kyc-pending': {
+            if (!cust) continue  // can't do KYC without a customer record
+            title = `Check KYC documents for ${inq.customer_name}`
+            actionKind = 'send-kyc'
+            actionLabel = 'Check Documents'
+            break
+          }
+          case 'kyc-verification': {
+            if (!cust) continue  // can't verify without a customer record
+            title = `Verify KYC documents for ${inq.customer_name}`
+            actionKind = 'verify-kyc'
+            actionLabel = 'Verify KYC'
             break
           }
           case 'rate-check':
@@ -394,12 +452,12 @@ export default function Workspace({
           customerName: inq.customer_name,
           title,
           subtitle: `${inq.request} · ${routeLabel} · ${containerLabel} · ${inq.delivery_type === 'door-to-door' ? 'Door-to-Door' : 'Port-to-Port'}`,
-          urgentFlag: isSpotInquiry(inq.inquiry_text),
+          urgentFlag: isSpotInquiry(inq.inquiry_text ?? ''),
           createdAt: inq.created_at,
           previousContext: findContext(inq.id),
           actionLabel,
           actionKind,
-          sourceData: { inquiry: inq, nextStage: resolvedNextStage.id, container: cont, containerIdx: ci },
+          sourceData: { inquiry: inq, nextStage: resolvedNextStage.id, container: cont, containerIdx: ci, customer: cust },
         })
       }
     }
@@ -706,7 +764,7 @@ export default function Workspace({
   const handleAction = (item: WorkspaceItem) => {
     switch (item.actionKind) {
       case 'advance-workflow': {
-        const { inquiry, nextStage } = item.sourceData
+        const { inquiry, nextStage, container } = item.sourceData
         onAdvanceWorkflow(inquiry.id, nextStage)
         const nextStageObj = WORKFLOW_STAGES.find(s => s.id === nextStage)!
         onLogActivity({
@@ -719,6 +777,11 @@ export default function Workspace({
           pushed_to: nextStageObj.role,
           notes: `${inquiry.request} · ${inquiry.origin} → ${inquiry.destination}`,
         })
+        // KYC-clear existing customer: skip KYC and open Rate Check immediately
+        if (nextStage === 'rate-check') {
+          onStartRateCheck(inquiry, container, 'cs-sales')
+          return
+        }
         // Map the destination workflow stage to the step that will handle items there
         const stageActionMap: Record<string, string> = {
           'kyc-pending': 'send-kyc', 'kyc-verification': 'verify-kyc',
@@ -728,7 +791,9 @@ export default function Workspace({
         }
         const destActionKind = stageActionMap[nextStage]
         const destStep = destActionKind ? roleSteps.find(s => s.actionKinds.includes(destActionKind)) : null
-        const crossDept = activeRole !== 'Admin' && nextStageObj.role !== activeRole
+        const csOrSales = (r: string) => r === 'CS' || r === 'Sales'
+        const crossDept = activeRole !== 'Admin' && nextStageObj.role !== activeRole &&
+                          !(csOrSales(activeRole) && csOrSales(nextStageObj.role))
         onFlash(`${inquiry.id} pushed to ${ROLE_LABELS[nextStageObj.role]}`,
           !crossDept && destStep ? { label: `Go to ${destStep.label}`, onClick: () => setActiveStep(destStep.key) } : undefined)
         break
@@ -759,44 +824,66 @@ export default function Workspace({
         return
       }
       case 'prepare-quotation': {
-        // Pre-fill quotation document from previous context (rate data)
-        const { inquiry: qInq } = item.sourceData
+        // Pre-fill quotation document from rate brief in previous activity log entry
+        const { inquiry: qInq, container: qCont } = item.sourceData
         const qCust = customers.find(c => c.name.toLowerCase() === qInq.customer_name.toLowerCase())
         const ctx = item.previousContext
-        // Extract rate info from the previous activity log notes
-        let rateSection = ''
-        if (ctx?.notes) {
-          const rateMatch = ctx.notes.match(/Rates?:\s*(.+)/i)
-          const manualMatch = ctx.notes.match(/Manual Rate:\s*(.+)/i)
-          if (rateMatch) rateSection = rateMatch[1].split('|')[0].trim()
-          else if (manualMatch) rateSection = manualMatch[1].split('|')[0].trim()
-        }
+        const notes = ctx?.notes ?? ''
+        // Extract DB rates and manual rates separately
+        const dbRateMatch = notes.match(/DB Rates:\s*([^|]+)/i)
+        const manualRateMatch = notes.match(/Manual Rates?:\s*([^|]+)/i)
+        const dbRates = dbRateMatch?.[1]?.trim() ?? ''
+        const manualRates = manualRateMatch?.[1]?.trim() ?? ''
+        // Build bullet-style rate option list
+        const rateLines: string[] = []
+        if (dbRates) dbRates.split(';').map((r: string) => r.trim()).filter(Boolean).forEach((r: string) => rateLines.push(`  • ${r}`))
+        if (manualRates) manualRates.split('||').map((r: string) => r.trim()).filter(Boolean).forEach((r: string) => rateLines.push(`  • ${r}`))
+        const rateSection = rateLines.length > 0 ? rateLines.join('\n') : '  • (Rate options to be confirmed — please edit)'
+        // Pull Procurement's message to Sales (stored before "Customer:" segment in notes)
+        const procMsgMatch = notes.match(/^(.+?) \| Customer:/i)
+        const procNote = procMsgMatch?.[1]?.trim() ?? ''
+        // Container / route details
+        const dest = qCont?.destination || qInq.destination
+        const containerLabel = qCont ? `${qCont.quantity}× ${qCont.containerType}` : ''
+        const commodityLabel = qCont?.commodityType ? ` · ${qCont.commodityType}` : qInq.commodity_type ? ` · ${qInq.commodity_type}` : ''
         const today = new Date().toISOString().slice(0, 10)
         setQuotationContent(
-`QUOTATION
+`FREIGHT QUOTATION
 
-To: ${qInq.customer_name}
-Ref: ${qInq.id}
+To: ${qInq.customer_name}${qCust?.tier ? ` (${qCust.tier})` : ''}
 Date: ${today}
+Reference: ${qInq.id}
 
 Dear ${qInq.customer_name},
 
-Thank you for your inquiry regarding ${qInq.request || 'freight services'}.
+Thank you for your freight enquiry. We are pleased to offer the following:
 
-We are pleased to quote the following for the route ${qInq.origin} → ${qInq.destination}:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SHIPMENT DETAILS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Route:       ${qInq.origin} → ${dest}
+Cargo:       ${containerLabel}${commodityLabel}
+Service:     ${qInq.delivery_type === 'door-to-door' ? 'Door-to-Door' : 'Port-to-Port'}${qInq.incoterm ? ` (${qInq.incoterm})` : ''}${qInq.cargo_ready_date ? `\nCargo Ready: ${qInq.cargo_ready_date}` : ''}
 
-${rateSection || '(Rate details to be filled in)'}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+RATE OPTIONS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${rateSection}
 
-Customer Tier: ${qCust?.tier ?? 'N/A'}
-Terms: FOB / FCA
-Validity: 14 days from date of quotation
-
-We look forward to your confirmation.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+TERMS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+• Validity: 14 days from date of this quotation
+• Rates subject to space and equipment availability
+• Port surcharges, customs, and inland haulage quoted separately unless stated above
+${procNote ? `\nNOTES: ${procNote}` : ''}
+Please confirm your preferred option at your earliest convenience.
 
 Best regards,
 ${activeEmployee.name}
 ABC Logistics (Pvt) Ltd`
         )
+        setQuoteCopied(false)
         setFormNote('')
         setActionModal(item)
         break
@@ -862,8 +949,6 @@ ABC Logistics (Pvt) Ltd`
         setFormVessel('')
         setFormVoyage('')
         setFormNote('')
-        setInttraBooking(false)
-        setInttraBookResult(null)
         setActionModal(item)
         break
       }
@@ -905,7 +990,6 @@ ABC Logistics (Pvt) Ltd`
         setSiContent('')
         setSiFileName('')
         setSiMode('paste')
-        setInttraSiResult(null)
         setInttraSiLoading(false)
         setFormNote('')
         setActionModal(item)
@@ -952,6 +1036,36 @@ ABC Logistics (Pvt) Ltd`
         setActionModal(item)
         break
       }
+      case 'send-kyc': {
+        // Reset KYC document form
+        setKycBrNumber('')
+        setKycParentOrg('')
+        setKycDeadline('')
+        setKycCliType('')
+        setKycCurrency('USD')
+        setKycWebsite('')
+        setKycSvatNo('')
+        setKycTaxExemptions('N/A')
+        setKycSeaImports(false)
+        setKycSeaExports(false)
+        setKycTradeLanes(false)
+        setKycForwarding(false)
+        setKycCrossTrade(false)
+        setKycAirImports(false)
+        setKycAirExports(false)
+        setKycGeneralCargo(false)
+        setKycDangerousGoods(false)
+        setKycPerishableGoods(false)
+        setKycDocBrForm('false')
+        setKycDocVatCert('false')
+        setKycDocSvatCert('false')
+        setKycDocTinCert('false')
+        setKycDocForm20('false')
+        setFormNote('')
+        setKycSending(false)
+        setActionModal(item)
+        break
+      }
       default:
         // Actions needing a form modal
         setFormVessel('')
@@ -969,7 +1083,8 @@ ABC Logistics (Pvt) Ltd`
     if (!actionModal) return
     // Compute next-step action for interactive toast navigation
     // Skip for actions that push work to a different department (unless Admin who sees all)
-    const crossDeptActions = new Set(['send-kyc', 'verify-kyc', 'check-rates', 'check-inttra-rates', 'prepare-quotation', 'booking-request'])
+    // prepare-quotation is handled entirely within Sales (no email/WA sending) so it stays in-dept for toast navigation
+    const crossDeptActions = new Set(['send-kyc', 'verify-kyc', 'check-rates', 'check-inttra-rates', 'booking-request'])
     const nextStepAction = (() => {
       if (activeRole !== 'Admin' && crossDeptActions.has(actionModal.actionKind)) return undefined
       const cur = roleSteps.find(s => s.actionKinds.includes(actionModal.actionKind))
@@ -978,28 +1093,63 @@ ABC Logistics (Pvt) Ltd`
     })()
     switch (actionModal.actionKind) {
       case 'send-kyc': {
-        const { customer } = actionModal.sourceData
-        // Send KYC email via API
-        if (formEmail.trim() && formEmail.includes('@')) {
+        const { customer, inquiry: kycInquiry } = actionModal.sourceData
+        // Resolve backend cli_id: prefer from inquiry, fallback to clientList lookup
+        const kycClient = clientList.find(c => c.name.toLowerCase() === customer.name.toLowerCase())
+        const cli_id = kycInquiry?.cli_id ?? kycClient?.cli_id
+        if (cli_id) {
           setKycSending(true)
           try {
-            await apiSendKyc({ customer_name: customer.name, recipient_email: formEmail.trim() })
-          } catch { /* fire-and-forget */ }
+            await apiCreateKycRequest(cli_id, {
+              br_number: kycBrNumber,
+              parent_organization: kycParentOrg || undefined,
+              emp_id_sales: activeRole === 'Sales' ? activeEmployee.id : undefined,
+              emp_id_cs:    activeRole === 'CS'    ? activeEmployee.id : undefined,
+              document_submission_deadline: kycDeadline,
+              cli_type: kycCliType,
+              currency: kycCurrency,
+              website:  kycWebsite  || undefined,
+              svat_no:  kycSvatNo   || undefined,
+              tax_exemptions: kycTaxExemptions,
+              sea_imports:      kycSeaImports,
+              sea_exports:      kycSeaExports,
+              trade_lanes:      kycTradeLanes,
+              forwarding:       kycForwarding,
+              cross_trade:      kycCrossTrade,
+              air_imports:      kycAirImports,
+              air_exports:      kycAirExports,
+              general_cargo:    kycGeneralCargo,
+              dangerous_goods:  kycDangerousGoods,
+              perishable_goods: kycPerishableGoods,
+              docs: {
+                cli_id,
+                br_form:          kycDocBrForm,
+                vat_certificate:  kycDocVatCert,
+                svat_certificate: kycDocSvatCert,
+                tin_certificate:  kycDocTinCert,
+                form20:           kycDocForm20,
+              },
+            })
+          } catch { /* fire-and-forget — optimistic update proceeds regardless */ }
           setKycSending(false)
         }
-        // Update customer kyc_status → pending_customer (Finance sees it next)
+        // Update customer KYC status → pending_customer (Finance sees it for final sign-off)
         onUpdateCustomerKyc(customer.name, 'pending_customer')
+        // Advance inquiry to kyc-verification so it surfaces in Finance's KYC Review tab
+        if (kycInquiry) {
+          onAdvanceWorkflow(kycInquiry.id, 'kyc-verification')
+        }
         onLogActivity({
           actor_role: activeRole,
           actor_id: activeEmployee.id,
-          action: `KYC form sent to ${formEmail || 'customer'}. Pushed to Finance for verification.`,
+          action: `KYC documents checked for ${customer.name}. KYC request submitted. Pushed to Finance for final verification.`,
           ref_type: 'inquiry',
-          ref_id: customer.id,
+          ref_id: kycInquiry?.id ?? customer.id,
           customer_name: customer.name,
           pushed_to: 'Finance',
-          notes: formNote || `KYC form emailed to ${formEmail}`,
+          notes: formNote || `KYC request created — BR: ${kycBrNumber}`,
         })
-        onFlash(`KYC sent to ${formEmail} — pushed to Finance`, nextStepAction)
+        onFlash(`KYC request created for ${customer.name} — pushed to Finance`, nextStepAction)
         break
       }
       case 'verify-kyc': {
@@ -1039,20 +1189,21 @@ ABC Logistics (Pvt) Ltd`
       }
       case 'prepare-quotation': {
         const { inquiry } = actionModal.sourceData
-        onAdvanceWorkflow(inquiry.id, 'quotation-sent')
+        // Sales sends the quotation directly (no system email/WA) — skip quotation-sent and move straight to recording response
+        onAdvanceWorkflow(inquiry.id, activeRole === 'Sales' ? 'customer-response' : 'quotation-sent')
         onLogActivity({
           actor_role: activeRole,
           actor_id: activeEmployee.id,
-          action: `Quotation prepared for ${inquiry.customer_name}. Sent to CS for delivery.`,
+          action: `Quotation prepared and shared with ${inquiry.customer_name}.`,
           ref_type: 'inquiry',
           ref_id: inquiry.id,
           customer_name: inquiry.customer_name,
-          pushed_to: 'CS',
+          pushed_to: 'Customer',
           notes: formNote
             ? `${formNote} | Quotation:\n${quotationContent}`
             : `Quotation:\n${quotationContent}`,
         })
-        onFlash(`${inquiry.id} → Quotation sent to CS for delivery`, nextStepAction)
+        onFlash(`${inquiry.id} → Quotation marked as sent to customer`, nextStepAction)
         break
       }
       case 'send-to-customer': {
@@ -1134,7 +1285,7 @@ ABC Logistics (Pvt) Ltd`
           origin: inquiry.origin,
           destination: inquiry.destination,
           is_urgent: bkIsUrgent,
-          booked_by: activeEmployee.id,
+          booked_by: 1,
           notes: formNote || `Booking for ${inquiry.customer_name}: ${inquiry.request}`,
           delivery_type: inquiry.delivery_type,
         })
@@ -1156,20 +1307,14 @@ ABC Logistics (Pvt) Ltd`
       case 'confirm-booking': {
         const { booking } = actionModal.sourceData
         onConfirmBooking(booking.id, formVessel, formVoyage)
-        const ref = inttraBookResult?.booking_reference ?? ''
-        const etd = inttraBookResult?.etd ?? ''
-        const eta = inttraBookResult?.eta ?? ''
         const confirmNotes = [
           `Vessel: ${formVessel || 'TBD'}, Voyage: ${formVoyage || 'TBD'}`,
-          ref ? `Booking Ref: ${ref}` : '',
-          etd ? `ETD: ${etd}` : '',
-          eta ? `ETA: ${eta}` : '',
           formNote ?? '',
         ].filter(Boolean).join(' | ')
         onLogActivity({
           actor_role: activeRole,
           actor_id: activeEmployee.id,
-          action: `Liner confirmed via ${inttraBookResult ? 'InttraAPI' : 'manual entry'}. Vessel: ${formVessel || 'TBD'}, Voyage: ${formVoyage || 'TBD'}${ref ? `, Ref: ${ref}` : ''}.`,
+          action: `Liner confirmed. Vessel: ${formVessel || 'TBD'}, Voyage: ${formVoyage || 'TBD'}.`,
           ref_type: 'booking',
           ref_id: booking.id,
           customer_name: booking.customer_name,
@@ -1240,8 +1385,7 @@ ABC Logistics (Pvt) Ltd`
       case 'submit-si': {
         const { booking } = actionModal.sourceData
         onMarkSiSubmitted(booking.id)
-        const siRef = inttraSiResult?.si_reference
-        const method = inttraSiResult ? `via InttraAPI (Ref: ${siRef})` : 'manually'
+        const method = 'manually'
         onLogActivity({
           actor_role: activeRole,
           actor_id: activeEmployee.id,
@@ -1360,156 +1504,149 @@ ABC Logistics (Pvt) Ltd`
 
   const roleColor = ROLE_COLORS[activeRole]
 
+  // Selected item for split-panel detail view
+  const [selectedItemId, setSelectedItemId] = useState<string | null>(null)
+  const selectedItem = useMemo(() => {
+    if (!selectedItemId) return filteredItems[0] ?? null
+    return filteredItems.find(i => `${i.type}-${i.refId}-${i.actionKind}-${(i.sourceData as any)?.containerIdx ?? 0}` === selectedItemId) ?? filteredItems[0] ?? null
+  }, [selectedItemId, filteredItems])
+
+  const getItemKey = (item: WorkspaceItem) => `${item.type}-${item.refId}-${item.actionKind}-${(item.sourceData as any)?.containerIdx ?? 0}`
+
   return (
-    <div className="db-page-anim">
-      {/* Header */}
-      <div className="db-page-head">
-        <div className="db-page-head-row">
+    <div className="ws-split-layout db-page-anim">
+      <div className="ws-split-body">
+      {/* ---- Left Panel: Item List ---- */}
+      <div className="ws-left-panel">
+        <div style={{ padding: '20px 20px 14px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
           <div>
-            <h1 className="db-page-title">Workspace</h1>
-            <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 4 }}>
-              Your role-specific inbox &mdash; complete your tasks and push to the next team
+            <h1 style={{ fontSize: 19, fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--text)' }}>Your workspace</h1>
+            <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 3 }}>
+              {filteredItems.length} item{filteredItems.length !== 1 ? 's' : ''} in this step
+            </p>
+          </div>
+          {(effectiveStep === 'cs-inquiry' || effectiveStep === 'adm-inquiry' || effectiveStep === 'sales-inquiry') && (
+            <button
+              onClick={() => onGoTo('new-inquiry')}
+              title="New Inquiry"
+              style={{ flexShrink: 0, width: 30, height: 30, borderRadius: 8, background: '#0f8fa8', color: '#fff', border: 'none', fontSize: 17, fontWeight: 600, cursor: 'pointer', lineHeight: 1 }}
+            >+</button>
+          )}
+          {effectiveStep === 'proc-rates' && (
+            <button
+              onClick={() => onGoTo('record-rate')}
+              title="Record Rate"
+              style={{ flexShrink: 0, width: 30, height: 30, borderRadius: 8, background: '#d97706', color: '#fff', border: 'none', fontSize: 17, fontWeight: 600, cursor: 'pointer', lineHeight: 1 }}
+            >+</button>
+          )}
+        </div>
+        <div className="ws-left-scroll">
+          {filteredItems.length === 0 ? (
+            <div style={{ padding: '28px 10px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
+              Nothing in this step right now.
             </div>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            {(effectiveStep === 'cs-inquiry' || effectiveStep === 'adm-inquiry' || effectiveStep === 'sales-inquiry') && (
-              <button
-                className="db-btn primary"
-                style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12 }}
-                onClick={() => onGoTo('new-inquiry')}
-              >
-                <Plus size={12} /> New Inquiry
-              </button>
-            )}
-            {effectiveStep === 'proc-rates' && (
-              <button
-                className="db-btn primary"
-                style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12 }}
-                onClick={() => onGoTo('record-rate')}
-              >
-                <DollarSign size={12} /> Record Rate
-              </button>
-            )}
-            <span className="db-badge" style={{ background: roleColor + '12', color: roleColor, border: `1px solid ${roleColor}30` }}>
-              {ROLE_LABELS[activeRole]}
-            </span>
-            <span className="db-badge muted">
-              {pendingItems.length} pending
-            </span>
-          </div>
+          ) : (
+            filteredItems.map(item => {
+              const key = getItemKey(item)
+              const isSelected = selectedItem ? getItemKey(selectedItem) === key : false
+              return (
+                <div
+                  key={key}
+                  onClick={() => setSelectedItemId(key)}
+                  className={`ws-list-item ${isSelected ? 'active' : ''}`}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
+                    <span style={{ fontSize: 14, fontWeight: 700, color: '#0f172a' }}>{item.customerName}</span>
+                    {item.urgentFlag && <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#dc2626', marginLeft: 'auto', flexShrink: 0 }} />}
+                  </div>
+                  <div style={{ fontSize: 12, color: '#64748b', marginBottom: 8 }}>{item.subtitle}</div>
+                  <span className={TYPE_BADGE_CLASS[item.type]} style={{ fontSize: 10 }}>{item.actionLabel}</span>
+                </div>
+              )
+            })
+          )}
         </div>
       </div>
 
-      {/* ---- Work Queue ---- */}
-      <div>
-
-      {/* Empty state */}
-      {filteredItems.length === 0 ? (
-        <div className="db-chart-card" style={{ textAlign: 'center', padding: '48px 24px', marginBottom: 80 }}>
-          <Inbox size={40} style={{ color: 'var(--text-muted)', marginBottom: 12, opacity: 0.4 }} />
-          <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 4 }}>
-            All caught up
-          </div>
-          <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>
-            No items need your attention right now. Check back later or switch roles to see other queues.
-          </div>
-        </div>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 80 }}>
-          {filteredItems.map(item => {
-            const Icon = TYPE_ICON[item.type]
-            const ctx = item.previousContext
-            return (
-              <div key={`${item.type}-${item.refId}-${item.actionKind}-${item.sourceData?.containerIdx ?? 0}`} className="db-chart-card ws-item-card" style={{ padding: '16px 20px' }}>
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
-                  {/* Type icon */}
-                  <div className="ws-type-icon" style={{ background: roleColor + '10', color: roleColor }}>
-                    <Icon size={16} />
-                  </div>
-
-                  {/* Content */}
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
-                      <span style={{ fontFamily: 'monospace', fontSize: 11, color: 'var(--text-muted)' }}>{item.refId}</span>
-                      <span className={TYPE_BADGE_CLASS[item.type]}>{item.type}</span>
-                      {item.urgentFlag && (
-                        <span className="db-badge danger" style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-                          <AlertTriangle size={10} /> Urgent
-                        </span>
-                      )}
-                    </div>
-                    <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)', marginBottom: 2 }}>
-                      {item.title}
-                    </div>
-                    <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 8 }}>
-                      {item.subtitle}
-                    </div>
-
-                    {/* Previous step context */}
-                    {ctx && (
-                      <div className="ws-context-card">
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                          <User size={11} style={{ color: 'var(--text-muted)' }} />
-                          <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)' }}>
-                            {empName(ctx.actor_id)} ({ROLE_LABELS[ctx.actor_role]})
-                          </span>
-                          <span style={{ fontSize: 10, color: 'var(--text-muted)', marginLeft: 'auto' }}>{ctx.timestamp}</span>
-                        </div>
-                        <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{ctx.action}</div>
-                        {ctx.notes && (
-                          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 3, fontStyle: 'italic' }}>{ctx.notes}</div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Push button */}
-                  <button
-                    className="db-btn primary"
-                    style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, whiteSpace: 'nowrap', flexShrink: 0, marginTop: 2 }}
-                    onClick={() => handleAction(item)}
-                  >
-                    {item.actionLabel} <ChevronRight size={12} />
-                  </button>
-                </div>
-              </div>
-            )
-          })}
-        </div>
-      )}
-
-      {/* Recently Pushed */}
-      {recentlyPushed.length > 0 && (
-        <div className="db-chart-card" style={{ marginBottom: 80 }}>
-          <div className="db-chart-head">
-            <div>
-              <div className="db-chart-title">Recently Pushed</div>
-              <div className="db-chart-sub">Items you have completed and handed off</div>
+      {/* ---- Right Panel: Detail + Action ---- */}
+      <div className="ws-right-panel">
+        {selectedItem ? (
+          <div style={{ maxWidth: 620 }}>
+            {/* Ref ID + badges */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+              <span style={{ fontFamily: 'ui-monospace, monospace', fontSize: 12, color: '#94a3b8' }}>{selectedItem.refId}</span>
+              {selectedItem.urgentFlag && (
+                <span style={{ padding: '2px 8px', borderRadius: 999, fontSize: 10, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '0.04em', background: 'rgba(220,38,38,0.08)', color: '#dc2626' }}>Urgent</span>
+              )}
+              <span className={TYPE_BADGE_CLASS[selectedItem.type]}>{selectedItem.type}</span>
             </div>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-            {recentlyPushed.map(a => (
-              <div key={a.id} className="ws-pushed-row">
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <Check size={12} style={{ color: '#16a34a' }} />
-                  <span style={{ fontFamily: 'monospace', fontSize: 11, color: 'var(--text-muted)' }}>{a.ref_id}</span>
-                  <span style={{ fontSize: 12, color: 'var(--text)', fontWeight: 600 }}>{a.customer_name}</span>
-                </div>
-                <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>{a.action}</div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 3 }}>
-                  <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{a.timestamp}</span>
-                  <ArrowRight size={10} style={{ color: 'var(--text-muted)' }} />
-                  <span style={{ fontSize: 10, color: ROLE_COLORS[a.pushed_to] ?? 'var(--text-muted)', fontWeight: 600 }}>
-                    {ROLE_LABELS[a.pushed_to] ?? a.pushed_to}
+
+            {/* Customer / Title */}
+            <h1 style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.03em', marginBottom: 4, color: 'var(--text)' }}>{selectedItem.customerName}</h1>
+            <p style={{ fontSize: 15, color: '#475569', marginBottom: 24 }}>{selectedItem.title}</p>
+
+            {/* Where it came from - context card */}
+            {selectedItem.previousContext && (
+              <div style={{ padding: '14px 16px', background: '#fff', border: '1px solid #e2e8f0', borderLeft: '3px solid #0f8fa8', borderRadius: 10, marginBottom: 26 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '0.05em', color: '#94a3b8', marginBottom: 6 }}>Where it came from</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                  <User size={11} style={{ color: 'var(--text-muted)' }} />
+                  <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)' }}>
+                    {empName(selectedItem.previousContext.actor_id)} ({ROLE_LABELS[selectedItem.previousContext.actor_role]})
                   </span>
+                  <span style={{ fontSize: 10, color: 'var(--text-muted)', marginLeft: 'auto' }}>{selectedItem.previousContext.timestamp}</span>
+                </div>
+                <div style={{ fontSize: 13.5, color: '#334155', lineHeight: 1.55 }}>{selectedItem.previousContext.action}</div>
+                {selectedItem.previousContext.notes && (
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4, fontStyle: 'italic' }}>{selectedItem.previousContext.notes}</div>
+                )}
+              </div>
+            )}
+
+            {/* Complete this step */}
+            <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '0.05em', color: '#94a3b8', marginBottom: 14 }}>Complete this step</div>
+            <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 14, padding: 24, boxShadow: '0 1px 2px rgba(15,23,42,0.03)' }}>
+              <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 18, color: 'var(--text)' }}>{selectedItem.actionLabel}</div>
+              <div style={{ fontSize: 13, color: '#64748b', marginBottom: 18 }}>{selectedItem.subtitle}</div>
+              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', paddingTop: 18, borderTop: '1px solid #eef2f6' }}>
+                <button
+                  className="db-btn primary"
+                  style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+                  onClick={() => handleAction(selectedItem)}
+                >
+                  {selectedItem.actionLabel} <ChevronRight size={13} />
+                </button>
+              </div>
+            </div>
+
+            {/* Recently Pushed (below action card) */}
+            {recentlyPushed.length > 0 && (
+              <div style={{ marginTop: 30 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '0.05em', color: '#94a3b8', marginBottom: 12 }}>Recently completed</div>
+                <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 0, background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, overflow: 'hidden' }}>
+                  {recentlyPushed.slice(0, 5).map(a => (
+                    <div key={a.id} style={{ padding: '12px 16px', borderBottom: '1px solid #f1f5f9' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <Check size={12} style={{ color: '#16a34a' }} />
+                        <span style={{ fontSize: 13, color: 'var(--text)', fontWeight: 700 }}>{a.customer_name}</span>
+                        <span style={{ fontSize: 10, color: 'var(--text-muted)', marginLeft: 'auto' }}>{a.timestamp}</span>
+                      </div>
+                      <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 3, marginLeft: 20 }}>{a.action}</div>
+                    </div>
+                  ))}
                 </div>
               </div>
-            ))}
+            )}
           </div>
-        </div>
-      )}
-
-      </div>{/* end Work Queue wrapper */}
+        ) : (
+          <div style={{ maxWidth: 420, margin: '60px auto 0', textAlign: 'center' }}>
+            <Inbox size={40} style={{ color: 'var(--text-muted)', marginBottom: 14, opacity: 0.4 }} />
+            <div style={{ fontSize: 17, fontWeight: 700, color: '#334155', marginBottom: 6 }}>All caught up</div>
+            <div style={{ fontSize: 13, color: '#94a3b8' }}>No items need your attention in this step.</div>
+          </div>
+        )}
+      </div>
+      </div>{/* end ws-split-body */}
 
       {/* Step Navigation Bar */}
       <div style={{
@@ -1519,7 +1656,7 @@ ABC Logistics (Pvt) Ltd`
         right: 0,
         background: 'var(--bg-card)',
         borderTop: '1px solid var(--border)',
-        padding: '8px 12px',
+        padding: '10px 14px',
         display: 'flex',
         alignItems: 'center',
         gap: 0,
@@ -1539,9 +1676,9 @@ ABC Logistics (Pvt) Ltd`
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
-                gap: 2,
+                gap: 3,
                 padding: '6px 14px',
-                minWidth: 72,
+                minWidth: 80,
                 border: 'none',
                 borderRadius: 10,
                 cursor: 'pointer',
@@ -1552,15 +1689,15 @@ ABC Logistics (Pvt) Ltd`
               }}
             >
               <div style={{
-                width: 24,
-                height: 24,
+                width: 26,
+                height: 26,
                 borderRadius: '50%',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 fontSize: 11,
                 fontWeight: 700,
-                background: isActive ? roleColor : isEmpty ? 'rgba(0,0,0,0.06)' : roleColor + '20',
+                background: isActive ? roleColor : isEmpty ? 'rgba(0,0,0,0.06)' : roleColor + '18',
                 color: isActive ? '#fff' : isEmpty ? 'var(--text-muted)' : roleColor,
                 transition: 'all 0.15s',
               }}>
@@ -1568,7 +1705,7 @@ ABC Logistics (Pvt) Ltd`
               </div>
               <span style={{
                 fontSize: 10,
-                fontWeight: isActive ? 700 : 500,
+                fontWeight: isActive ? 700 : 600,
                 color: isActive ? roleColor : isEmpty ? 'var(--text-muted)' : 'var(--text-secondary)',
                 whiteSpace: 'nowrap',
                 transition: 'color 0.15s',
@@ -1579,7 +1716,7 @@ ABC Logistics (Pvt) Ltd`
                 <span style={{
                   position: 'absolute',
                   top: 2,
-                  right: 8,
+                  right: 6,
                   minWidth: 16,
                   height: 16,
                   borderRadius: 8,
@@ -1604,44 +1741,140 @@ ABC Logistics (Pvt) Ltd`
       {/* Action Modal */}
       {actionModal && (
         <div className="lt-modal-backdrop" onClick={() => setActionModal(null)}>
-          <div className="lt-modal" onClick={e => e.stopPropagation()} style={{ width: 480 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
+          <div className="lt-modal" onClick={e => e.stopPropagation()} style={{ width: actionModal.actionKind === 'send-kyc' ? 660 : 520, padding: '28px 30px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
               <div>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'monospace', marginBottom: 4 }}>{actionModal.refId}</div>
-                <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--text)' }}>{actionModal.actionLabel}</div>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', fontFamily: 'ui-monospace, monospace', marginBottom: 6 }}>{actionModal.refId}</div>
+                <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--text)', letterSpacing: '-0.02em' }}>{actionModal.actionLabel}</div>
               </div>
               <button className="lt-icon-btn" onClick={() => setActionModal(null)}><X size={14} /></button>
             </div>
 
-            <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 16 }}>
+            <div style={{ fontSize: 14, color: 'var(--text-secondary)', marginBottom: 22 }}>
               {actionModal.title}
             </div>
 
-            {/* Send KYC form */}
+            {/* Check Documents — KYC form (CS / Sales) */}
             {actionModal.actionKind === 'send-kyc' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                <div style={{ padding: '10px 14px', background: 'rgba(8,145,178,0.06)', border: '1px solid rgba(8,145,178,0.18)', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#0891b2' }}>
-                  <Mail size={14} />
-                  The KYC form will be emailed to the customer via Resend. After sending, this item moves to Finance for verification.
-                </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 20, maxHeight: '65vh', overflowY: 'auto', paddingRight: 4 }}>
+
+                {/* ── Client Info ── */}
                 <div>
-                  <label className="lt-label">Customer</label>
-                  <input className="lt-input" style={{ width: '100%', background: 'rgba(0,0,0,0.04)' }} value={actionModal.customerName} disabled />
+                  <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-muted)', marginBottom: 10 }}>Client Information</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px 16px' }}>
+                    <div>
+                      <label className="lt-label">Customer</label>
+                      <input className="lt-input" style={{ width: '100%', background: 'rgba(0,0,0,0.04)' }} value={actionModal.customerName} disabled />
+                    </div>
+                    <div>
+                      <label className="lt-label">BR Number <span style={{ color: '#dc2626' }}>*</span></label>
+                      <input className="lt-input" style={{ width: '100%' }} value={kycBrNumber} onChange={e => setKycBrNumber(e.target.value)} placeholder="e.g. PV 12345" autoFocus />
+                    </div>
+                    <div>
+                      <label className="lt-label">Parent Organisation</label>
+                      <input className="lt-input" style={{ width: '100%' }} value={kycParentOrg} onChange={e => setKycParentOrg(e.target.value)} placeholder="If subsidiary, enter parent name" />
+                    </div>
+                    <div>
+                      <label className="lt-label">Client Type <span style={{ color: '#dc2626' }}>*</span></label>
+                      <select className="lt-input" style={{ width: '100%' }} value={kycCliType} onChange={e => setKycCliType(e.target.value)}>
+                        <option value="">Select type…</option>
+                        <option value="Shipper">Shipper</option>
+                        <option value="Buyer">Buyer</option>
+                        <option value="Agent">Agent</option>
+                        <option value="Trader">Trader</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="lt-label">Currency <span style={{ color: '#dc2626' }}>*</span></label>
+                      <select className="lt-input" style={{ width: '100%' }} value={kycCurrency} onChange={e => setKycCurrency(e.target.value)}>
+                        <option value="USD">USD</option>
+                        <option value="LKR">LKR</option>
+                        <option value="EUR">EUR</option>
+                        <option value="GBP">GBP</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="lt-label">Document Submission Deadline <span style={{ color: '#dc2626' }}>*</span></label>
+                      <input className="lt-input" style={{ width: '100%' }} type="date" value={kycDeadline} onChange={e => setKycDeadline(e.target.value)} />
+                    </div>
+                    <div>
+                      <label className="lt-label">Website</label>
+                      <input className="lt-input" style={{ width: '100%' }} value={kycWebsite} onChange={e => setKycWebsite(e.target.value)} placeholder="https://..." />
+                    </div>
+                    <div>
+                      <label className="lt-label">SVAT No.</label>
+                      <input className="lt-input" style={{ width: '100%' }} value={kycSvatNo} onChange={e => setKycSvatNo(e.target.value)} placeholder="SVAT registration number" />
+                    </div>
+                    <div style={{ gridColumn: '1 / -1' }}>
+                      <label className="lt-label">Tax Exemptions</label>
+                      <input className="lt-input" style={{ width: '100%' }} value={kycTaxExemptions} onChange={e => setKycTaxExemptions(e.target.value)} placeholder="e.g. N/A, BOI exemption…" />
+                    </div>
+                  </div>
                 </div>
+
+                {/* ── Services Required ── */}
                 <div>
-                  <label className="lt-label">Recipient Email <span style={{ color: '#dc2626' }}>*</span></label>
-                  <input className="lt-input" style={{ width: '100%' }} type="email" value={formEmail} onChange={e => setFormEmail(e.target.value)} placeholder="customer@example.com" autoFocus />
+                  <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-muted)', marginBottom: 10 }}>Services Required</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 24px' }}>
+                    {([
+                      ['Sea Imports',    kycSeaImports,    setKycSeaImports],
+                      ['Sea Exports',    kycSeaExports,    setKycSeaExports],
+                      ['Trade Lanes',    kycTradeLanes,    setKycTradeLanes],
+                      ['Forwarding',     kycForwarding,    setKycForwarding],
+                      ['Cross Trade',    kycCrossTrade,    setKycCrossTrade],
+                      ['Air Imports',    kycAirImports,    setKycAirImports],
+                      ['Air Exports',    kycAirExports,    setKycAirExports],
+                      ['General Cargo',    kycGeneralCargo,    setKycGeneralCargo],
+                      ['Dangerous Goods',  kycDangerousGoods,  setKycDangerousGoods],
+                      ['Perishable Goods', kycPerishableGoods, setKycPerishableGoods],
+                    ] as [string, boolean, (v: boolean) => void][]).map(([label, val, setter]) => (
+                      <label key={label} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--text-secondary)', cursor: 'pointer', userSelect: 'none' }}>
+                        <input type="checkbox" checked={val} onChange={e => setter(e.target.checked)} style={{ width: 14, height: 14, accentColor: '#0891b2', cursor: 'pointer' }} />
+                        {label}
+                      </label>
+                    ))}
+                  </div>
                 </div>
+
+                {/* ── Document Checklist ── */}
+                <div>
+                  <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-muted)', marginBottom: 10 }}>Document Checklist</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '12px 14px', background: 'rgba(8,145,178,0.04)', borderRadius: 8, border: '1px solid rgba(8,145,178,0.12)' }}>
+                    {([
+                      ['BR Form',           kycDocBrForm,   setKycDocBrForm],
+                      ['VAT Certificate',   kycDocVatCert,  setKycDocVatCert],
+                      ['SVAT Certificate',  kycDocSvatCert, setKycDocSvatCert],
+                      ['TIN Certificate',   kycDocTinCert,  setKycDocTinCert],
+                      ['Form 20',           kycDocForm20,   setKycDocForm20],
+                    ] as [string, string, (v: string) => void][]).map(([label, val, setter]) => (
+                      <label key={label} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, color: 'var(--text-secondary)', cursor: 'pointer', userSelect: 'none' }}>
+                        <input
+                          type="checkbox"
+                          checked={val === 'true'}
+                          onChange={e => setter(e.target.checked ? 'true' : 'false')}
+                          style={{ width: 15, height: 15, accentColor: '#16a34a', cursor: 'pointer' }}
+                        />
+                        <span style={{ color: val === 'true' ? '#16a34a' : 'var(--text-secondary)', fontWeight: val === 'true' ? 600 : 400 }}>
+                          {label}
+                        </span>
+                        <span style={{ marginLeft: 'auto', fontSize: 11, color: val === 'true' ? '#16a34a' : 'var(--text-muted)', fontWeight: 600 }}>
+                          {val === 'true' ? 'Received' : 'Pending'}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
                 <div>
                   <label className="lt-label">Notes (optional)</label>
-                  <input className="lt-input" style={{ width: '100%' }} value={formNote} onChange={e => setFormNote(e.target.value)} placeholder="Any instructions for the customer..." />
+                  <input className="lt-input" style={{ width: '100%' }} value={formNote} onChange={e => setFormNote(e.target.value)} placeholder="Any additional notes…" />
                 </div>
               </div>
             )}
 
             {/* Verify KYC form (Finance) */}
             {actionModal.actionKind === 'verify-kyc' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
                 {actionModal.previousContext && (
                   <div className="ws-context-card" style={{ marginTop: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
@@ -1686,10 +1919,10 @@ ABC Logistics (Pvt) Ltd`
             {actionModal.actionKind === 'prepare-quotation' && (() => {
               const ctx = actionModal.previousContext
               return (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                  <div style={{ padding: '10px 14px', background: 'rgba(79,70,229,0.06)', border: '1px solid rgba(79,70,229,0.18)', borderRadius: 8, fontSize: 12, color: '#4f46e5', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+                  <div style={{ padding: '10px 14px', background: 'rgba(15,143,168,0.06)', border: '1px solid rgba(15,143,168,0.18)', borderRadius: 8, fontSize: 12, color: '#0f8fa8', display: 'flex', alignItems: 'center', gap: 8 }}>
                     <Edit3 size={14} />
-                    Edit the quotation document below, then send to CS for delivery to the customer.
+                    Review and edit the quotation below. Copy it and share directly with the customer, then click <strong>Mark as Sent</strong>.
                   </div>
 
                   {ctx && (
@@ -1697,18 +1930,37 @@ ABC Logistics (Pvt) Ltd`
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
                         <User size={11} style={{ color: 'var(--text-muted)' }} />
                         <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)' }}>
-                          {empName(ctx.actor_id)} ({ROLE_LABELS[ctx.actor_role]})
+                          Rate brief from {empName(ctx.actor_id)} ({ROLE_LABELS[ctx.actor_role]})
                         </span>
                       </div>
                       <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{ctx.action}</div>
+                      {ctx.notes && (
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 3, fontStyle: 'italic', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                          {ctx.notes.split('|').filter((s: string) => /rates?:/i.test(s)).map((s: string) => s.trim()).join(' · ') || ctx.notes.split('|').slice(0, 3).map((s: string) => s.trim()).join(' · ')}
+                        </div>
+                      )}
                     </div>
                   )}
 
                   <div>
-                    <label className="lt-label">Quotation Document</label>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                      <label className="lt-label" style={{ margin: 0 }}>Quotation Message</label>
+                      <button
+                        type="button"
+                        style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, padding: '4px 10px', borderRadius: 6, border: `1px solid ${quoteCopied ? 'rgba(22,163,74,0.4)' : 'rgba(15,143,168,0.3)'}`, background: quoteCopied ? 'rgba(22,163,74,0.08)' : 'rgba(15,143,168,0.06)', color: quoteCopied ? '#16a34a' : '#0f8fa8', cursor: 'pointer', transition: 'all 0.2s' }}
+                        onClick={() => {
+                          navigator.clipboard.writeText(quotationContent).then(() => {
+                            setQuoteCopied(true)
+                            setTimeout(() => setQuoteCopied(false), 2500)
+                          })
+                        }}
+                      >
+                        {quoteCopied ? <><ClipboardCheck size={11} /> Copied!</> : <><Copy size={11} /> Copy to Clipboard</>}
+                      </button>
+                    </div>
                     <textarea
                       className="lt-input"
-                      style={{ width: '100%', minHeight: 280, fontFamily: 'monospace', fontSize: 12, lineHeight: 1.5, resize: 'vertical' }}
+                      style={{ width: '100%', minHeight: 320, fontFamily: 'monospace', fontSize: 11.5, lineHeight: 1.6, resize: 'vertical' }}
                       value={quotationContent}
                       onChange={e => setQuotationContent(e.target.value)}
                     />
@@ -1730,7 +1982,7 @@ ABC Logistics (Pvt) Ltd`
               // Extract quotation text from previous activity log
               const quotationText = ctx?.notes?.match(/Quotation:\n([\s\S]+)/)?.[1] ?? ''
               return (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
                   {ctx && (
                     <div className="ws-context-card" style={{ marginTop: 0 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
@@ -1747,7 +1999,7 @@ ABC Logistics (Pvt) Ltd`
                   {quotationText && (
                     <div className="ws-doc-preview">
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
-                        <FileText size={14} style={{ color: '#4f46e5' }} />
+                        <FileText size={14} style={{ color: '#0f8fa8' }} />
                         <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)' }}>Quotation Document</span>
                       </div>
                       <div className="ws-doc-body" style={{ whiteSpace: 'pre-wrap', fontSize: 11, lineHeight: 1.5, maxHeight: 180, overflowY: 'auto' }}>
@@ -1829,7 +2081,7 @@ ABC Logistics (Pvt) Ltd`
             {actionModal.actionKind === 'customer-response' && (() => {
               const ctx = actionModal.previousContext
               return (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
                   {ctx && (
                     <div className="ws-context-card" style={{ marginTop: 0 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
@@ -1877,7 +2129,7 @@ ABC Logistics (Pvt) Ltd`
               const ctx = actionModal.previousContext
               const { inquiry: brInq } = actionModal.sourceData
               return (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
                   {ctx && (
                     <div className="ws-context-card" style={{ marginTop: 0 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
@@ -1891,16 +2143,19 @@ ABC Logistics (Pvt) Ltd`
                   )}
 
                   {/* Route summary */}
-                  <div style={{ padding: '10px 14px', background: 'rgba(79,70,229,0.06)', border: '1px solid rgba(79,70,229,0.15)', borderRadius: 8, fontSize: 12 }}>
+                  <div style={{ padding: '10px 14px', background: 'rgba(15,143,168,0.06)', border: '1px solid rgba(15,143,168,0.15)', borderRadius: 8, fontSize: 12 }}>
                     <strong>{brInq.customer_name}</strong> — {brInq.origin} → {brInq.destination}
                     <div style={{ color: 'var(--text-muted)', marginTop: 2 }}>{brInq.request} · {brInq.delivery_type === 'door-to-door' ? 'Door-to-Door' : 'Port-to-Port'}</div>
                   </div>
 
                   <div>
                     <label className="lt-label">Preferred Shipping Line</label>
-                    <input className="lt-input" style={{ width: '100%' }} value={bkShippingLine}
+                    <input list="ws-bk-liners" className="lt-input" style={{ width: '100%' }} value={bkShippingLine}
                       onChange={e => setBkShippingLine(e.target.value)}
                       placeholder="e.g. Maersk, MSC, Hapag-Lloyd (or leave blank for any)" />
+                    <datalist id="ws-bk-liners">
+                      {linerList.map(l => <option key={l.lin_id} value={l.name} />)}
+                    </datalist>
                   </div>
 
                   <div style={{ display: 'flex', gap: 12 }}>
@@ -1993,7 +2248,7 @@ ABC Logistics (Pvt) Ltd`
               const { booking: cbkg } = actionModal.sourceData
               const ctx = actionModal.previousContext
               return (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
                   {ctx && (
                     <div className="ws-context-card" style={{ marginTop: 0 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
@@ -2008,77 +2263,22 @@ ABC Logistics (Pvt) Ltd`
                   )}
 
                   {/* Booking summary */}
-                  <div style={{ padding: '10px 14px', background: 'rgba(79,70,229,0.06)', border: '1px solid rgba(79,70,229,0.15)', borderRadius: 8, fontSize: 12 }}>
+                  <div style={{ padding: '10px 14px', background: 'rgba(15,143,168,0.06)', border: '1px solid rgba(15,143,168,0.15)', borderRadius: 8, fontSize: 12 }}>
                     <strong>{cbkg.customer_name}</strong> — {cbkg.origin} → {cbkg.destination}
                     <div style={{ color: 'var(--text-muted)', marginTop: 2 }}>
                       {cbkg.quantity}x {cbkg.container_type} · {cbkg.shipping_line || 'Any liner'}
                     </div>
                   </div>
 
-                  {/* Book via InttraAPI button */}
-                  {!inttraBookResult && (
-                    <button
-                      className="db-btn primary"
-                      disabled={inttraBooking}
-                      style={{ display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'center' }}
-                      onClick={async () => {
-                        setInttraBooking(true)
-                        try {
-                          const result = await apiBookInttra({
-                            booking_id: cbkg.id,
-                            shipping_line: cbkg.shipping_line || '',
-                            origin: cbkg.origin,
-                            destination: cbkg.destination,
-                            container_type: cbkg.container_type,
-                            quantity: cbkg.quantity,
-                          })
-                          setInttraBookResult(result)
-                          setFormVessel(result.vessel_name)
-                          setFormVoyage(result.voyage_number)
-                        } catch {
-                          onFlash('InttraAPI booking failed — enter details manually')
-                        }
-                        setInttraBooking(false)
-                      }}
-                    >
-                      {inttraBooking
-                        ? <><Loader2 size={13} className="spin" /> Booking with liner via InttraAPI...</>
-                        : <><Globe size={13} /> Book with Liner via InttraAPI</>}
-                    </button>
-                  )}
-
-                  {/* InttraAPI confirmation result */}
-                  {inttraBookResult && (
-                    <div style={{ padding: '14px 16px', background: 'rgba(22,163,106,0.06)', border: '1px solid rgba(22,163,106,0.2)', borderRadius: 8 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-                        <Check size={14} style={{ color: '#16a34a' }} />
-                        <span style={{ fontSize: 13, fontWeight: 700, color: '#16a34a' }}>Booking Confirmed</span>
-                      </div>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 16px', fontSize: 12 }}>
-                        <div><span style={{ color: 'var(--text-muted)' }}>Reference:</span> <strong>{inttraBookResult.booking_reference}</strong></div>
-                        <div><span style={{ color: 'var(--text-muted)' }}>Liner:</span> {inttraBookResult.shipping_line}</div>
-                        <div><span style={{ color: 'var(--text-muted)' }}>Vessel:</span> {inttraBookResult.vessel_name}</div>
-                        <div><span style={{ color: 'var(--text-muted)' }}>Voyage:</span> {inttraBookResult.voyage_number}</div>
-                        <div><span style={{ color: 'var(--text-muted)' }}>ETD:</span> {inttraBookResult.etd}</div>
-                        <div><span style={{ color: 'var(--text-muted)' }}>ETA:</span> {inttraBookResult.eta}</div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Manual override / fallback fields */}
-                  {!inttraBookResult && (
-                    <>
-                      <div style={{ textAlign: 'center', fontSize: 11, color: 'var(--text-muted)', padding: '4px 0' }}>— or enter manually —</div>
-                      <div>
-                        <label className="lt-label">Vessel Name</label>
-                        <input className="lt-input" style={{ width: '100%' }} value={formVessel} onChange={e => setFormVessel(e.target.value)} placeholder="e.g. Maersk Seletar" />
-                      </div>
-                      <div>
-                        <label className="lt-label">Voyage Number</label>
-                        <input className="lt-input" style={{ width: '100%' }} value={formVoyage} onChange={e => setFormVoyage(e.target.value)} placeholder="e.g. VOY-2026-042" />
-                      </div>
-                    </>
-                  )}
+                  {/* Vessel / voyage entry */}
+                  <div>
+                    <label className="lt-label">Vessel Name</label>
+                    <input className="lt-input" style={{ width: '100%' }} value={formVessel} onChange={e => setFormVessel(e.target.value)} placeholder="e.g. Maersk Seletar" />
+                  </div>
+                  <div>
+                    <label className="lt-label">Voyage Number</label>
+                    <input className="lt-input" style={{ width: '100%' }} value={formVoyage} onChange={e => setFormVoyage(e.target.value)} placeholder="e.g. VOY-2026-042" />
+                  </div>
 
                   <div>
                     <label className="lt-label">Notes (optional)</label>
@@ -2099,7 +2299,7 @@ ABC Logistics (Pvt) Ltd`
               const etdMatch = ctx?.notes?.match(/ETD:\s*([^|]+)/i)
               const etaMatch = ctx?.notes?.match(/ETA:\s*([^|]+)/i)
               return (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
                   {ctx && (
                     <div className="ws-context-card" style={{ marginTop: 0 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
@@ -2206,7 +2406,7 @@ ABC Logistics (Pvt) Ltd`
                 : dLeft === 0 ? 'Due TODAY' : `${dLeft} day(s) remaining`
 
               return (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
                   {ctx && (
                     <div className="ws-context-card" style={{ marginTop: 0 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
@@ -2333,9 +2533,9 @@ ABC Logistics (Pvt) Ltd`
             {actionModal.actionKind === 'record-cutoff' && (() => {
               const { booking: coBkg } = actionModal.sourceData
               return (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
                   {/* Booking summary */}
-                  <div style={{ padding: '10px 14px', background: 'rgba(79,70,229,0.06)', border: '1px solid rgba(79,70,229,0.15)', borderRadius: 8, fontSize: 12 }}>
+                  <div style={{ padding: '10px 14px', background: 'rgba(15,143,168,0.06)', border: '1px solid rgba(15,143,168,0.15)', borderRadius: 8, fontSize: 12 }}>
                     <strong>{coBkg.customer_name}</strong> — {coBkg.origin} → {coBkg.destination}
                     <div style={{ color: 'var(--text-muted)', marginTop: 2 }}>
                       {coBkg.quantity}x {coBkg.container_type} · {coBkg.shipping_line || 'No liner'}
@@ -2344,9 +2544,12 @@ ABC Logistics (Pvt) Ltd`
 
                   <div>
                     <label className="lt-label">Shipping Line / Liner</label>
-                    <input className="lt-input" style={{ width: '100%' }} value={cutoffLiner}
+                    <input list="ws-cut-liners" className="lt-input" style={{ width: '100%' }} value={cutoffLiner}
                       onChange={e => setCutoffLiner(e.target.value)}
                       placeholder="e.g. Maersk, MSC, Hapag-Lloyd" />
+                    <datalist id="ws-cut-liners">
+                      {linerList.map(l => <option key={l.lin_id} value={l.name} />)}
+                    </datalist>
                   </div>
 
                   {/* Paste / Upload toggle */}
@@ -2449,9 +2652,9 @@ ABC Logistics (Pvt) Ltd`
             {actionModal.actionKind === 'submit-si' && (() => {
               const { booking: siBkg } = actionModal.sourceData
               return (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
                   {/* Booking summary */}
-                  <div style={{ padding: '10px 14px', background: 'rgba(79,70,229,0.06)', border: '1px solid rgba(79,70,229,0.15)', borderRadius: 8, fontSize: 12 }}>
+                  <div style={{ padding: '10px 14px', background: 'rgba(15,143,168,0.06)', border: '1px solid rgba(15,143,168,0.15)', borderRadius: 8, fontSize: 12 }}>
                     <strong>{siBkg.customer_name}</strong> — {siBkg.origin} → {siBkg.destination}
                     <div style={{ color: 'var(--text-muted)', marginTop: 2 }}>
                       {siBkg.quantity}x {siBkg.container_type} · {siBkg.shipping_line || 'No liner'}
@@ -2474,54 +2677,9 @@ ABC Logistics (Pvt) Ltd`
                     </div>
                   )}
 
-                  {/* Submit via InttraAPI */}
-                  {!inttraSiResult && (
-                    <button
-                      className="db-btn primary"
-                      disabled={inttraSiLoading}
-                      style={{ display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'center' }}
-                      onClick={async () => {
-                        setInttraSiLoading(true)
-                        try {
-                          const result = await apiSubmitSiInttra({
-                            booking_id: siBkg.id,
-                            shipping_line: siBkg.shipping_line || '',
-                            origin: siBkg.origin,
-                            destination: siBkg.destination,
-                          })
-                          setInttraSiResult(result)
-                        } catch {
-                          onFlash('InttraAPI SI submission failed — enter manually')
-                        }
-                        setInttraSiLoading(false)
-                      }}
-                    >
-                      {inttraSiLoading
-                        ? <><Loader2 size={13} className="spin" /> Submitting SI via InttraAPI...</>
-                        : <><Globe size={13} /> Submit SI via InttraAPI</>}
-                    </button>
-                  )}
 
-                  {/* Inttra confirmation result */}
-                  {inttraSiResult && (
-                    <div style={{ padding: '14px 16px', background: 'rgba(22,163,106,0.06)', border: '1px solid rgba(22,163,106,0.2)', borderRadius: 8 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-                        <Check size={14} style={{ color: '#16a34a' }} />
-                        <span style={{ fontSize: 13, fontWeight: 700, color: '#16a34a' }}>SI Submitted</span>
-                      </div>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 16px', fontSize: 12 }}>
-                        <div><span style={{ color: 'var(--text-muted)' }}>Reference:</span> <strong>{inttraSiResult.si_reference}</strong></div>
-                        <div><span style={{ color: 'var(--text-muted)' }}>Liner:</span> {inttraSiResult.shipping_line}</div>
-                        <div><span style={{ color: 'var(--text-muted)' }}>Status:</span> {inttraSiResult.status}</div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Manual entry */}
-                  {!inttraSiResult && (
-                    <>
-                      <div style={{ textAlign: 'center', fontSize: 11, color: 'var(--text-muted)', padding: '4px 0' }}>— or enter manually —</div>
-                      <div>
+                  {/* SI Document */}
+                  <div>
                         <label className="lt-label">SI Document</label>
                         <div style={{ display: 'flex', gap: 8, marginTop: 4, marginBottom: 8 }}>
                           <button
@@ -2588,9 +2746,7 @@ ABC Logistics (Pvt) Ltd`
                             )}
                           </div>
                         )}
-                      </div>
-                    </>
-                  )}
+                  </div>
 
                   <div>
                     <label className="lt-label">Notes (optional)</label>
@@ -2606,9 +2762,9 @@ ABC Logistics (Pvt) Ltd`
             {actionModal.actionKind === 'send-draft-bl' && (() => {
               const { booking: blBkg } = actionModal.sourceData
               return (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
                   {/* Booking summary */}
-                  <div style={{ padding: '10px 14px', background: 'rgba(79,70,229,0.06)', border: '1px solid rgba(79,70,229,0.15)', borderRadius: 8, fontSize: 12 }}>
+                  <div style={{ padding: '10px 14px', background: 'rgba(15,143,168,0.06)', border: '1px solid rgba(15,143,168,0.15)', borderRadius: 8, fontSize: 12 }}>
                     <strong>{blBkg.customer_name}</strong> — {blBkg.origin} → {blBkg.destination}
                     <div style={{ color: 'var(--text-muted)', marginTop: 2 }}>
                       {blBkg.quantity}x {blBkg.container_type} · {blBkg.shipping_line || 'No liner'}
@@ -2774,9 +2930,9 @@ ABC Logistics (Pvt) Ltd`
               const isDtd = baBkg.delivery_type === 'door-to-door'
               const blType = isDtd ? 'House BL' : 'Draft BL'
               return (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
                   {/* Booking summary */}
-                  <div style={{ padding: '10px 14px', background: 'rgba(79,70,229,0.06)', border: '1px solid rgba(79,70,229,0.15)', borderRadius: 8, fontSize: 12 }}>
+                  <div style={{ padding: '10px 14px', background: 'rgba(15,143,168,0.06)', border: '1px solid rgba(15,143,168,0.15)', borderRadius: 8, fontSize: 12 }}>
                     <strong>{baBkg.customer_name}</strong> — {baBkg.origin} → {baBkg.destination}
                     <div style={{ color: 'var(--text-muted)', marginTop: 2 }}>
                       {baBkg.quantity}x {baBkg.container_type} · {baBkg.shipping_line || 'No liner'}{isDtd ? ' · Door-to-Door' : ''}
@@ -2860,9 +3016,9 @@ ABC Logistics (Pvt) Ltd`
             {actionModal.actionKind === 'record-master-bl' && (() => {
               const { booking: mbBkg } = actionModal.sourceData
               return (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
                   {/* Booking summary */}
-                  <div style={{ padding: '10px 14px', background: 'rgba(79,70,229,0.06)', border: '1px solid rgba(79,70,229,0.15)', borderRadius: 8, fontSize: 12 }}>
+                  <div style={{ padding: '10px 14px', background: 'rgba(15,143,168,0.06)', border: '1px solid rgba(15,143,168,0.15)', borderRadius: 8, fontSize: 12 }}>
                     <strong>{mbBkg.customer_name}</strong> — {mbBkg.origin} → {mbBkg.destination}
                     <div style={{ color: 'var(--text-muted)', marginTop: 2 }}>
                       {mbBkg.quantity}x {mbBkg.container_type} · {mbBkg.shipping_line || 'No liner'} · Door-to-Door
@@ -2924,9 +3080,9 @@ ABC Logistics (Pvt) Ltd`
             {actionModal.actionKind === 'create-house-bl' && (() => {
               const { booking: hbBkg } = actionModal.sourceData
               return (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
                   {/* Booking summary */}
-                  <div style={{ padding: '10px 14px', background: 'rgba(79,70,229,0.06)', border: '1px solid rgba(79,70,229,0.15)', borderRadius: 8, fontSize: 12 }}>
+                  <div style={{ padding: '10px 14px', background: 'rgba(15,143,168,0.06)', border: '1px solid rgba(15,143,168,0.15)', borderRadius: 8, fontSize: 12 }}>
                     <strong>{hbBkg.customer_name}</strong> — {hbBkg.origin} → {hbBkg.destination}
                     <div style={{ color: 'var(--text-muted)', marginTop: 2 }}>
                       {hbBkg.quantity}x {hbBkg.container_type} · {hbBkg.shipping_line || 'No liner'} · Door-to-Door
@@ -3050,7 +3206,7 @@ ABC Logistics (Pvt) Ltd`
 
             {/* Quote approval form */}
             {actionModal.actionKind === 'approve-quote' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
                 <div>
                   <label className="lt-label">Decision</label>
                   <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
@@ -3077,23 +3233,22 @@ ABC Logistics (Pvt) Ltd`
               </div>
             )}
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 20 }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 24, paddingTop: 20, borderTop: '1px solid #eef2f6' }}>
               <button className="db-btn" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }} onClick={() => setActionModal(null)}>Cancel</button>
               <button
                 className="db-btn primary"
                 disabled={
-                  (actionModal.actionKind === 'send-kyc' && (!formEmail.trim() || !formEmail.includes('@'))) ||
+                  (actionModal.actionKind === 'send-kyc' && (!kycBrNumber.trim() || !kycCliType || !kycDeadline)) ||
                   (actionModal.actionKind === 'prepare-quotation' && !quotationContent.trim()) ||
                   (actionModal.actionKind === 'send-to-customer' && sendMethod === 'email' && (!customerContactEmail.trim() || !customerContactEmail.includes('@'))) ||
                   (actionModal.actionKind === 'send-to-customer' && sendMethod === 'whatsapp' && !waConfirmed) ||
-                  (actionModal.actionKind === 'confirm-booking' && !formVessel.trim() && !inttraBookResult) ||
-                  (actionModal.actionKind === 'confirm-booking' && inttraBooking) ||
+                  (actionModal.actionKind === 'confirm-booking' && !formVessel.trim()) ||
                   (actionModal.actionKind === 'release-booking' && sendMethod === 'email' && (!customerContactEmail.trim() || !customerContactEmail.includes('@'))) ||
                   (actionModal.actionKind === 'release-booking' && sendMethod === 'whatsapp' && !waConfirmed) ||
                   (actionModal.actionKind === 'request-si' && sendMethod === 'email' && (!customerContactEmail.trim() || !customerContactEmail.includes('@'))) ||
                   (actionModal.actionKind === 'request-si' && sendMethod === 'whatsapp' && !waConfirmed) ||
                   (actionModal.actionKind === 'submit-si' && inttraSiLoading) ||
-                  (actionModal.actionKind === 'submit-si' && !inttraSiResult && !siContent.trim()) ||
+                  (actionModal.actionKind === 'submit-si' && !siContent.trim()) ||
                   (actionModal.actionKind === 'send-draft-bl' && sendMethod === 'email' && (!customerContactEmail.trim() || !customerContactEmail.includes('@'))) ||
                   (actionModal.actionKind === 'send-draft-bl' && sendMethod === 'whatsapp' && !waConfirmed) ||
                   (actionModal.actionKind === 'bl-approval' && blDecision === 'changes-requested' && !formNote.trim()) ||
@@ -3107,14 +3262,13 @@ ABC Logistics (Pvt) Ltd`
                   actionModal.actionKind === 'verify-kyc' && formDecision === 'reject' ? { background: '#dc2626', borderColor: '#dc2626' } :
                   actionModal.actionKind === 'verify-kyc' ? { background: '#16a34a', borderColor: '#16a34a' } :
                   actionModal.actionKind === 'approve-quote' && formDecision === 'reject' ? { background: '#dc2626', borderColor: '#dc2626' } :
-                  actionModal.actionKind === 'prepare-quotation' ? { background: '#4f46e5', borderColor: '#4f46e5' } :
+                  actionModal.actionKind === 'prepare-quotation' ? { background: '#0f8fa8', borderColor: '#0f8fa8' } :
                   actionModal.actionKind === 'send-to-customer' && sendMethod === 'whatsapp' && waConfirmed ? { background: '#25d366', borderColor: '#25d366' } :
                   actionModal.actionKind === 'send-to-customer' && sendMethod === 'email' && customerContactEmail.includes('@') ? {} :
                   actionModal.actionKind === 'customer-response' && customerDecision === 'accepted' ? { background: '#16a34a', borderColor: '#16a34a' } :
                   actionModal.actionKind === 'customer-response' && customerDecision === 'rejected' ? { background: '#dc2626', borderColor: '#dc2626' } :
-                  actionModal.actionKind === 'booking-request' ? { background: '#4f46e5', borderColor: '#4f46e5' } :
+                  actionModal.actionKind === 'booking-request' ? { background: '#0f8fa8', borderColor: '#0f8fa8' } :
                   actionModal.actionKind === 'record-cutoff' ? { background: '#0891b2', borderColor: '#0891b2' } :
-                  actionModal.actionKind === 'confirm-booking' && inttraBookResult ? { background: '#16a34a', borderColor: '#16a34a' } :
                   actionModal.actionKind === 'confirm-booking' && formVessel.trim() ? { background: '#d97706', borderColor: '#d97706' } :
                   actionModal.actionKind === 'confirm-booking' ? { opacity: 0.4, cursor: 'not-allowed' } :
                   actionModal.actionKind === 'release-booking' && sendMethod === 'whatsapp' && waConfirmed ? { background: '#25d366', borderColor: '#25d366' } :
@@ -3123,7 +3277,6 @@ ABC Logistics (Pvt) Ltd`
                   actionModal.actionKind === 'request-si' && sendMethod === 'whatsapp' && waConfirmed ? { background: '#25d366', borderColor: '#25d366' } :
                   actionModal.actionKind === 'request-si' && sendMethod === 'email' && customerContactEmail.includes('@') ? { background: '#0891b2', borderColor: '#0891b2' } :
                   actionModal.actionKind === 'request-si' ? { opacity: 0.4, cursor: 'not-allowed' } :
-                  actionModal.actionKind === 'submit-si' && inttraSiResult ? { background: '#16a34a', borderColor: '#16a34a' } :
                   actionModal.actionKind === 'submit-si' && siContent.trim() ? { background: '#0891b2', borderColor: '#0891b2' } :
                   actionModal.actionKind === 'submit-si' ? { opacity: 0.4, cursor: 'not-allowed' } :
                   actionModal.actionKind === 'send-draft-bl' && sendMethod === 'whatsapp' && waConfirmed ? { background: '#25d366', borderColor: '#25d366' } :
@@ -3137,7 +3290,8 @@ ABC Logistics (Pvt) Ltd`
                   actionModal.actionKind === 'create-house-bl' && sendMethod === 'whatsapp' && waConfirmed && houseBlNumber.trim() && houseBlConsignee.trim() ? { background: '#25d366', borderColor: '#25d366' } :
                   actionModal.actionKind === 'create-house-bl' && sendMethod === 'email' && customerContactEmail.includes('@') && houseBlNumber.trim() && houseBlConsignee.trim() ? { background: '#d97706', borderColor: '#d97706' } :
                   actionModal.actionKind === 'create-house-bl' ? { opacity: 0.4, cursor: 'not-allowed' } :
-                  (actionModal.actionKind === 'send-kyc' && (!formEmail.trim() || !formEmail.includes('@'))) ? { opacity: 0.4, cursor: 'not-allowed' } :
+                  (actionModal.actionKind === 'send-kyc' && (!kycBrNumber.trim() || !kycCliType || !kycDeadline)) ? { opacity: 0.4, cursor: 'not-allowed' } :
+                  (actionModal.actionKind === 'send-kyc') ? { background: '#0891b2', borderColor: '#0891b2' } :
                   (actionModal.actionKind === 'prepare-quotation' && !quotationContent.trim()) ? { opacity: 0.4, cursor: 'not-allowed' } :
                   (actionModal.actionKind === 'send-to-customer' && ((sendMethod === 'email' && (!customerContactEmail.trim() || !customerContactEmail.includes('@'))) || (sendMethod === 'whatsapp' && !waConfirmed))) ? { opacity: 0.4, cursor: 'not-allowed' } :
                   {}
@@ -3146,24 +3300,22 @@ ABC Logistics (Pvt) Ltd`
               >
                 {kycSending ? <><Loader2 size={12} className="spin" /> Sending...</> :
                  quotationSending ? <><Loader2 size={12} className="spin" /> Sending...</> :
-                 actionModal.actionKind === 'send-kyc' ? <><Mail size={12} /> Send KYC &amp; Push</> :
+                 actionModal.actionKind === 'send-kyc' ? <><ShieldCheck size={12} /> Submit KYC Request</> :
                  actionModal.actionKind === 'verify-kyc' && formDecision === 'reject' ? 'Flag & Return to CS' :
                  actionModal.actionKind === 'verify-kyc' ? <><ShieldCheck size={12} /> Verify &amp; Push</> :
-                 actionModal.actionKind === 'prepare-quotation' ? <><Send size={12} /> Send Quotation to CS</> :
+                 actionModal.actionKind === 'prepare-quotation' ? <><ClipboardCheck size={12} /> Mark as Sent to Customer</> :
                  actionModal.actionKind === 'send-to-customer' && sendMethod === 'email' ? <><Mail size={12} /> Send via Email</> :
                  actionModal.actionKind === 'send-to-customer' && sendMethod === 'whatsapp' ? <><MessageCircle size={12} /> Confirm WhatsApp Sent</> :
                  actionModal.actionKind === 'customer-response' && customerDecision === 'accepted' ? <><Check size={12} /> Customer Accepted — Proceed to Booking</> :
                  actionModal.actionKind === 'customer-response' && customerDecision === 'rejected' ? <><X size={12} /> Customer Rejected — Close Inquiry</> :
                  actionModal.actionKind === 'booking-request' ? <><Ship size={12} /> Create Booking &amp; Send to Procurement</> :
                  actionModal.actionKind === 'record-cutoff' ? <><Ship size={12} /> Record Cutoff &amp; Push</> :
-                 actionModal.actionKind === 'confirm-booking' && inttraBookResult ? <><Check size={12} /> Confirm &amp; Send to CS</> :
-                 actionModal.actionKind === 'confirm-booking' && formVessel.trim() ? <><Ship size={12} /> Confirm Manually &amp; Send to CS</> :
+                 actionModal.actionKind === 'confirm-booking' && formVessel.trim() ?<><Ship size={12} /> Confirm Manually &amp; Send to CS</> :
                  actionModal.actionKind === 'release-booking' && sendMethod === 'email' ? <><Mail size={12} /> Release &amp; Send via Email</> :
                  actionModal.actionKind === 'release-booking' && sendMethod === 'whatsapp' ? <><MessageCircle size={12} /> Release &amp; Confirm WhatsApp Sent</> :
                  actionModal.actionKind === 'request-si' && sendMethod === 'email' ? <><Mail size={12} /> Request SI via Email</> :
                  actionModal.actionKind === 'request-si' && sendMethod === 'whatsapp' ? <><MessageCircle size={12} /> Confirm SI Request via WhatsApp</> :
-                 actionModal.actionKind === 'submit-si' && inttraSiResult ? <><Check size={12} /> Confirm SI Submission</> :
-                 actionModal.actionKind === 'submit-si' ? <><Globe size={12} /> Submit SI &amp; Confirm</> :
+                 actionModal.actionKind === 'submit-si' ?<><Globe size={12} /> Submit SI &amp; Confirm</> :
                  actionModal.actionKind === 'send-draft-bl' && sendMethod === 'email' ? <><Mail size={12} /> Send Draft BL via Email</> :
                  actionModal.actionKind === 'send-draft-bl' && sendMethod === 'whatsapp' ? <><MessageCircle size={12} /> Confirm Draft BL Sent</> :
                  actionModal.actionKind === 'bl-approval' && blDecision === 'approved' ? <><Check size={12} /> BL Approved</> :

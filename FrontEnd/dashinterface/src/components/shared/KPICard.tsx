@@ -1,5 +1,5 @@
 import { TrendingUp, TrendingDown, Minus } from 'lucide-react'
-import type { KPIItem } from '../../mockData'
+import type { KPIItem } from '../../types'
 
 export default function KPICard({ label, value, change, trend, color, sub }: KPIItem) {
   return (

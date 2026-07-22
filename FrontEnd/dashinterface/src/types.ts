@@ -44,18 +44,18 @@ export const ROLE_LABELS: Record<UserRole, string> = {
 
 export const ROLE_COLORS: Record<UserRole, string> = {
   CS:          '#0891b2',
-  Sales:       '#4f46e5',
+  Sales:       '#2c2c82',
   Finance:     '#16a34a',
   Procurement: '#d97706',
   Admin:       '#7c3aed',
 }
 
 export const ROLE_PAGE_ACCESS: Record<UserRole, PageId[]> = {
-  CS:          ['dashboard', 'chat', 'workspace', 'new-inquiry', 'inquiry-list', 'followups', 'customers', 'kyc'],
-  Sales:       ['dashboard', 'chat', 'workspace', 'new-inquiry', 'inquiry-list', 'quotations', 'followups', 'customers'],
-  Finance:     ['dashboard', 'chat', 'workspace', 'customers', 'kyc', 'quotations'],
+  CS:          ['dashboard', 'chat', 'workspace', 'new-inquiry', 'inquiry-list', 'rate-list', 'followups', 'customers', 'kyc'],
+  Sales:       ['dashboard', 'chat', 'workspace', 'new-inquiry', 'inquiry-list', 'rate-list', 'followups', 'customers'],
+  Finance:     ['dashboard', 'chat', 'workspace', 'customers', 'kyc'],
   Procurement: ['dashboard', 'chat', 'workspace', 'inquiry-list', 'record-rate', 'rate-check', 'rate-list', 'followups'],
-  Admin:       ['dashboard', 'chat', 'workspace', 'new-inquiry', 'record-rate', 'rate-check', 'inquiry-list', 'rate-list', 'quotations', 'shipments', 'followups', 'customers', 'kyc'],
+  Admin:       ['dashboard', 'chat', 'workspace', 'new-inquiry', 'record-rate', 'rate-check', 'inquiry-list', 'rate-list', 'shipments', 'followups', 'customers', 'kyc'],
 }
 
 export const ROLE_QUICK_COMMANDS: Record<UserRole, string[]> = {
@@ -189,9 +189,53 @@ export type DeliveryType = 'port-to-port' | 'door-to-door'
 export type InquiryPriority = 'Low' | 'Medium' | 'High' | 'Urgent'
 export const INQUIRY_PRIORITIES: InquiryPriority[] = ['Low', 'Medium', 'High', 'Urgent']
 
-// Commodity types — captured at inquiry level per the meeting requirement.
-export type CommodityType = 'General' | 'Food' | 'Hazardous' | 'Pharmaceuticals' | 'Textiles' | 'Electronics' | 'Chemicals' | 'Other'
-export const COMMODITY_TYPES: CommodityType[] = ['General', 'Food', 'Hazardous', 'Pharmaceuticals', 'Textiles', 'Electronics', 'Chemicals', 'Other']
+// Commodity types — aligned with HS chapter groupings for accurate classification.
+export type CommodityType =
+  | 'Live animals; animal products'
+  | 'Vegetable products'
+  | 'Animal/vegetable fats and oils'
+  | 'Prepared foodstuffs; beverages, spirits, tobacco'
+  | 'Mineral products'
+  | 'Chemicals and allied industries'
+  | 'Plastics and rubber'
+  | 'Raw hides, skins, leather, furskins'
+  | 'Wood, cork, basketware'
+  | 'Pulp, paper, paperboard'
+  | 'Textiles and textile articles'
+  | 'Footwear, headgear, umbrellas'
+  | 'Stone, plaster, cement, ceramic, glass'
+  | 'Pearls, precious stones/metals'
+  | 'Base metals and articles thereof'
+  | 'Machinery and electrical equipment'
+  | 'Vehicles, aircraft, vessels, transport equipment'
+  | 'Optical/medical/precision instruments, clocks'
+  | 'Arms and ammunition'
+  | 'Miscellaneous manufactured articles — furniture, toys'
+  | 'Works of art, collectors\' pieces, antiques'
+
+export const COMMODITY_TYPES: CommodityType[] = [
+  'Live animals; animal products',
+  'Vegetable products',
+  'Animal/vegetable fats and oils',
+  'Prepared foodstuffs; beverages, spirits, tobacco',
+  'Mineral products',
+  'Chemicals and allied industries',
+  'Plastics and rubber',
+  'Raw hides, skins, leather, furskins',
+  'Wood, cork, basketware',
+  'Pulp, paper, paperboard',
+  'Textiles and textile articles',
+  'Footwear, headgear, umbrellas',
+  'Stone, plaster, cement, ceramic, glass',
+  'Pearls, precious stones/metals',
+  'Base metals and articles thereof',
+  'Machinery and electrical equipment',
+  'Vehicles, aircraft, vessels, transport equipment',
+  'Optical/medical/precision instruments, clocks',
+  'Arms and ammunition',
+  'Miscellaneous manufactured articles — furniture, toys',
+  'Works of art, collectors\' pieces, antiques',
+]
 
 // Container types — structured field instead of free text.
 export type ContainerType = '20 GP' | '40 GP' | '20 OPEN TOP' | '40 OPEN TOP' | '40 HC' | '20 REEFER' | '40 REEFER' | '20 FLAT RACK' | '40 FLAT RACK' | 'TANKER'
@@ -209,13 +253,20 @@ export interface ContainerLine {
   zipCode: string
   doorAgents: string[]
   freeTime: number | ''
+  // Backend fields (ContainerNew / container table)
+  temperature?: number       // reefer set-point in °C
+  address?: string           // door-delivery address (distinct from zip code)
+  hs_code?: string           // commodity HS tariff code (CommodityNew.hs_code)
+  description?: string       // commodity description (CommodityNew.description)
+  com_id?: number            // backend commodity row PK — required for PATCH /commodities/{com_id}
+  cont_id?: number           // backend container row PK — required for PATCH /containers/{cont_id}
 }
 
 export const emptyContainerLine = (): ContainerLine => ({
   containerType: '20 GP',
   quantity: 1,
   weight: '',
-  commodityType: 'General',
+  commodityType: 'Miscellaneous manufactured articles — furniture, toys',
   commodityName: '',
   destination: '',
   isFcl: true,
@@ -224,19 +275,15 @@ export const emptyContainerLine = (): ContainerLine => ({
   freeTime: '',
 })
 
-// Special equipment needs — open top, flat rack, reefer, etc.
-export type SpecialEquipment = 'None' | 'Reefer' | 'Open Top' | 'Flat Rack' | 'Tank' | 'Ventilated'
-export const SPECIAL_EQUIPMENT_OPTIONS: SpecialEquipment[] = ['None', 'Reefer', 'Open Top', 'Flat Rack', 'Tank', 'Ventilated']
-
 export interface Inquiry {
   id: string
   customer_name: string
-  inquiry_text: string
-  request: string
+  inquiry_text?: string  // frontend-only — no backend column
+  request?: string       // frontend-only — auto-generated label
   origin: string         // where cargo ships from (e.g. 'Colombo')
   destination: string    // where cargo ships to   (e.g. 'Hamburg')
   delivery_type: DeliveryType
-  channel: 'WhatsApp' | 'Email' | 'Phone'
+  channel?: 'WhatsApp' | 'Email' | 'Phone' | 'WeChat'  // frontend-only — stored in contact record
   sbu: SBU
   employee_id: number
   status: InquiryStatus
@@ -248,15 +295,24 @@ export interface Inquiry {
   commodity_type?: CommodityType     // cargo commodity classification
   container_type?: ContainerType     // structured container size/type
   container_qty?: number             // number of containers requested
-  special_equipment?: SpecialEquipment // special equipment needs
   cargo_weight?: number              // cargo weight in kg
   is_fcl?: boolean                   // true = FCL, false = LCL
   remark?: string                    // special instructions / notes
   contact_person?: string            // name of the person who made the inquiry
+  contact_designation?: string       // job title / role of the contact person
   contact_channel_id?: string        // channel-specific: email address, WhatsApp number, or phone number
   containers?: ContainerLine[]       // multi-container support
   preferred_liners?: string[]        // multiple preferred shipping lines
   recorded_by?: number               // employee_id of the person who created this inquiry
+  // Backend fields — populated after successful API create / fetch
+  inq_id?: number          // backend integer PK (inquiry table)
+  cli_id?: number          // backend client ID
+  cpid?: number            // backend contact-person ID
+  com_ids?: number[]       // backend commodity row IDs
+  cont_ids?: number[]      // backend container row IDs
+  incoterm?: string        // trade term: FOB / CIF / EXW / DDP …
+  cargo_ready_date?: string // ISO date when cargo is ready to ship
+  preferred_rate?: number  // client's target buy rate (USD)
 }
 
 // ==================== CUSTOMER MASTER ====================
@@ -290,16 +346,6 @@ export interface Customer {
   assigned_salesperson_id?: number // salesperson responsible for this customer
 }
 
-export const SEED_CUSTOMERS: Customer[] = [
-  { id: 'CUS-001', name: 'Hayleys Logistics', location: 'Colombo, Sri Lanka', tier: 'Key Account', payment_terms: '30-Day Credit', blacklisted: false, credit_hold: false, min_margin_pct: 5, kyc_status: 'approved', contact_email: 'shipping@hayleys.lk', contact_phone: '+94112345001', contact_person: 'Samantha Perera', customer_type: 'Shipper', assigned_salesperson_id: 1 },
-  { id: 'CUS-002', name: 'Brandix Apparel',   location: 'Colombo, Sri Lanka', tier: 'Key Account', payment_terms: '30-Day Credit', blacklisted: false, credit_hold: false, min_margin_pct: 5, kyc_status: 'approved', contact_email: 'logistics@brandix.com', contact_phone: '+94112345002', contact_person: 'Kavinda Silva', customer_type: 'Shipper', assigned_salesperson_id: 1 },
-  { id: 'CUS-003', name: 'Customer ABC',      location: 'Colombo, Sri Lanka', tier: 'Regular',     payment_terms: 'Pay Upfront',   blacklisted: false, credit_hold: false, min_margin_pct: 7, kyc_status: 'approved', contact_email: 'contact@customerabc.com', contact_phone: '+94112345003', contact_person: 'Rajan Kumar', customer_type: 'Buyer', assigned_salesperson_id: 1 },
-  { id: 'CUS-004', name: 'MAS Holdings',      location: 'Colombo, Sri Lanka', tier: 'Key Account', payment_terms: '60-Day Credit', blacklisted: false, credit_hold: false, min_margin_pct: 4, kyc_status: 'approved', notes: 'Strategic account — large monthly volume', contact_email: 'shipping@masholdings.com', contact_phone: '+94112345004', contact_person: 'Dinesh Fernando', customer_type: 'Shipper', assigned_salesperson_id: 3 },
-  { id: 'CUS-005', name: 'Dilmah Tea',        location: 'Peliyagoda, Sri Lanka', tier: 'Key Account', payment_terms: '30-Day Credit', blacklisted: false, credit_hold: true,  min_margin_pct: 5, kyc_status: 'approved', notes: 'Credit hold — finance to clear before next quote', contact_email: 'exports@dilmahtea.com', contact_phone: '+94112345005', contact_person: 'Nalin Wickramasinghe', customer_type: 'Shipper', assigned_salesperson_id: 1 },
-  { id: 'CUS-006', name: 'Hela Apparel',      location: 'Katunayake, Sri Lanka', tier: 'Regular',  payment_terms: 'Pay Upfront',   blacklisted: false, credit_hold: false, min_margin_pct: 7, kyc_status: 'pending_customer', contact_email: 'info@helaapparel.lk', contact_phone: '+94112345006', contact_person: 'Amali Jayasuriya', customer_type: 'Shipper', assigned_salesperson_id: 3 },
-  { id: 'CUS-007', name: 'Vanguard Shippers', location: 'Karachi, Pakistan',  tier: 'Walk-in',     payment_terms: 'Pay Upfront',   blacklisted: true,  credit_hold: false, min_margin_pct: 10, kyc_status: 'approved', notes: 'Blacklisted — repeated payment defaults in 2025', contact_email: 'ops@vanguardshippers.pk', contact_phone: '+92213456789', contact_person: 'Imran Ali', customer_type: 'Trader', assigned_salesperson_id: 1 },
-]
-
 export function findCustomer(name: string, customers: Customer[]): Customer | undefined {
   return customers.find(c => c.name.toLowerCase() === name.toLowerCase())
 }
@@ -327,136 +373,6 @@ export const EMPLOYEES: Employee[] = [
   { id: 5, name: 'Kamal Dissanayake',  role: 'Procurement' },
 ]
 
-// ==================== SEED DATA ====================
-export const SEED_INQUIRIES: Inquiry[] = [
-  {
-    id: 'INQ-1041',
-    customer_name: 'Hayleys Logistics',
-    inquiry_text: 'Hi, we need 12 reefer containers from Colombo to Hamburg by next Friday.',
-    request: '12 reefer containers',
-    origin: 'Colombo',
-    destination: 'Hamburg',
-    delivery_type: 'port-to-port',
-    channel: 'Email',
-    sbu: 'Ocean Exports',
-    employee_id: 2,
-    status: 'pending',
-    created_at: '2026-05-02 09:14',
-    workflow_stage: 'rate-check',
-    priority: 'High',
-    commodity_type: 'Food',
-    container_type: '20 REEFER',
-    container_qty: 12,
-    special_equipment: 'Reefer',
-  },
-  {
-    id: 'INQ-1040',
-    customer_name: 'Brandix Apparel',
-    inquiry_text: 'Need quote for 4x40ft to Singapore, ETD this week.',
-    request: '4x 40ft containers',
-    origin: 'Colombo',
-    destination: 'Singapore',
-    delivery_type: 'door-to-door',
-    channel: 'WhatsApp',
-    sbu: 'Ocean Exports',
-    employee_id: 1,
-    status: 'pending',
-    created_at: '2026-05-02 08:42',
-    workflow_stage: 'quotation-prep',
-    priority: 'Medium',
-    commodity_type: 'Textiles',
-    container_type: '40 GP',
-    container_qty: 4,
-    special_equipment: 'None',
-  },
-  {
-    id: 'INQ-1039',
-    customer_name: 'Customer ABC',
-    inquiry_text: 'Customer ABC requested 10 containers from Chennai to Colombo.',
-    request: '10 containers',
-    origin: 'Chennai',
-    destination: 'Colombo',
-    delivery_type: 'port-to-port',
-    channel: 'WhatsApp',
-    sbu: 'Ocean Imports',
-    employee_id: 1,
-    status: 'completed',
-    created_at: '2026-05-01 14:08',
-    completed_at: '2026-05-01 17:22',
-    followup_note: 'Quoted, booking confirmed.',
-    workflow_stage: 'completed',
-    priority: 'Medium',
-    commodity_type: 'General',
-    container_type: '20 GP',
-    container_qty: 10,
-    special_equipment: 'None',
-  },
-  {
-    id: 'INQ-1038',
-    customer_name: 'MAS Holdings',
-    inquiry_text: 'Looking for 6 dry containers to Rotterdam, please advise rate.',
-    request: '6 dry containers',
-    origin: 'Colombo',
-    destination: 'Rotterdam',
-    delivery_type: 'port-to-port',
-    channel: 'Email',
-    sbu: 'Ocean Exports',
-    employee_id: 3,
-    status: 'pending',
-    created_at: '2026-05-01 10:20',
-    completed_at: undefined,
-    followup_note: 'Quotation sent, awaiting customer response.',
-    workflow_stage: 'customer-response',
-    priority: 'Medium',
-    commodity_type: 'Textiles',
-    container_type: '40 HC',
-    container_qty: 6,
-    special_equipment: 'None',
-  },
-  {
-    id: 'INQ-1037',
-    customer_name: 'Dilmah Tea',
-    inquiry_text: 'Please confirm space for 8 containers to Dubai sailing on the 10th.',
-    request: '8 containers',
-    origin: 'Colombo',
-    destination: 'Dubai',
-    delivery_type: 'door-to-door',
-    channel: 'Email',
-    sbu: 'Ocean Exports',
-    employee_id: 2,
-    status: 'completed',
-    created_at: '2026-04-30 11:45',
-    completed_at: '2026-04-30 15:10',
-    followup_note: 'Space confirmed.',
-    workflow_stage: 'completed',
-    priority: 'High',
-    commodity_type: 'Food',
-    container_type: '40 GP',
-    container_qty: 8,
-    special_equipment: 'None',
-  },
-  {
-    id: 'INQ-1036',
-    customer_name: 'Hela Apparel',
-    inquiry_text: 'Need 3x20ft to Mumbai urgent.',
-    request: '3x 20ft containers',
-    origin: 'Colombo',
-    destination: 'Mumbai',
-    delivery_type: 'port-to-port',
-    channel: 'WhatsApp',
-    sbu: 'Ocean Exports',
-    employee_id: 1,
-    status: 'pending',
-    created_at: '2026-04-30 09:02',
-    workflow_stage: 'procurement-request',
-    priority: 'Urgent',
-    commodity_type: 'Textiles',
-    container_type: '20 GP',
-    container_qty: 3,
-    special_equipment: 'None',
-  },
-]
-
 // ==================== TASKS ====================
 export type TaskStatus = 'pending' | 'completed'
 
@@ -470,14 +386,6 @@ export interface Task {
   inquiry_id?: string
 }
 
-export const SEED_TASKS: Task[] = [
-  { id: 'TSK-201', customer_name: 'Hayleys Logistics', task: 'Send Quotation', status: 'pending', due_date: '2026-05-03', employee_id: 2, inquiry_id: 'INQ-1041' },
-  { id: 'TSK-202', customer_name: 'Brandix Apparel',  task: 'Confirm sailing schedule', status: 'pending', due_date: '2026-05-03', employee_id: 1, inquiry_id: 'INQ-1040' },
-  { id: 'TSK-203', customer_name: 'Hela Apparel',     task: 'Negotiate rate with carrier', status: 'pending', due_date: '2026-05-04', employee_id: 1, inquiry_id: 'INQ-1036' },
-  { id: 'TSK-204', customer_name: 'Customer ABC',     task: 'Follow up on payment',     status: 'completed', due_date: '2026-05-01', employee_id: 1, inquiry_id: 'INQ-1039' },
-  { id: 'TSK-205', customer_name: 'MAS Holdings',     task: 'Send draft B/L',           status: 'completed', due_date: '2026-05-01', employee_id: 3, inquiry_id: 'INQ-1038' },
-]
-
 // ==================== MISSING ITEMS (POWER FEATURE) ====================
 export interface MissingItem {
   id: string
@@ -487,13 +395,6 @@ export interface MissingItem {
   cutoff_date?: string
   employee_id: number
 }
-
-export const SEED_MISSING_ITEMS: MissingItem[] = [
-  { id: 'MIS-301', customer_name: 'Hayleys Logistics', missing_item: 'SI not submitted',     since: '2026-05-02', cutoff_date: '2026-05-04', employee_id: 2 },
-  { id: 'MIS-302', customer_name: 'Brandix Apparel',   missing_item: 'KYC pending',          since: '2026-05-02', cutoff_date: '2026-05-05', employee_id: 1 },
-  { id: 'MIS-303', customer_name: 'Hela Apparel',      missing_item: 'PO not received',      since: '2026-04-30', cutoff_date: '2026-05-01', employee_id: 1 },
-  { id: 'MIS-304', customer_name: 'Hayleys Logistics', missing_item: 'B/L draft approval',   since: '2026-05-02', cutoff_date: '2026-05-06', employee_id: 2 },
-]
 
 // ==================== RATE RECORD (from AMS) ====================
 export interface RateRecord {
@@ -511,7 +412,7 @@ export interface RateRecord {
 }
 
 // ==================== UNIFIED RATE (from all DB rate tables) ====================
-export type RateSourceType = 'Contracted' | 'FAK' | 'Spot' | 'Vessel-by-Vessel' | 'Tariff Rate' | 'NAC' | 'Special'
+export type RateSourceType = 'Contracted' | 'FAK' | 'Spot' | 'Tariff Rate' | 'NAC' | 'Special'
 
 export type ServiceScope = 'Import' | 'Export' | 'Within'
 
@@ -530,10 +431,9 @@ export interface UnifiedRate {
   vessel_name: string | null
   departure_date: string | null
   is_sold: boolean | null
-  service_scope: ServiceScope | null  // IWE: Import / Within / Export
+  service_scope: ServiceScope | null  // Service Lane: Import / Within / Export
   // NAC-specific
   client_name: string | null
-  contact_person_name: string | null
   employee_name: string | null
   // Special-specific
   commodity_name: string | null
@@ -617,8 +517,7 @@ export interface ClientRecord {
 export const RATE_SOURCE_COLORS: Record<RateSourceType, string> = {
   Contracted: '#2563eb',
   FAK: '#7c3aed',
-  Spot: '#dc2626',
-  'Vessel-by-Vessel': '#ea580c',
+  Spot: '#ea580c',
   'Tariff Rate': '#0891b2',
   NAC: '#059669',
   Special: '#64748b',
@@ -755,42 +654,6 @@ export interface Quote {
   lines: QuoteLine[]
 }
 
-export const SEED_QUOTES: Quote[] = [
-  {
-    id: 'QUO-501',
-    inquiry_id: 'INQ-1039',
-    customer_name: 'Customer ABC',
-    origin: 'Chennai',
-    destination: 'Colombo',
-    quote_type: 'FCA',
-    margin_pct: 8,
-    status: 'Confirmed',
-    created_at: '2026-05-01 15:40',
-    created_by: 1,
-    lines: [
-      { id: 'QL-1', shipping_line: 'Hapag-Lloyd', rate_type: 'Contractual', base_rate_usd: 850,  transit_days: 3, free_time_days: 14, transshipment_points: 'Direct',                  destination_charges_usd: 120 },
-      { id: 'QL-2', shipping_line: 'CMA CGM',     rate_type: 'Spot',        base_rate_usd: 920,  transit_days: 4, free_time_days: 10, transshipment_points: 'Direct',                  destination_charges_usd: 110 },
-      { id: 'QL-3', shipping_line: 'ONE',         rate_type: 'NAC',         base_rate_usd: 870,  transit_days: 3, free_time_days: 21, transshipment_points: 'Direct',                  destination_charges_usd: 130 },
-    ],
-  },
-  {
-    id: 'QUO-500',
-    inquiry_id: 'INQ-1038',
-    customer_name: 'MAS Holdings',
-    origin: 'Colombo',
-    destination: 'Rotterdam',
-    quote_type: 'DDP',
-    margin_pct: 4,
-    status: 'Confirmed',
-    created_at: '2026-05-01 14:00',
-    created_by: 3,
-    lines: [
-      { id: 'QL-4', shipping_line: 'Maersk',      rate_type: 'Contractual', base_rate_usd: 2400, transit_days: 24, free_time_days: 14, transshipment_points: 'Singapore',              destination_charges_usd: 220 },
-      { id: 'QL-5', shipping_line: 'MSC',         rate_type: 'Contractual', base_rate_usd: 2350, transit_days: 26, free_time_days: 14, transshipment_points: 'Jebel Ali',              destination_charges_usd: 240 },
-    ],
-  },
-]
-
 // ==================== SHIPMENTS ====================
 export type ShipmentStatus = 'Booked' | 'In Transit' | 'At Transshipment' | 'Out for Delivery' | 'Delivered' | 'Delayed'
 
@@ -816,40 +679,6 @@ export interface Shipment {
   pod_received?: string        // proof-of-delivery date when delivered
   legs: ShipmentLeg[]
 }
-
-export const SEED_SHIPMENTS: Shipment[] = [
-  {
-    id: 'SHP-801',
-    quote_id: 'QUO-501',
-    customer_name: 'Customer ABC',
-    origin: 'Chennai',
-    destination: 'Colombo',
-    shipping_line: 'Hapag-Lloyd',
-    status: 'In Transit',
-    booked_at: '2026-05-02 09:00',
-    expected_delivery: '2026-05-05',
-    legs: [
-      { id: 'SL-1', port: 'Chennai',  type: 'Origin',      expected_at: '2026-05-02', actual_at: '2026-05-02', status: 'Departed' },
-      { id: 'SL-2', port: 'Colombo',  type: 'Destination', expected_at: '2026-05-05',                          status: 'Pending' },
-    ],
-  },
-  {
-    id: 'SHP-800',
-    quote_id: 'QUO-500',
-    customer_name: 'MAS Holdings',
-    origin: 'Colombo',
-    destination: 'Rotterdam',
-    shipping_line: 'Maersk',
-    status: 'At Transshipment',
-    booked_at: '2026-05-02 08:00',
-    expected_delivery: '2026-05-26',
-    legs: [
-      { id: 'SL-3', port: 'Colombo',   type: 'Origin',        expected_at: '2026-05-02', actual_at: '2026-05-02', status: 'Departed' },
-      { id: 'SL-4', port: 'Singapore', type: 'Transshipment', expected_at: '2026-05-08', actual_at: '2026-05-09', status: 'Arrived' },
-      { id: 'SL-5', port: 'Rotterdam', type: 'Destination',   expected_at: '2026-05-26',                          status: 'Pending' },
-    ],
-  },
-]
 
 // ==================== BOOKINGS ====================
 export type BookingStatus = 'Pending Liner' | 'Liner Confirmed' | 'Released' | 'Cancelled'
@@ -892,61 +721,6 @@ export interface Booking {
   house_bl_created?: boolean
 }
 
-export const SEED_BOOKINGS: Booking[] = [
-  {
-    id: 'BKG-901',
-    quote_id: 'QUO-501',
-    customer_name: 'Customer ABC',
-    origin: 'Chennai',
-    destination: 'Colombo',
-    shipping_line: 'Hapag-Lloyd',
-    vessel_name: 'Stuttgart Express',
-    voyage_number: 'VOY-2026-038',
-    container_type: '20 GP',
-    quantity: 5,
-    status: 'Liner Confirmed',
-    is_urgent: false,
-    booked_by: 2,
-    confirmed_by: 5,
-    released_by: null,
-    created_at: '2026-05-15 10:30',
-    confirmed_at: '2026-05-16 14:00',
-    released_at: null,
-    procurement_notified: true,
-    notes: '',
-    si_cutoff_date: '2026-05-28',
-    si_requested: false,
-    delivery_type: 'port-to-port',
-  },
-  {
-    id: 'BKG-900',
-    quote_id: 'QUO-500',
-    customer_name: 'MAS Holdings',
-    origin: 'Colombo',
-    destination: 'Rotterdam',
-    shipping_line: 'Maersk',
-    vessel_name: 'Maersk Seletar',
-    voyage_number: 'VOY-2026-031',
-    container_type: '40 HC',
-    quantity: 2,
-    status: 'Released',
-    is_urgent: true,
-    booked_by: 2,
-    confirmed_by: 2,
-    released_by: 2,
-    created_at: '2026-05-10 08:15',
-    confirmed_at: '2026-05-10 08:15',
-    released_at: '2026-05-11 09:00',
-    procurement_notified: true,
-    notes: 'Urgent spot rate — CS booked directly with Maersk. Procurement notified post-booking.',
-    si_cutoff_date: '2026-05-29',
-    bl_cutoff_date: '2026-06-01',
-    si_requested: true,
-    si_submitted: true,
-    delivery_type: 'door-to-door',
-  },
-]
-
 // ==================== ACTIVITY LOG ====================
 export interface ActivityEntry {
   id: string
@@ -961,105 +735,6 @@ export interface ActivityEntry {
   notes: string
 }
 
-export const SEED_ACTIVITY_LOG: ActivityEntry[] = [
-  {
-    id: 'ACT-001',
-    timestamp: '2026-05-02 09:20',
-    actor_role: 'CS',
-    actor_id: 2,
-    action: 'Received inquiry and verified existing customer',
-    ref_type: 'inquiry',
-    ref_id: 'INQ-1041',
-    customer_name: 'Hayleys Logistics',
-    pushed_to: 'CS',
-    notes: 'Key Account, 30-Day Credit. No KYC needed.',
-  },
-  {
-    id: 'ACT-002',
-    timestamp: '2026-05-02 09:45',
-    actor_role: 'CS',
-    actor_id: 2,
-    action: 'Customer verified. Now checking AMS for available rates.',
-    ref_type: 'inquiry',
-    ref_id: 'INQ-1041',
-    customer_name: 'Hayleys Logistics',
-    pushed_to: 'CS',
-    notes: '12 reefer containers Colombo to Hamburg. Checking rate availability.',
-  },
-  {
-    id: 'ACT-003',
-    timestamp: '2026-05-02 08:50',
-    actor_role: 'CS',
-    actor_id: 1,
-    action: 'Received inquiry and verified existing customer',
-    ref_type: 'inquiry',
-    ref_id: 'INQ-1040',
-    customer_name: 'Brandix Apparel',
-    pushed_to: 'CS',
-    notes: 'Key Account verified. Rates available in AMS.',
-  },
-  {
-    id: 'ACT-004',
-    timestamp: '2026-05-02 10:15',
-    actor_role: 'CS',
-    actor_id: 1,
-    action: 'Rate checked and confirmed. Pushed to Sales for quotation preparation.',
-    ref_type: 'inquiry',
-    ref_id: 'INQ-1040',
-    customer_name: 'Brandix Apparel',
-    pushed_to: 'Sales',
-    notes: '4x40ft Colombo to Singapore. Contractual rate available from Maersk.',
-  },
-  {
-    id: 'ACT-005',
-    timestamp: '2026-04-30 09:10',
-    actor_role: 'CS',
-    actor_id: 1,
-    action: 'Received inquiry and verified customer. Rate not in AMS — pushed to Procurement.',
-    ref_type: 'inquiry',
-    ref_id: 'INQ-1036',
-    customer_name: 'Hela Apparel',
-    pushed_to: 'Procurement',
-    notes: '3x20ft Colombo to Mumbai. No rate in system.',
-  },
-  {
-    id: 'ACT-006',
-    timestamp: '2026-05-15 10:35',
-    actor_role: 'CS',
-    actor_id: 2,
-    action: 'Created booking from confirmed quote QUO-501',
-    ref_type: 'booking',
-    ref_id: 'BKG-901',
-    customer_name: 'Customer ABC',
-    pushed_to: 'Procurement',
-    notes: "5x 20'GP Chennai to Colombo via Hapag-Lloyd. Waiting for liner confirmation.",
-  },
-  {
-    id: 'ACT-007',
-    timestamp: '2026-05-16 14:05',
-    actor_role: 'Procurement',
-    actor_id: 5,
-    action: 'Liner confirmed. Vessel: Stuttgart Express, Voyage: VOY-2026-038',
-    ref_type: 'booking',
-    ref_id: 'BKG-901',
-    customer_name: 'Customer ABC',
-    pushed_to: 'CS',
-    notes: 'Hapag-Lloyd confirmed space. Ready for CS to release to customer.',
-  },
-  {
-    id: 'ACT-008',
-    timestamp: '2026-05-10 08:20',
-    actor_role: 'CS',
-    actor_id: 2,
-    action: 'Urgent booking created. CS booked directly with Maersk.',
-    ref_type: 'booking',
-    ref_id: 'BKG-900',
-    customer_name: 'MAS Holdings',
-    pushed_to: 'Procurement',
-    notes: "Spot rate urgent. Procurement must acknowledge. 2x 40'HC Colombo to Rotterdam.",
-  },
-]
-
 // ==================== FOLLOW-UPS LOG (fact_followups) ====================
 export interface Followup {
   id: string
@@ -1070,13 +745,6 @@ export interface Followup {
   created_at: string
   completion_flag: boolean
 }
-
-export const SEED_FOLLOWUPS: Followup[] = [
-  { id: 'FUP-401', inquiry_id: 'INQ-1039', customer_name: 'Customer ABC', note: 'Quoted, booking confirmed.', employee_id: 1, created_at: '2026-05-01 17:22', completion_flag: true },
-  { id: 'FUP-402', inquiry_id: 'INQ-1038', customer_name: 'MAS Holdings', note: 'Rate sent, awaiting PO.',   employee_id: 3, created_at: '2026-05-01 16:05', completion_flag: true },
-  { id: 'FUP-403', inquiry_id: 'INQ-1037', customer_name: 'Dilmah Tea',   note: 'Space confirmed.',          employee_id: 2, created_at: '2026-04-30 15:10', completion_flag: true },
-  { id: 'FUP-404', inquiry_id: 'INQ-1041', customer_name: 'Hayleys Logistics', note: 'Called, awaiting SI.', employee_id: 2, created_at: '2026-05-02 11:30', completion_flag: false },
-]
 
 // ==================== HELPERS ====================
 export function todayISO(): string {
@@ -1145,30 +813,6 @@ export function parseInquiry(text: string): {
   else if (lower.includes('call') || lower.includes('phone')) channel = 'Phone'
 
   return { customer, request, origin, destination, channel }
-}
-
-// ==================== API STUBS ====================
-// These are kept for backward-compatibility but App.tsx now calls api.ts directly.
-export function postInquiry(payload: {
-  customer_name: string
-  inquiry_text: string
-  channel: string
-  employee_id: number
-  status: InquiryStatus
-}) {
-  fetch('http://localhost:8000/api/inquiries', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  }).catch(() => console.warn('postInquiry: backend unreachable'))
-}
-
-export function postFollowup(payload: { customer_name: string; note: string; completion_flag: boolean }) {
-  fetch('http://localhost:8000/api/followups', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  }).catch(() => console.warn('postFollowup: backend unreachable'))
 }
 
 export function nowStamp(): string {
@@ -1337,7 +981,7 @@ export function detectIntent(text: string, existingCustomers: string[] = []): Ch
   const lower = trimmed.toLowerCase()
 
   // Helper: try the regex-based extractor, then fall back to scanning existing names.
-  const findCustomer = (): string => {
+  const findCust = (): string => {
     const direct = extractCustomerFromCommand(trimmed)
     if (direct) return direct
     return findCustomerInText(trimmed, existingCustomers)
@@ -1351,7 +995,7 @@ export function detectIntent(text: string, existingCustomers: string[] = []): Ch
   if (/\b(?:add|create|new)\s+(?:a\s+)?(?:new\s+)?customer\b/i.test(lower)) {
     const m = trimmed.match(/\b(?:add|create|new)\s+(?:a\s+)?(?:new\s+)?customer\s+([A-Z][A-Za-z0-9 &.'-]{1,60}?)(?=,|\s+(?:as|tier|in|at|with)\b|$)/i)
     if (m) {
-      let name = m[1].trim()
+      const name = m[1].trim()
       let tier: CustomerTier = 'Regular'
       if (/\bkey\s*account\b/i.test(trimmed)) tier = 'Key Account'
       else if (/\bwalk\s*-?\s*in\b/i.test(trimmed)) tier = 'Walk-in'
@@ -1458,7 +1102,7 @@ export function detectIntent(text: string, existingCustomers: string[] = []): Ch
   // and "didnt done … mark as pending" don't get misclassified.
   const reopenPattern = /\b(?:reopen|re-open|mark[a-z]*\s+(?:it\s+|that\s+|this\s+|inquiry\s+|deal\s+)?(?:back\s+)?as\s+pending|set\s+(?:back\s+)?(?:to\s+)?pending|still\s+pending|not\s+(?:yet\s+)?(?:done|complete[d]?|finished|confirmed)|(?:didn'?t|didnt|haven'?t|have\s+not)\s+(?:yet\s+|actually\s+)?(?:do(?:ne)?|complete[d]?|finish(?:ed)?|confirm(?:ed)?))\b/i
   if (reopenPattern.test(trimmed)) {
-    const customer = findCustomer()
+    const customer = findCust()
     if (customer) return { kind: 'reopen', customer, note: trimmed }
   }
 
@@ -1476,7 +1120,7 @@ export function detectIntent(text: string, existingCustomers: string[] = []): Ch
 
   // 3. Add task
   if (/\b(add|create|new|set|schedule)\s+(?:a\s+)?(?:task|todo|reminder)|\btask\s*[:\-]/i.test(lower) || /\bremind\s+me\b/.test(lower)) {
-    const customer = findCustomer()
+    const customer = findCust()
     let task = trimmed
     const tm = trimmed.match(/(?:task|todo|reminder)\s*[:\-]?\s*(.+?)(?:\s+by\s+|\s+due\s+|$)/i)
     if (tm) task = tm[1].trim()
@@ -1492,7 +1136,7 @@ export function detectIntent(text: string, existingCustomers: string[] = []): Ch
 
   // 4. Follow-up (check before inquiry — these messages often look conversational)
   if (/\b(follow(?:ed)?[\s-]?up|f\/u|spoke\s+(?:to|with)|called|rang|messaged|texted|emailed|update[d]?\s+(?:on|with)|chased)\b/.test(lower)) {
-    const customer = findCustomer()
+    const customer = findCust()
     if (customer) {
       const complete = /\b(complete[d]?|done|closed|confirmed|booking\s+confirmed|sorted)\b/.test(lower) && !/\bpending\b/.test(lower)
       return { kind: 'followup', customer, note: trimmed, complete }

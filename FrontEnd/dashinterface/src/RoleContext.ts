@@ -1,5 +1,5 @@
 import { createContext, useContext } from 'react'
-import type { UserRole, ActionId, Employee, PageId } from './mockData'
+import type { UserRole, ActionId, Employee, PageId } from './types'
 
 export interface RoleContextValue {
   activeEmployee: Employee

@@ -3,7 +3,7 @@ import { CheckCircle2, AlertTriangle, ListPlus, History, Phone, Zap, Lock } from
 import {
   EMPLOYEES, isOverdue, daysOverdue, todayISO, isSpotInquiry,
   type Inquiry, type Task, type MissingItem, type Followup,
-} from '../../mockData'
+} from '../../types'
 import { useRole } from '../../RoleContext'
 
 interface FollowupsProps {
@@ -73,7 +73,7 @@ export default function Followups({
 
   // ---- Phase 4.2: Spot-rate / urgent inquiries (15-min windows per the Friday meeting) ----
   const spotInquiries = useMemo(
-    () => inquiries.filter(i => i.status === 'pending' && isSpotInquiry(i.inquiry_text)),
+    () => inquiries.filter(i => i.status === 'pending' && isSpotInquiry(i.inquiry_text ?? '')),
     [inquiries],
   )
 
@@ -83,7 +83,7 @@ export default function Followups({
         <div className="db-page-head-row">
           <div>
             <h1 className="db-page-title">Operations</h1>
-            <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 4 }}>
+            <div style={{ fontSize: 13.5, color: 'var(--text-muted)', marginTop: 5 }}>
               Follow-ups, tasks, urgent spot rates, and most-chased inquiries — everything that needs attention today
             </div>
           </div>
@@ -92,7 +92,7 @@ export default function Followups({
 
       {/* Phase 4.2: Spot Rate / Urgent — only render if we actually have any */}
       {spotInquiries.length > 0 && (
-        <div className="db-chart-card" style={{ marginBottom: 18, borderColor: 'rgba(220,38,38,0.25)' }}>
+        <div className="db-chart-card" style={{ marginBottom: 22, borderColor: 'rgba(220,38,38,0.25)' }}>
           <div className="db-chart-head">
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <Zap size={15} style={{ color: '#dc2626' }} />
@@ -139,7 +139,7 @@ export default function Followups({
 
       {/* Phase 4.1: Most-chased inquiries — surfaces the procurement chase load */}
       {mostChased.length > 0 && (
-        <div className="db-chart-card" style={{ marginBottom: 18 }}>
+        <div className="db-chart-card" style={{ marginBottom: 22 }}>
           <div className="db-chart-head">
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <Phone size={14} style={{ color: '#d97706' }} />

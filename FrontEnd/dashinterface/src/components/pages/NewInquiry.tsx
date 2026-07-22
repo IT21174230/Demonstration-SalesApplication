@@ -1,46 +1,51 @@
 import { useState, useEffect } from 'react'
 import { ArrowLeft, Plus, Save, X } from 'lucide-react'
 import {
-  SBUS, INQUIRY_PRIORITIES, COMMODITY_TYPES, CONTAINER_TYPES, SPECIAL_EQUIPMENT_OPTIONS,
-  emptyContainerLine, portOptions,
-  type Inquiry, type Customer, type PortRecord, type LinerRecord, type ContainerLine,
+  SBUS, INQUIRY_PRIORITIES, COMMODITY_TYPES, CONTAINER_TYPES,
+  emptyContainerLine,
+  type Inquiry, type LinerRecord, type ContainerLine,
+  type ClientRecord, type ContactPersonRecord,
   type SBU, type DeliveryType,
-  type InquiryPriority, type CommodityType, type ContainerType, type SpecialEquipment,
-} from '../../mockData'
-import { apiGetPorts, apiGetLiners } from '../../api'
+  type InquiryPriority, type CommodityType, type ContainerType,
+} from '../../types'
+import { apiGetLiners } from '../../api'
 import TagInput from '../shared/TagInput'
+import PortCombobox from '../shared/PortCombobox'
+import SearchCombobox from '../shared/SearchCombobox'
 
 interface NewInquiryProps {
-  customers: Customer[]
+  clientList: ClientRecord[]
+  contactPersonList: ContactPersonRecord[]
   activeEmployee: { id: number; name: string }
   onCreateInquiry: (data: Omit<Inquiry, 'id' | 'created_at' | 'status' | 'completed_at' | 'followup_note' | 'inquiry_text'>) => Inquiry
   onFlash: (msg: string, action?: { label: string; onClick: () => void }) => void
   onGoBack: () => void
 }
 
-export default function NewInquiry({ customers, activeEmployee, onCreateInquiry, onFlash, onGoBack }: NewInquiryProps) {
+export default function NewInquiry({ clientList, contactPersonList, activeEmployee, onCreateInquiry, onFlash, onGoBack }: NewInquiryProps) {
   // Inquiry-level state
   const [niCustomer, setNiCustomer] = useState('')
   const [niOrigin, setNiOrigin] = useState('')
-  const [niChannel, setNiChannel] = useState<'WhatsApp' | 'Email' | 'Phone'>('Email')
+  const [niChannel, setNiChannel] = useState<'WhatsApp' | 'Email' | 'Phone' | 'WeChat'>('Email')
   const [niSbu, setNiSbu] = useState<SBU>('Ocean Imports')
   const [niDelivery, setNiDelivery] = useState<DeliveryType>('port-to-port')
   const [niPriority, setNiPriority] = useState<InquiryPriority>('Medium')
+  const [niIncoterm, setNiIncoterm] = useState('')
+  const [niCargoReadyDate, setNiCargoReadyDate] = useState('')
+  const [niPreferredRate, setNiPreferredRate] = useState<number | ''>('')
   const [niPreferredLiners, setNiPreferredLiners] = useState<string[]>([])
-  const [niSpecialEquip, setNiSpecialEquip] = useState<SpecialEquipment>('None')
   const [niRemark, setNiRemark] = useState('')
   const [niContactPerson, setNiContactPerson] = useState('')
+  const [niContactDesignation, setNiContactDesignation] = useState('')
   const [niContactChannelId, setNiContactChannelId] = useState('')
 
   // Multi-container state
   const [containers, setContainers] = useState<ContainerLine[]>([emptyContainerLine()])
 
-  // Reference data
-  const [portList, setPortList] = useState<PortRecord[]>([])
+  // Reference data — liners fetched locally; clients/contacts come from app-level cache via props
   const [linerList, setLinerList] = useState<LinerRecord[]>([])
 
   useEffect(() => {
-    apiGetPorts().then(setPortList).catch(() => {})
     apiGetLiners().then(setLinerList).catch(() => {})
   }, [])
 
@@ -52,7 +57,7 @@ export default function NewInquiry({ customers, activeEmployee, onCreateInquiry,
     const first = containers[0]
     setContainers(prev => [...prev, {
       ...emptyContainerLine(),
-      commodityType: first?.commodityType ?? 'General',
+      commodityType: first?.commodityType ?? 'Miscellaneous manufactured articles — furniture, toys',
       commodityName: first?.commodityName ?? '',
       destination: first?.destination ?? '',
     }])
@@ -66,46 +71,69 @@ export default function NewInquiry({ customers, activeEmployee, onCreateInquiry,
   const resetForm = () => {
     setNiCustomer(''); setNiOrigin('')
     setNiChannel('Email'); setNiSbu('Ocean Imports'); setNiDelivery('port-to-port')
-    setNiPriority('Medium'); setNiPreferredLiners([])
-    setNiSpecialEquip('None'); setNiRemark('')
-    setNiContactPerson(''); setNiContactChannelId('')
+    setNiPriority('Medium'); setNiIncoterm(''); setNiCargoReadyDate(''); setNiPreferredRate('')
+    setNiPreferredLiners([])
+    setNiRemark('')
+    setNiContactPerson(''); setNiContactDesignation(''); setNiContactChannelId('')
     setContainers([emptyContainerLine()])
   }
 
+  // Silently detect which backend case to use based on whether names match existing DB records.
+  // Case 1: new customer name → new client + new contact
+  // Case 2: name matches existing client, contact name not found → existing client + new contact
+  // Case 3: both names match → existing client + existing contact
+  const matchedCli = clientList.find(
+    cl => cl.name.trim().toLowerCase() === niCustomer.trim().toLowerCase()
+  ) ?? null
+  const matchedCp = matchedCli
+    ? (contactPersonList.find(
+        cp => cp.cli_id === matchedCli.cli_id &&
+              (cp.name ?? '').trim().toLowerCase() === niContactPerson.trim().toLowerCase()
+      ) ?? null)
+    : null
+
   const handleSave = () => {
-    if (!niCustomer.trim()) return
+    const customerName = niCustomer.trim()
+    if (!customerName) return
     const firstContainer = containers[0]
-    // Auto-generate request summary from structured fields
     const autoRequest = [
       firstContainer ? `${firstContainer.quantity}x ${firstContainer.containerType}` : '',
       niOrigin.trim() || '',
       firstContainer?.destination.trim() ? `to ${firstContainer.destination.trim()}` : '',
       firstContainer?.commodityName.trim() ? `— ${firstContainer.commodityName.trim()}` : '',
-    ].filter(Boolean).join(' ') || `Inquiry from ${niCustomer.trim()}`
+    ].filter(Boolean).join(' ') || `Inquiry from ${customerName}`
+
     const created = onCreateInquiry({
-      customer_name: niCustomer.trim(),
+      customer_name: customerName,
+      // Passing cli_id / cpid tells App.tsx which endpoint to route to (cases 2 and 3)
+      ...(matchedCli ? { cli_id: matchedCli.cli_id } : {}),
+      ...(matchedCp  ? { cpid:   matchedCp.cp_id   } : {}),
       request: autoRequest,
       origin: niOrigin.trim() || 'TBD',
       destination: firstContainer?.destination.trim() || 'TBD',
       delivery_type: niDelivery,
-      channel: niChannel,
       sbu: niSbu,
-      employee_id: activeEmployee.id,
+      employee_id: 1,
       workflow_stage: 'inquiry-received',
       priority: niPriority,
+      incoterm: niIncoterm.trim() || undefined,
+      cargo_ready_date: niCargoReadyDate || undefined,
+      preferred_rate: niPreferredRate !== '' ? niPreferredRate : undefined,
       commodity_type: firstContainer?.commodityType,
       container_type: firstContainer?.containerType,
       container_qty: firstContainer?.quantity,
-      special_equipment: niSpecialEquip,
       cargo_weight: firstContainer?.weight === '' ? undefined : firstContainer?.weight,
       is_fcl: firstContainer?.isFcl ?? true,
       remark: niRemark.trim() || undefined,
-      contact_person: niContactPerson.trim() || undefined,
-      contact_channel_id: niContactChannelId.trim() || undefined,
+      // Contact fields omitted for case 3 (existing contact — backend already has them)
+      channel:             matchedCp ? undefined : niChannel,
+      contact_person:      matchedCp ? undefined : (niContactPerson.trim() || undefined),
+      contact_designation: matchedCp ? undefined : (niContactDesignation.trim() || undefined),
+      contact_channel_id:  matchedCp ? undefined : (niContactChannelId.trim() || undefined),
       containers,
       preferred_liners: niPreferredLiners.length > 0 ? niPreferredLiners : undefined,
     })
-    onFlash(`Inquiry ${created.id} created for ${created.customer_name}`)
+    onFlash(`Inquiry created for ${created.customer_name}`)
     resetForm()
   }
 
@@ -134,45 +162,74 @@ export default function NewInquiry({ customers, activeEmployee, onCreateInquiry,
       <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 24 }}>
         {/* Inquiry-level fields */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+          {/* Customer name — searchable dropdown from DB client list. Silently routes to case 2/3 on match. */}
           <div style={{ gridColumn: '1 / -1' }}>
-            <label className="lt-label">Customer Name <span style={{ color: '#dc2626' }}>*</span></label>
-            <input list="ni-customers" className="lt-input" style={{ width: '100%' }} value={niCustomer} onChange={e => setNiCustomer(e.target.value)} placeholder="Select or type customer name" autoFocus />
-            <datalist id="ni-customers">
-              {customers.map(c => <option key={c.id} value={c.name} />)}
-            </datalist>
+            <label className="lt-label">
+              Customer <span style={{ color: '#dc2626' }}>*</span>
+              {matchedCli && <span style={{ marginLeft: 8, fontSize: 11, color: '#16a34a', fontWeight: 500 }}>✓ existing client</span>}
+            </label>
+            <SearchCombobox
+              value={niCustomer}
+              onChange={val => { setNiCustomer(val); setNiContactPerson('') }}
+              items={clientList.map(cl => ({ label: cl.name, sublabel: cl.city ?? undefined }))}
+              placeholder="Type or select customer name"
+              autoFocus
+            />
           </div>
-          <div style={{ gridColumn: '1 / -1' }}>
-            <label className="lt-label">Contact Person</label>
-            <input className="lt-input" style={{ width: '100%' }} value={niContactPerson} onChange={e => setNiContactPerson(e.target.value)} placeholder="Name of the person making the inquiry" />
+
+          {/* Contact person — filtered to the matched client's contacts */}
+          <div>
+            <label className="lt-label">
+              Contact Person
+              {matchedCp && <span style={{ marginLeft: 8, fontSize: 11, color: '#16a34a', fontWeight: 500 }}>✓ existing contact</span>}
+            </label>
+            <SearchCombobox
+              value={niContactPerson}
+              onChange={setNiContactPerson}
+              items={(matchedCli
+                ? contactPersonList.filter(cp => cp.cli_id === matchedCli.cli_id)
+                : contactPersonList
+              ).map(cp => ({ label: cp.name ?? '', sublabel: cp.email ?? undefined }))}
+              placeholder="Name of the person making the inquiry"
+            />
+          </div>
+
+          {/* Designation / channel — hidden when contact already exists in DB (case 3) */}
+          {!matchedCp && (<>
+          <div>
+            <label className="lt-label">Designation</label>
+            <input className="lt-input" style={{ width: '100%' }} value={niContactDesignation} onChange={e => setNiContactDesignation(e.target.value)} placeholder="e.g. Logistics Manager" />
           </div>
           <div>
+            <label className="lt-label">Channel <span style={{ color: '#dc2626' }}>*</span></label>
+            <select className="lt-select" style={selectStyle} value={niChannel} onChange={e => { setNiChannel(e.target.value as 'WhatsApp' | 'Email' | 'Phone' | 'WeChat'); setNiContactChannelId('') }}>
+              <option>Email</option><option>WhatsApp</option><option>Phone</option><option>WeChat</option>
+            </select>
+          </div>
+          <div style={{ gridColumn: '1 / -1' }}>
+            <label className="lt-label">{niChannel === 'Email' ? 'Email Address' : niChannel === 'WhatsApp' ? 'WhatsApp Number' : niChannel === 'Phone' ? 'Phone Number' : 'WeChat ID'}</label>
+            <input
+              className="lt-input" style={{ width: '100%' }}
+              type={niChannel === 'Email' ? 'email' : niChannel === 'WeChat' ? 'text' : 'tel'}
+              value={niContactChannelId}
+              onChange={e => setNiContactChannelId(e.target.value)}
+              placeholder={niChannel === 'Email' ? 'e.g. john@acme.com' : niChannel === 'WhatsApp' ? 'e.g. +94 77 123 4567' : niChannel === 'Phone' ? 'e.g. +94 11 234 5678' : 'e.g. john_doe'}
+            />
+          </div>
+          </>)}
+          <div>
             <label className="lt-label">Origin <span style={{ color: '#dc2626' }}>*</span></label>
-            <input list="ni-ports-origin" className="lt-input" style={{ width: '100%' }} value={niOrigin} onChange={e => setNiOrigin(e.target.value)} placeholder="e.g. Colombo/Sri Lanka or LKCMB" />
-            <datalist id="ni-ports-origin">
-              {portOptions(portList).map((o, i) => <option key={i} value={o.value} label={o.label} />)}
-            </datalist>
+            <PortCombobox
+              value={niOrigin}
+              onChange={setNiOrigin}
+              placeholder="e.g. Colombo/Sri Lanka"
+            />
           </div>
           <div>
             <label className="lt-label">Priority <span style={{ color: '#dc2626' }}>*</span></label>
             <select className="lt-select" style={selectStyle} value={niPriority} onChange={e => setNiPriority(e.target.value as InquiryPriority)}>
               {INQUIRY_PRIORITIES.map(p => <option key={p} value={p}>{p}</option>)}
             </select>
-          </div>
-          <div>
-            <label className="lt-label">Channel <span style={{ color: '#dc2626' }}>*</span></label>
-            <select className="lt-select" style={selectStyle} value={niChannel} onChange={e => { setNiChannel(e.target.value as 'WhatsApp' | 'Email' | 'Phone'); setNiContactChannelId('') }}>
-              <option>Email</option><option>WhatsApp</option><option>Phone</option>
-            </select>
-          </div>
-          <div>
-            <label className="lt-label">{niChannel === 'Email' ? 'Email Address' : niChannel === 'WhatsApp' ? 'WhatsApp Number' : 'Phone Number'}</label>
-            <input
-              className="lt-input" style={{ width: '100%' }}
-              type={niChannel === 'Email' ? 'email' : 'tel'}
-              value={niContactChannelId}
-              onChange={e => setNiContactChannelId(e.target.value)}
-              placeholder={niChannel === 'Email' ? 'e.g. john@acme.com' : niChannel === 'WhatsApp' ? 'e.g. +94 77 123 4567' : 'e.g. +94 11 234 5678'}
-            />
           </div>
           <div>
             <label className="lt-label">SBU <span style={{ color: '#dc2626' }}>*</span></label>
@@ -188,10 +245,16 @@ export default function NewInquiry({ customers, activeEmployee, onCreateInquiry,
             </select>
           </div>
           <div>
-            <label className="lt-label">Special Equipment</label>
-            <select className="lt-select" style={selectStyle} value={niSpecialEquip} onChange={e => setNiSpecialEquip(e.target.value as SpecialEquipment)}>
-              {SPECIAL_EQUIPMENT_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
+            <label className="lt-label">Incoterm</label>
+            <input className="lt-input" style={{ width: '100%' }} value={niIncoterm} onChange={e => setNiIncoterm(e.target.value)} placeholder="e.g. FOB, CIF, EXW, DDP" />
+          </div>
+          <div>
+            <label className="lt-label">Cargo Ready Date</label>
+            <input className="lt-input" type="date" style={{ width: '100%' }} value={niCargoReadyDate} onChange={e => setNiCargoReadyDate(e.target.value)} />
+          </div>
+          <div>
+            <label className="lt-label">Preferred Rate (USD)</label>
+            <input className="lt-input" type="number" style={{ width: '100%' }} value={niPreferredRate} onChange={e => setNiPreferredRate(e.target.value === '' ? '' : Number(e.target.value))} min={0} placeholder="e.g. 1200" />
           </div>
           <div>
             <label className="lt-label">Preferred Liners</label>
@@ -235,10 +298,11 @@ export default function NewInquiry({ customers, activeEmployee, onCreateInquiry,
                 </div>
                 <div>
                   <label className="lt-label">Destination <span style={{ color: '#dc2626' }}>*</span></label>
-                  <input list={`ni-ports-dest-${idx}`} className="lt-input" style={{ width: '100%' }} value={c.destination} onChange={e => updateContainer(idx, { destination: e.target.value })} placeholder="e.g. Hamburg/Germany or DEHAM" />
-                  <datalist id={`ni-ports-dest-${idx}`}>
-                    {portOptions(portList).map((o, i) => <option key={i} value={o.value} label={o.label} />)}
-                  </datalist>
+                  <PortCombobox
+                    value={c.destination}
+                    onChange={dest => updateContainer(idx, { destination: dest })}
+                    placeholder="e.g. Hamburg/Germany"
+                  />
                 </div>
                 <div>
                   <label className="lt-label">Container Type <span style={{ color: '#dc2626' }}>*</span></label>
@@ -268,6 +332,22 @@ export default function NewInquiry({ customers, activeEmployee, onCreateInquiry,
                 <div>
                   <label className="lt-label">Free Time (days)</label>
                   <input className="lt-input" type="number" style={{ width: '100%' }} value={c.freeTime} onChange={e => updateContainer(idx, { freeTime: e.target.value === '' ? '' : Number(e.target.value) })} min={0} placeholder="e.g. 14" />
+                </div>
+                <div>
+                  <label className="lt-label">Temperature (°C)</label>
+                  <input className="lt-input" type="number" style={{ width: '100%' }} value={c.temperature ?? ''} onChange={e => updateContainer(idx, { temperature: e.target.value === '' ? undefined : Number(e.target.value) })} placeholder="e.g. -18 (reefer only)" />
+                </div>
+                <div>
+                  <label className="lt-label">HS Code</label>
+                  <input className="lt-input" style={{ width: '100%' }} value={c.hs_code ?? ''} onChange={e => updateContainer(idx, { hs_code: e.target.value || undefined })} placeholder="e.g. 6109.10" />
+                </div>
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <label className="lt-label">Commodity Description</label>
+                  <input className="lt-input" style={{ width: '100%' }} value={c.description ?? ''} onChange={e => updateContainer(idx, { description: e.target.value || undefined })} placeholder="Brief description of the goods" />
+                </div>
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <label className="lt-label">Delivery Address</label>
+                  <input className="lt-input" style={{ width: '100%' }} value={c.address ?? ''} onChange={e => updateContainer(idx, { address: e.target.value || undefined })} placeholder="Door delivery address (door-to-door only)" />
                 </div>
                 <div style={{ gridColumn: '1 / -1' }}>
                   <label className="lt-label">Door Agent</label>

@@ -3,7 +3,7 @@ import { Sparkles, Send } from 'lucide-react'
 import {
   EMPLOYEES, isOverdue, daysOverdue, todayISO,
   type Inquiry, type Task, type MissingItem, type Followup,
-} from '../../mockData'
+} from '../../types'
 
 interface NLQBoxProps {
   inquiries: Inquiry[]
@@ -84,7 +84,7 @@ function answer(query: string, inquiries: Inquiry[], tasks: Task[], missingItems
     return {
       summary: `${matched.length} pending inquir${matched.length > 1 ? 'ies' : 'y'}:`,
       columns: ['Customer', 'Request', 'Destination', 'Channel', 'Owner'],
-      rows: matched.map(i => ({ cells: [i.customer_name, i.request, i.destination, i.channel, empName(i.employee_id)] })),
+      rows: matched.map(i => ({ cells: [i.customer_name, i.request ?? '', i.destination, i.channel ?? '', empName(i.employee_id)] })),
     }
   }
 
@@ -95,7 +95,7 @@ function answer(query: string, inquiries: Inquiry[], tasks: Task[], missingItems
     return {
       summary: `${matched.length} inquir${matched.length > 1 ? 'ies' : 'y'} completed today:`,
       columns: ['Customer', 'Request', 'Closed at', 'Owner'],
-      rows: matched.map(i => ({ cells: [i.customer_name, i.request, i.completed_at ?? '', empName(i.employee_id)] })),
+      rows: matched.map(i => ({ cells: [i.customer_name, i.request ?? '', i.completed_at ?? '', empName(i.employee_id)] })),
     }
   }
 
@@ -132,7 +132,7 @@ function answer(query: string, inquiries: Inquiry[], tasks: Task[], missingItems
     return {
       summary: `${cust.length} inquir${cust.length > 1 ? 'ies' : 'y'} for ${found}:`,
       columns: ['ID', 'Status', 'Request', 'Date'],
-      rows: cust.map(i => ({ cells: [i.id, i.status, i.request, i.created_at] })),
+      rows: cust.map(i => ({ cells: [i.id, i.status, i.request ?? '', i.created_at] })),
     }
   }
 
@@ -151,7 +151,7 @@ export default function NLQBox({ inquiries, tasks, missingItems, followups }: NL
   }
 
   return (
-    <div className="db-chart-card" style={{ marginBottom: 18, borderColor: 'rgba(79,70,229,0.2)' }}>
+    <div className="db-chart-card" style={{ marginBottom: 18, borderColor: 'rgba(15,143,168,0.2)' }}>
       <div className="db-chart-head">
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <Sparkles size={16} style={{ color: 'var(--accent-light)' }} />
@@ -196,7 +196,7 @@ export default function NLQBox({ inquiries, tasks, missingItems, followups }: NL
 
       {result && (
         <div style={{
-          background: 'rgba(79,70,229,0.03)', border: '1px solid rgba(79,70,229,0.12)',
+          background: 'rgba(15,143,168,0.03)', border: '1px solid rgba(15,143,168,0.12)',
           borderRadius: 10, padding: '12px 14px',
         }}>
           <div style={{ fontSize: 13, color: 'var(--text)', fontWeight: 600, marginBottom: result.rows ? 10 : 0 }}>

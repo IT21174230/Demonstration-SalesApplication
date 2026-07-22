@@ -1,17 +1,17 @@
 /**
  * REST API client for the FastAPI backend.
  *
- * All mutations are fire-and-forget (optimistic) — the frontend updates
- * local state immediately; the API call persists the change to
- * mock_data.json in the background.
+ * Mutations use an optimistic-UI pattern: local state is updated immediately
+ * and the API call persists the change to the database in the background.
+ * If the call fails, the caller is responsible for surfacing the error.
  */
 import type {
   Inquiry, Customer, Task, MissingItem, Followup, Quote, Shipment, Employee, Booking,
   QuoteStatus, CustomerTier, PaymentTerms, SBU, QuoteLine, ActivityEntry, KycStatus, RateRecord,
-  InttraSpotRate, DeliveryType, UnifiedRate, PortRecord,
+  DeliveryType, UnifiedRate, PortRecord, ServiceScope, RateSourceType,
   LinerRecord, TradeLaneRecord, ContactPersonRecord, EmployeeRecord, ClientRecord,
   ContainerLine,
-} from './mockData'
+} from './types'
 
 const BASE = import.meta.env.VITE_API_BASE || '/api'
 
@@ -31,7 +31,11 @@ async function post<T>(path: string, body: unknown): Promise<T> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   })
-  if (!res.ok) throw new Error(`POST ${path} failed: ${res.status}`)
+  if (!res.ok) {
+    const detail = await res.json().catch(() => null)
+    console.error(`POST ${path} failed ${res.status}:`, detail)
+    throw new Error(`POST ${path} failed: ${res.status}`)
+  }
   return res.json()
 }
 
@@ -42,6 +46,12 @@ async function patch<T>(path: string, body?: unknown): Promise<T> {
     body: body ? JSON.stringify(body) : undefined,
   })
   if (!res.ok) throw new Error(`PATCH ${path} failed: ${res.status}`)
+  return res.json()
+}
+
+async function del<T>(path: string): Promise<T> {
+  const res = await fetch(`${BASE}${path}`, { method: 'DELETE' })
+  if (!res.ok) throw new Error(`DELETE ${path} failed: ${res.status}`)
   return res.json()
 }
 
@@ -70,6 +80,70 @@ export function fetchDashboardInit(): Promise<DashboardInit> {
 // Inquiries
 // ---------------------------------------------------------------------------
 
+// Shape returned by all three create endpoints
+export interface InquiryCreateResult {
+  inq_id: number
+  cli_id: number
+  cpid: number
+  com_ids: number[]
+  cont_ids: number[]
+}
+
+// Shape returned by GET /inquiries/inquiries and GET /inquiries/inquiries/{inq_id}
+// One row per commodity-container join. cl.name is the client company name.
+export interface InquiryRow {
+  inq_id: number
+  cli_id: number        // backend client PK — used for KYC status lookup
+  workflow_stage: string | null  // from LEFT JOIN workflow_stats; null for brand-new rows
+  name: string          // client company name (cl.name)
+  sbu: string | null
+  origin: string
+  incoterm: string | null
+  priority: string | null
+  service_mode: 'DOOR_TO_DOOR' | 'PORT_TO_PORT' | null
+  cargo_ready_date: string | null
+  preferred_liners: string | null
+  preferred_rate: number | null
+  com_id: number
+  commodity_name: string | null
+  commodity_type: string | null
+  hs_code: string | null
+  commodity_weight: number | null
+  cont_id: number
+  container_type: string | null
+  temperature: number | null
+  qty: number | null
+  destination: string
+  zip_code: string | null
+  address: string | null
+  is_fully_loaded: boolean
+  free_time: string | null
+}
+
+/**
+ * Create a new inquiry with a brand-new client and contact person.
+ *
+ * Transforms the flat frontend payload into the backend's nested structure:
+ *   { client, contact, inquiry, commodities[], containers[] }
+ *
+ * Each frontend ContainerLine maps to one CommodityNew + one ContainerNew entry.
+ * commodity_index links each container back to its commodity by array position.
+ * ContainerLine.isFcl is mapped to ContainerNew.is_fully_loaded (per backend convention).
+ *
+ * TODO: Fields dropped at this boundary (no backend column / endpoint yet):
+ *   • request / inquiry_text  — free-text description; no inquiry-table column
+ *   • destination (inquiry-level) — stored per container only, not at inquiry level
+ *   • channel label — value routed to contact.email/whatsapp/phone/wechat;
+ *     the label itself ('Email'|'WhatsApp'|'Phone'|'WeChat') has no column
+ *   • employee_id in payload — derived from auth session on the backend
+ *   • ContainerLine.doorAgents[] — no backend equivalent
+ *   • preferred_liners[] (array) — joined to comma string; splitting on read required
+ *
+ * ENDPOINTS NOT YET IN BACKEND:
+ *   • apiAdvanceWorkflow  — no /workflow-stage route
+ *   • Delete inquiry      — no DELETE endpoint
+ *   • Fetch all inquiries — no list/paginate endpoint (single-record GET only)
+ */
 export function apiCreateInquiry(data: {
   customer_name: string
   inquiry_text?: string
@@ -81,31 +155,379 @@ export function apiCreateInquiry(data: {
   sbu?: SBU
   employee_id?: number
   priority?: string
+  incoterm?: string
+  cargo_ready_date?: string
+  preferred_rate?: number
   commodity_type?: string
   container_type?: string
   container_qty?: number
-  special_equipment?: string
   cargo_weight?: number
   is_fcl?: boolean
   remark?: string
   contact_person?: string
+  contact_designation?: string
   contact_channel_id?: string
   containers?: ContainerLine[]
   preferred_liners?: string[]
-}): Promise<Inquiry> {
-  return post<Inquiry>('/inquiries', data)
+}): Promise<InquiryCreateResult> {
+  // Log fields that are silently dropped (no backend storage yet)
+  // TODO: remove these warnings once the backend adds the missing columns/endpoints
+  const dropped: Record<string, unknown> = {}
+  if (data.request)       dropped['request']                    = data.request
+  if (data.destination)   dropped['destination (inquiry-level)']= data.destination
+  if (data.channel)       dropped['channel label']              = data.channel
+  if (data.employee_id)   dropped['employee_id']                = data.employee_id
+  if (Object.keys(dropped).length > 0)
+    console.warn('[apiCreateInquiry] Fields dropped — no backend column:', dropped)
+
+  const channel = data.channel ?? 'Email'
+  const contactEmail    = channel === 'Email'    ? (data.contact_channel_id ?? undefined) : undefined
+  const contactWhatsapp = channel === 'WhatsApp' ? (data.contact_channel_id ?? undefined) : undefined
+  const contactPhone    = channel === 'Phone'    ? (data.contact_channel_id ?? undefined) : undefined
+  const contactWechat   = channel === 'WeChat'   ? (data.contact_channel_id ?? undefined) : undefined
+
+  const serviceMode = data.delivery_type === 'door-to-door' ? 'DOOR_TO_DOOR' : 'PORT_TO_PORT'
+
+  const frontendContainers = data.containers ?? []
+
+  // Build parallel commodity + container arrays.
+  // If the form used the multi-container panel, each ContainerLine yields one of each.
+  // If it used the single-container shorthand fields, synthesise one pair.
+  let commodities: object[]
+  let beContainers: object[]
+
+  if (frontendContainers.length > 0) {
+    commodities = frontendContainers.map(c => ({
+      com_type:    c.commodityType ?? undefined,
+      name:        c.commodityName || undefined,
+      weight:      c.weight !== '' ? c.weight : undefined,
+      hs_code:     c.hs_code      ?? undefined,
+      description: c.description  ?? undefined,
+    }))
+    beContainers = frontendContainers.map((c, idx) => ({
+      commodity_index: idx,
+      container_type:  c.containerType ?? undefined,
+      qty:             c.quantity,
+      destination:     c.destination || data.destination || '',
+      zip_code:        c.zipCode     || undefined,
+      address:         c.address     ?? undefined,
+      temperature:     c.temperature ?? undefined,
+      free_time:       c.freeTime !== '' ? String(c.freeTime) : undefined,
+      is_fully_loaded: c.isFcl,  // TODO: doorAgents (c.doorAgents) has no backend field
+    }))
+  } else {
+    // Single-container shorthand path
+    commodities = [{
+      com_type: data.commodity_type ?? undefined,
+      weight:   data.cargo_weight   ?? undefined,
+    }]
+    beContainers = [{
+      commodity_index: 0,
+      container_type:  data.container_type  ?? undefined,
+      qty:             data.container_qty   ?? undefined,
+      destination:     data.destination     ?? '',
+      is_fully_loaded: data.is_fcl          ?? false,
+    }]
+  }
+
+  const payload = {
+    client: {
+      name:          data.customer_name,
+      kyc_completed: false,
+    },
+    contact: {
+      name:        data.contact_person      ?? data.customer_name,
+      designation: data.contact_designation ?? undefined,
+      email:       contactEmail,
+      whatsapp:    contactWhatsapp,
+      phone:       contactPhone,
+      wechat:      contactWechat,
+    },
+    inquiry: {
+      sbu:              data.sbu              ?? undefined,
+      origin:           data.origin           ?? '',
+      service_mode:     serviceMode,
+      priority:         data.priority         ?? undefined,
+      incoterm:         data.incoterm         ?? undefined,
+      cargo_ready_date: data.cargo_ready_date ?? undefined,
+      preferred_rate:   data.preferred_rate   ?? undefined,
+      remark:           data.remark           ?? undefined,
+      preferred_liners: data.preferred_liners?.join(', ') ?? undefined,
+    },
+    commodities,
+    containers: beContainers,
+  }
+
+  return post<InquiryCreateResult>('/inquiries/inquiries-new-new', payload)
 }
 
-export function apiCompleteInquiry(feId: string): Promise<{ success: boolean }> {
-  return post<{ success: boolean }>(`/inquiries/${encodeURIComponent(feId)}/complete`, {})
+// ---------------------------------------------------------------------------
+// Private helper — shared by cases 2 and 3.
+// Builds the inquiry + commodity/container arrays from the flat ContainerLine[] form data.
+// ---------------------------------------------------------------------------
+function buildInquiryAndContainers(data: {
+  delivery_type?: DeliveryType
+  origin?: string
+  destination?: string
+  sbu?: SBU
+  priority?: string
+  incoterm?: string
+  cargo_ready_date?: string
+  preferred_rate?: number
+  remark?: string
+  preferred_liners?: string[]
+  containers?: ContainerLine[]
+}): { inquiry: object; commodities: object[]; beContainers: object[] } {
+  const serviceMode = data.delivery_type === 'door-to-door' ? 'DOOR_TO_DOOR' : 'PORT_TO_PORT'
+  const lines = data.containers ?? []
+  return {
+    inquiry: {
+      sbu:              data.sbu              ?? undefined,
+      origin:           data.origin           ?? '',
+      service_mode:     serviceMode,
+      priority:         data.priority         ?? undefined,
+      incoterm:         data.incoterm         ?? undefined,
+      cargo_ready_date: data.cargo_ready_date ?? undefined,
+      preferred_rate:   data.preferred_rate   ?? undefined,
+      remark:           data.remark           ?? undefined,
+      preferred_liners: data.preferred_liners?.join(', ') ?? undefined,
+    },
+    commodities: lines.map(c => ({
+      com_type:    c.commodityType ?? undefined,
+      name:        c.commodityName || undefined,
+      weight:      c.weight !== '' ? c.weight : undefined,
+      hs_code:     c.hs_code      ?? undefined,
+      description: c.description  ?? undefined,
+    })),
+    beContainers: lines.map((c, idx) => ({
+      commodity_index: idx,
+      container_type:  c.containerType ?? undefined,
+      qty:             c.quantity,
+      destination:     c.destination || data.destination || '',
+      zip_code:        c.zipCode     || undefined,
+      address:         c.address     ?? undefined,
+      temperature:     c.temperature ?? undefined,
+      free_time:       c.freeTime !== '' ? String(c.freeTime) : undefined,
+      is_fully_loaded: c.isFcl,
+    })),
+  }
 }
 
-export function apiReopenInquiry(customerName: string, note: string): Promise<{ success: boolean }> {
-  return post<{ success: boolean }>('/inquiries/reopen', { customer_name: customerName, note })
+/**
+ * Create a new inquiry for an EXISTING client with a BRAND-NEW contact person.
+ * Maps to POST /inquiries/inquiries-old-new (InquiryOldNew backend schema).
+ */
+export function apiCreateInquiryOldNew(data: {
+  cli_id: number
+  channel?: string
+  contact_person?: string
+  contact_designation?: string
+  contact_channel_id?: string
+  delivery_type?: DeliveryType
+  origin?: string
+  destination?: string
+  sbu?: SBU
+  priority?: string
+  incoterm?: string
+  cargo_ready_date?: string
+  preferred_rate?: number
+  remark?: string
+  preferred_liners?: string[]
+  containers?: ContainerLine[]
+}): Promise<InquiryCreateResult> {
+  const channel         = data.channel ?? 'Email'
+  const contactEmail    = channel === 'Email'    ? (data.contact_channel_id ?? undefined) : undefined
+  const contactWhatsapp = channel === 'WhatsApp' ? (data.contact_channel_id ?? undefined) : undefined
+  const contactPhone    = channel === 'Phone'    ? (data.contact_channel_id ?? undefined) : undefined
+  const contactWechat   = channel === 'WeChat'   ? (data.contact_channel_id ?? undefined) : undefined
+
+  const { inquiry, commodities, beContainers } = buildInquiryAndContainers(data)
+
+  return post<InquiryCreateResult>('/inquiries/inquiries-old-new', {
+    cli_id: data.cli_id,
+    contact: {
+      name:        data.contact_person      ?? '',
+      designation: data.contact_designation ?? undefined,
+      email:       contactEmail,
+      whatsapp:    contactWhatsapp,
+      phone:       contactPhone,
+      wechat:      contactWechat,
+    },
+    inquiry,
+    commodities,
+    containers: beContainers,
+  })
 }
 
-export function apiAdvanceWorkflow(feId: string, stage: string): Promise<{ success: boolean }> {
-  return patch<{ success: boolean }>(`/inquiries/${encodeURIComponent(feId)}/workflow-stage`, { stage })
+/**
+ * Create a new inquiry for an EXISTING client with an EXISTING contact person.
+ * Maps to POST /inquiries/inquiries-old-old (InquiryOldOld backend schema).
+ * No contact block is sent — the backend resolves the contact from cp_id.
+ */
+export function apiCreateInquiryOldOld(data: {
+  cli_id: number
+  cp_id: number
+  delivery_type?: DeliveryType
+  origin?: string
+  destination?: string
+  sbu?: SBU
+  priority?: string
+  incoterm?: string
+  cargo_ready_date?: string
+  preferred_rate?: number
+  remark?: string
+  preferred_liners?: string[]
+  containers?: ContainerLine[]
+}): Promise<InquiryCreateResult> {
+  const { inquiry, commodities, beContainers } = buildInquiryAndContainers(data)
+
+  return post<InquiryCreateResult>('/inquiries/inquiries-old-old', {
+    cli_id: data.cli_id,
+    cp_id:  data.cp_id,
+    inquiry,
+    commodities,
+    containers: beContainers,
+  })
+}
+
+/**
+ * Fetch all inquiries belonging to the current employee.
+ * Returns one row per commodity-container join; use mapInquiryRows() to group.
+ */
+export function apiFetchAllInquiries(): Promise<InquiryRow[]> {
+  return get<InquiryRow[]>('/inquiries/inquiries')
+}
+
+/**
+ * Fetch full detail for a single inquiry by its backend integer ID.
+ * Returns one row per commodity-container join; caller must group if needed.
+ */
+export function apiFetchInquiry(inq_id: number): Promise<InquiryRow[]> {
+  return get<InquiryRow[]>(`/inquiries/inquiries/${inq_id}`)
+}
+
+/** Delete an inquiry and all its associated commodities and containers. */
+export function apiDeleteInquiry(inq_id: number): Promise<Record<string, unknown>> {
+  return del<Record<string, unknown>>(`/inquiries/inquiries/${inq_id}`)
+}
+
+/**
+ * Patch editable fields on an existing inquiry.
+ * Only the fields present in the payload are updated (exclude_unset on the backend).
+ *
+ * DISCREPANCIES — frontend-only fields not patchable via this endpoint:
+ *   • workflow_stage, status, channel, destination (inquiry-level)
+ *   • commodity / container fields — use apiPatchCommodity / apiPatchContainer
+ */
+export function apiPatchInquiry(inq_id: number, data: {
+  sbu?: string
+  remark?: string
+  origin?: string
+  incoterm?: string
+  cargo_ready_date?: string
+  priority?: string
+  preferred_liners?: string
+  preferred_rate?: number
+  service_mode?: 'DOOR_TO_DOOR' | 'PORT_TO_PORT'
+}): Promise<Record<string, unknown>> {
+  return patch<Record<string, unknown>>(`/inquiries/inquiries/${inq_id}`, data)
+}
+
+/** Patch fields on a commodity row belonging to an inquiry. */
+export function apiPatchCommodity(inq_id: number, com_id: number, data: {
+  com_type?: string
+  hs_code?: string
+  description?: string
+  weight?: number
+  remark?: string
+}): Promise<Record<string, unknown>> {
+  return patch<Record<string, unknown>>(`/inquiries/inquiries/${inq_id}/commodities/${com_id}`, data)
+}
+
+/** Patch fields on a container row belonging to an inquiry. */
+export function apiPatchContainer(inq_id: number, cont_id: number, data: {
+  container_type?: string
+  temperature?: number
+  qty?: number
+  destination?: string
+  address?: string
+  zip_code?: string
+  is_fully_loaded?: boolean
+  free_time?: string
+}): Promise<Record<string, unknown>> {
+  return patch<Record<string, unknown>>(`/inquiries/inquiries/${inq_id}/containers/${cont_id}`, data)
+}
+
+// Allowed backend workflow stages (must match the WorkflowStage enum in activity_types.py)
+type BackendWorkflowStage =
+  | 'inquiry_received'
+  | 'customer_check_pending'
+  | 'kyc_pending'
+  | 'kyc_approved'
+  | 'kyc_rejected'
+  | 'rate_check_in_progress'
+  | 'escalated_to_procurement'
+  | 'quotation_prep'
+  | 'quotation_sent'
+  | 'customer_response'
+  | 'booking_request'
+  | 'completed'
+
+// Maps frontend kebab-case WorkflowStage → backend snake_case enum value
+const STAGE_MAP: Partial<Record<string, BackendWorkflowStage>> = {
+  'inquiry-received':    'inquiry_received',
+  'customer-check':      'customer_check_pending',
+  'kyc-pending':         'kyc_pending',
+  'kyc-verification':    'kyc_approved',
+  'rate-check':          'rate_check_in_progress',
+  'procurement-request': 'escalated_to_procurement',
+  'quotation-prep':      'quotation_prep',
+  'quotation-sent':      'quotation_sent',
+  'customer-response':   'customer_response',
+  'booking-request':     'booking_request',
+  'completed':           'completed',
+}
+
+// Reverse map — used when reading stage back from the DB (InquiryRow.workflow_stage)
+export const BE_STAGE_TO_FE: Record<string, string> = {
+  inquiry_received:         'inquiry-received',
+  customer_check_pending:   'customer-check',
+  kyc_pending:              'kyc-pending',
+  kyc_approved:             'kyc-verification',
+  kyc_rejected:             'kyc-pending',          // treat rejected as re-pending KYC
+  rate_check_in_progress:   'rate-check',
+  escalated_to_procurement: 'procurement-request',
+  quotation_prep:           'quotation-prep',
+  quotation_sent:           'quotation-sent',
+  customer_response:        'customer-response',
+  booking_request:          'booking-request',
+  completed:                'completed',
+}
+
+// Called once when a new inquiry is persisted — creates the initial workflow row
+export function apiCreateWorkflowEntry(inqId: number): Promise<Record<string, unknown>> {
+  return post<Record<string, unknown>>('/inquiries/workflow', {
+    inq_id: inqId,
+    flow_id: 1,
+    stage: 'inquiry_received',
+  })
+}
+
+// Called on every stage transition — PATCHes the workflow row to the new stage.
+// If no workflow row exists yet (legacy inquiries), creates it first then retries.
+export async function apiAdvanceWorkflow(feId: string, stage: string, inqId?: number): Promise<{ success: boolean }> {
+  const backendStage = STAGE_MAP[stage]
+  if (!backendStage || !inqId) return { success: false }
+  try {
+    return await patch<{ success: boolean }>(`/inquiries/workflow/${inqId}`, { stage: backendStage })
+  } catch (err: unknown) {
+    if (err instanceof Error && err.message.includes('404')) {
+      // Workflow row missing — create it at inquiry_received, then advance to requested stage
+      await post<Record<string, unknown>>('/inquiries/workflow', { inq_id: inqId, flow_id: 1, stage: 'inquiry_received' })
+      return patch<{ success: boolean }>(`/inquiries/workflow/${inqId}`, { stage: backendStage })
+    }
+    throw err
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -205,6 +627,45 @@ export function apiAdvanceShipmentLeg(shipmentId: string, legId: string): Promis
 
 export function apiRecordShipmentPOD(shipmentId: string): Promise<{ success: boolean }> {
   return patch<{ success: boolean }>(`/shipments/${encodeURIComponent(shipmentId)}/pod`)
+}
+
+// ---------------------------------------------------------------------------
+// KYC
+// ---------------------------------------------------------------------------
+
+export interface KYCRequestPayload {
+  br_number: string
+  parent_organization?: string
+  emp_id_sales?: number
+  emp_id_cs?: number
+  document_submission_deadline: string   // YYYY-MM-DD
+  cli_type: string
+  currency: string
+  website?: string
+  svat_no?: string
+  tax_exemptions: string
+  sea_imports: boolean
+  sea_exports: boolean
+  trade_lanes: boolean
+  forwarding: boolean
+  cross_trade: boolean
+  air_imports: boolean
+  air_exports: boolean
+  general_cargo: boolean
+  dangerous_goods: boolean
+  perishable_goods: boolean
+  docs: {
+    cli_id: number
+    br_form?: string
+    vat_certificate?: string
+    svat_certificate?: string
+    tin_certificate?: string
+    form20?: string
+  }
+}
+
+export function apiCreateKycRequest(cli_id: number, data: KYCRequestPayload): Promise<unknown> {
+  return post<unknown>(`/kyc/kyc-requests?cli_id=${cli_id}`, data)
 }
 
 // ---------------------------------------------------------------------------
@@ -323,23 +784,162 @@ export function apiSearchRates(params: {
 }
 
 // ---------------------------------------------------------------------------
-// Unified Rate Search (all DB rate tables)
+// Unified Rate Fetch — fans out to all 6 rate-table endpoints in parallel,
+// resolves liner/trade-lane names client-side, normalises to UnifiedRate[].
+//
+// DISCREPANCIES vs backend noted here:
+//  • vessel_by_vessel_rate maps to 'Spot' (users' preferred term); the DB
+//    table is named vessel_by_vessel_rate but both concepts are the same.
+//  • Backend returns FK integers (lin_id, tr_ln_id, cli_id, emp_id_sales)
+//    not joined names. liner_name and trade_lane are resolved from the
+//    /liners and /trade-lanes lookups fetched in the same call.
+//    client_name (NAC), employee_name, commodity_name/type (Special) remain
+//    null — would require extra joins or lookup calls.
+//  • DB field 'iwe'           → frontend field 'service_scope'
+//  • DB field 'issold'        → frontend field 'is_sold' (vessel / FAK)
+//  • DB field 'isSold'        → frontend field 'is_sold' (special — Pydantic inconsistency)
+//  • DB field 'note'          → frontend field 'remark'
+//  • DB field 'etd'           → frontend field 'departure_date' (vessel rates)
+//  • VbV has no valid_from/valid_to; mapped from fcl_opening / fcl_cutoff.
+//  • FAK PATCH router path param is named '{srid}' but forwards to fak_id — backend naming bug.
+//  • tariff_rates table has no is_sold column; stripped from PATCH payload.
 // ---------------------------------------------------------------------------
 
-export function apiSearchAllRates(params: {
-  origin?: string
-  destination?: string
-  container_type?: string
-}): Promise<UnifiedRate[]> {
-  const qs = new URLSearchParams()
-  if (params.origin) qs.set('origin', params.origin)
-  if (params.destination) qs.set('destination', params.destination)
-  if (params.container_type) qs.set('container_type', params.container_type)
-  return get<UnifiedRate[]>(`/rates/search-all?${qs.toString()}`)
+// Raw shapes returned by each endpoint (SELECT *)
+interface TariffRaw   { tar_id: number;  lin_id: number|null; tr_ln_id: number|null; origin: string; destination: string; valid_from: string|null; valid_to: string|null; iwe: string|null; container_type: string|null; rate: number; currency: string; note: string|null }
+interface NacRaw      { nac_id: number;  lin_id: number|null; tr_ln_id: number|null; cli_id: number|null; origin: string; destination: string; valid_from: string|null; valid_to: string|null; iwe: string|null; container_type: string|null; rate: number; currency: string; note: string|null }
+interface ContractedRaw { crate_id: number; lin_id: number|null; tr_ln_id: number|null; origin: string; destination: string; valid_from: string|null; valid_to: string|null; iwe: string|null; container_type: string|null; rate: number; currency: string; note: string|null }
+interface VesselRaw   { srid: number;    tr_ln_id: number|null; vessel_name: string|null; etd: string|null; fcl_opening: string|null; fcl_cutoff: string|null; origin: string; destination: string; iwe: string|null; container_type: string|null; rate: number; currency: string; issold: boolean|null; note: string|null }
+interface FakRaw      { fak_id: number;  lin_id: number|null; tr_ln_id: number|null; origin: string; destination: string; valid_from: string|null; valid_to: string|null; iwe: string|null; container_type: string|null; rate: number; currency: string; issold: boolean|null; note: string|null }
+interface SpecialRaw  { sprid: number;   lin_id: number|null; tr_ln_id: number|null; origin: string; destination: string; valid_from: string|null; valid_to: string|null; iwe: string|null; container_type: string|null; rate: number; currency: string; issold: boolean|null; note: string|null }
+
+function buildUnified(
+  id: string,
+  source_type: RateSourceType,
+  r: { lin_id?: number|null; tr_ln_id?: number|null; origin?: string|null; destination?: string|null; container_type?: string|null; rate?: number|null; currency?: string|null; valid_from?: string|null; valid_to?: string|null; fcl_opening?: string|null; fcl_cutoff?: string|null; iwe?: string|null; vessel_name?: string|null; etd?: string|null; issold?: boolean|null; note?: string|null },
+  linerMap: Map<number, string>,
+  laneMap:  Map<number, string>,
+): UnifiedRate {
+  return {
+    id,
+    source_type,
+    liner_name:          r.lin_id    != null ? (linerMap.get(r.lin_id)   ?? null) : null,
+    trade_lane:          r.tr_ln_id  != null ? (laneMap.get(r.tr_ln_id)  ?? null) : null,
+    origin:              r.origin              ?? null,
+    destination:         r.destination         ?? null,
+    container_type:      r.container_type      ?? null,
+    rate:                r.rate                ?? null,
+    currency:            r.currency            ?? 'USD',
+    valid_from:          r.valid_from          ?? r.fcl_opening ?? null,
+    valid_to:            r.valid_to            ?? r.fcl_cutoff  ?? null,
+    vessel_name:         r.vessel_name         ?? null,
+    departure_date:      r.etd                 ?? null,
+    is_sold:             r.issold              ?? null,
+    service_scope:       (r.iwe as ServiceScope) ?? null,
+    client_name:         null,   // cli_id not joined — no /clients lookup here
+    employee_name:       null,   // emp_id_sales not joined
+    commodity_name:      null,   // com_id not joined (Special)
+    commodity_type:      null,
+    remark:              r.note ?? null,
+  }
 }
 
-export function apiUpdateRate(rateId: string, data: Record<string, unknown>): Promise<{ success: boolean }> {
-  return patch<{ success: boolean }>(`/rates/${encodeURIComponent(rateId)}`, data)
+export async function apiFetchAllRates(): Promise<UnifiedRate[]> {
+  const [liners, lanes, tariffs, nacs, contracted, vessels, faks, specials] = await Promise.all([
+    get<LinerRecord[]>('/liners').catch((): LinerRecord[] => []),
+    get<TradeLaneRecord[]>('/trade-lanes').catch((): TradeLaneRecord[] => []),
+    get<TariffRaw[]>('/rates/tariff-rates').catch((): TariffRaw[]    => []),
+    get<NacRaw[]>('/rates/nac-rates').catch(():       NacRaw[]       => []),
+    get<ContractedRaw[]>('/rates/contracted-rates').catch((): ContractedRaw[] => []),
+    get<VesselRaw[]>('/rates/vessel-rates').catch(():  VesselRaw[]   => []),
+    get<FakRaw[]>('/rates/fak-rates').catch(():        FakRaw[]      => []),
+    get<SpecialRaw[]>('/rates/special-rates').catch((): SpecialRaw[] => []),
+  ])
+
+  const linerMap = new Map(liners.map(l => [l.lin_id,   l.name]))
+  const laneMap  = new Map(lanes.map(l  => [l.trln_id,  l.trln_name]))
+
+  return [
+    ...tariffs.map(r    => buildUnified(`tariff:${r.tar_id}`,       'Tariff Rate',      r, linerMap, laneMap)),
+    ...nacs.map(r        => buildUnified(`nac:${r.nac_id}`,          'NAC',              r, linerMap, laneMap)),
+    ...contracted.map(r  => buildUnified(`contracted:${r.crate_id}`, 'Contracted',       r, linerMap, laneMap)),
+    ...vessels.map(r     => buildUnified(`vessel:${r.srid}`,         'Spot',             r, linerMap, laneMap)),
+    ...faks.map(r        => buildUnified(`fak:${r.fak_id}`,          'FAK',              r, linerMap, laneMap)),
+    ...specials.map(r    => buildUnified(`special:${r.sprid}`,       'Special',          r, linerMap, laneMap)),
+  ]
+}
+
+// Routes a PATCH to the correct type-specific endpoint, mapping frontend
+// field names back to backend column names.
+export async function apiUpdateRate(rateId: string, data: Record<string, unknown>): Promise<{ success: boolean }> {
+  const colonIdx = rateId.indexOf(':')
+  const type     = rateId.slice(0, colonIdx)
+  const id       = Number(rateId.slice(colonIdx + 1))
+
+  const payload: Record<string, unknown> = { ...data }
+
+  // remark (frontend) → note (DB column on every rate table)
+  if ('remark' in payload) { payload.note = payload.remark; delete payload.remark }
+
+  switch (type) {
+    case 'tariff':
+      // tariff_rates has no is_sold column — strip it to avoid 422
+      delete payload.is_sold
+      return patch(`/rates/tariff-rates/${id}`, payload)
+
+    case 'nac':
+      return patch(`/rates/nac-rates/${id}`, payload)
+
+    case 'contracted':
+      return patch(`/rates/contracted-rates/${id}`, payload)
+
+    case 'vessel':
+      // is_sold  → issold  (vessel_by_vessel_rate column name)
+      // departure_date → etd
+      if ('is_sold'        in payload) { payload.issold = payload.is_sold;       delete payload.is_sold        }
+      if ('departure_date' in payload) { payload.etd    = payload.departure_date; delete payload.departure_date }
+      return patch(`/rates/vessel-rates/${id}`, payload)
+
+    case 'fak':
+      if ('is_sold' in payload) { payload.issold = payload.is_sold; delete payload.is_sold }
+      return patch(`/rates/fak-rates/${id}`, payload)
+
+    case 'special':
+      // SpecialRatePatch uses isSold (camelCase) — backend Pydantic inconsistency
+      if ('is_sold' in payload) { payload.isSold = payload.is_sold; delete payload.is_sold }
+      return patch(`/rates/special-rates/${id}`, payload)
+
+    default:
+      throw new Error(`apiUpdateRate: unknown rate type "${type}"`)
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Rate Creation
+// ---------------------------------------------------------------------------
+
+export function apiCreateTariffRate(payload: Record<string, unknown>): Promise<Record<string, unknown>> {
+  return post<Record<string, unknown>>('/rates/tariff-rates', payload)
+}
+
+export function apiCreateContractedRate(payload: Record<string, unknown>): Promise<Record<string, unknown>> {
+  return post<Record<string, unknown>>('/rates/contracted-rates', payload)
+}
+
+export function apiCreateNacRate(payload: Record<string, unknown>): Promise<Record<string, unknown>> {
+  return post<Record<string, unknown>>('/rates/nac-rates', payload)
+}
+
+export function apiCreateVesselRate(payload: Record<string, unknown>): Promise<Record<string, unknown>> {
+  return post<Record<string, unknown>>('/rates/vessel-rates', payload)
+}
+
+export function apiCreateFakRate(payload: Record<string, unknown>): Promise<Record<string, unknown>> {
+  return post<Record<string, unknown>>('/rates/fak-rates', payload)
+}
+
+export function apiCreateSpecialRate(payload: Record<string, unknown>): Promise<Record<string, unknown>> {
+  return post<Record<string, unknown>>('/rates/special-rates', payload)
 }
 
 export function apiGetPorts(): Promise<PortRecord[]> {
@@ -354,8 +954,35 @@ export function apiGetTradeLanes(): Promise<TradeLaneRecord[]> {
   return get<TradeLaneRecord[]>('/trade-lanes')
 }
 
-export function apiGetContactPersons(): Promise<ContactPersonRecord[]> {
-  return get<ContactPersonRecord[]>('/contact-persons')
+/**
+ * Fetch all contact persons across all clients belonging to the current employee.
+ *
+ * No single all-contacts endpoint exists in the backend; contacts are scoped to a
+ * client via GET /clients/clients/{cli_id}/contacts.
+ * Strategy: fetch all clients first, then fan-out one request per client in parallel.
+ *
+ * Backend returns { cpid, name } — we add cli_id and client_name on the frontend,
+ * and map cpid → cp_id to match the ContactPersonRecord interface.
+ */
+export async function apiGetContactPersons(): Promise<ContactPersonRecord[]> {
+  const clients = await get<{ cli_id: number; name: string }[]>('/clients/clients')
+  const perClient = await Promise.all(
+    clients.map(async cl => {
+      const contacts = await get<{ cpid: number; name: string | null }[]>(
+        `/clients/clients/${cl.cli_id}/contacts`
+      )
+      return contacts.map(cp => ({
+        cp_id:       cp.cpid,
+        name:        cp.name,
+        email:       null,
+        whatsapp:    null,
+        wechat:      null,
+        cli_id:      cl.cli_id,
+        client_name: cl.name,
+      } satisfies ContactPersonRecord))
+    })
+  )
+  return perClient.flat()
 }
 
 export function apiGetEmployeesDb(): Promise<EmployeeRecord[]> {
@@ -363,71 +990,61 @@ export function apiGetEmployeesDb(): Promise<EmployeeRecord[]> {
 }
 
 export function apiGetClientsDb(): Promise<ClientRecord[]> {
-  return get<ClientRecord[]>('/clients')
+  return get<ClientRecord[]>('/clients/clients')
+}
+
+export function apiGetClientKycStatus(cli_id: number): Promise<boolean> {
+  // Backend returns fetchall() → array; grab the first row's value
+  return get<Array<{ kyc_completed: boolean }>>(`/clients/clients/${cli_id}/kyc-status`)
+    .then(rows => rows[0]?.kyc_completed === true)
 }
 
 // ---------------------------------------------------------------------------
-// InttraAPI Spot Rates (simulated)
+// Rate Requests
 // ---------------------------------------------------------------------------
 
-export function apiCheckInttraRates(data: {
-  origin: string
-  destination: string
-  container_type?: string
-}): Promise<InttraSpotRate[]> {
-  return post<InttraSpotRate[]>('/inttra/spot-rates', data)
+export interface RateRequestRecord {
+  request_id: number
+  emp_id_requested: number
+  is_given: boolean
+  remark: string
 }
 
-export interface InttraBookingResult {
-  success: boolean
-  booking_reference: string
-  vessel_name: string
-  voyage_number: string
-  shipping_line: string
-  origin: string
-  destination: string
-  container_type: string
-  quantity: number
-  etd: string
-  eta: string
-  status: string
-  message: string
+/**
+ * Create a new rate request.
+ * Used when:
+ *  • CS/Sales escalates to Procurement (is_given=false)
+ *  • Procurement receives a sourcing task (is_given=false, patched to true on submit)
+ *  • CS/Sales completes rate check themselves (is_given=true)
+ */
+export function apiCreateRateRequest(data: {
+  emp_id_requested: number
+  is_given?: boolean
+  remark: string
+}): Promise<RateRequestRecord> {
+  return post<RateRequestRecord>('/rate-requests', data)
 }
 
-export function apiBookInttra(data: {
-  booking_id: string
-  shipping_line: string
-  origin: string
-  destination: string
-  container_type?: string
-  quantity?: number
-}): Promise<InttraBookingResult> {
-  return post<InttraBookingResult>('/inttra/book', data)
-}
-
-export interface InttraSiResult {
-  success: boolean
-  si_reference: string
-  booking_id: string
-  shipping_line: string
-  status: string
-  message: string
-}
-
-export function apiSubmitSiInttra(data: {
-  booking_id: string
-  shipping_line: string
-  origin: string
-  destination: string
-}): Promise<InttraSiResult> {
-  return post<InttraSiResult>('/inttra/submit-si', data)
+/**
+ * Patch an existing rate request — used when Procurement sends the rate brief
+ * to Sales (marking is_given=true) and updating the remark with the message
+ * to the salesperson.
+ * NOTE: Requires PATCH /rate-requests/{request_id} to be added to the backend router.
+ */
+export function apiPatchRateRequest(requestId: number, data: {
+  emp_id_requester?: number
+  emp_id_requested?: number
+  is_given?: boolean
+  remark?: string
+}): Promise<Record<string, unknown>> {
+  return patch<Record<string, unknown>>(`/rate-requests/${requestId}`, data)
 }
 
 // ---------------------------------------------------------------------------
 // Activity Log
 // ---------------------------------------------------------------------------
 
-export function apiCreateActivity(data: {
+export function apiCreateActivity(_data: {
   actor_role: string
   actor_id: number
   action: string
@@ -437,5 +1054,7 @@ export function apiCreateActivity(data: {
   pushed_to: string
   notes?: string
 }): Promise<ActivityEntry> {
-  return post<ActivityEntry>('/activity-log', data)
+  // No general activity-log endpoint exists in the backend yet.
+  // Activity log state is maintained in the frontend; this is a no-op to suppress 404s.
+  return Promise.resolve({} as ActivityEntry)
 }

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { X, Check } from 'lucide-react'
-import { EMPLOYEES, CUSTOMER_TYPES, type Customer, type CustomerTier, type PaymentTerms, type CustomerType } from '../../mockData'
+import { EMPLOYEES, CUSTOMER_TYPES, type Customer, type CustomerTier, type PaymentTerms, type CustomerType } from '../../types'
 
 interface CustomerEditModalProps {
   customer: Customer

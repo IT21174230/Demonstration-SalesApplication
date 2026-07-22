@@ -10,12 +10,12 @@ import { usePersistentState } from '../../hooks'
 import TagInput from '../shared/TagInput'
 import {
   nowStamp, SBUS, ROLE_QUICK_COMMANDS, ROLE_LABELS, ROLE_COLORS,
-  INQUIRY_PRIORITIES, COMMODITY_TYPES, CONTAINER_TYPES, SPECIAL_EQUIPMENT_OPTIONS, CUSTOMER_TYPES,
+  INQUIRY_PRIORITIES, COMMODITY_TYPES, CONTAINER_TYPES, CUSTOMER_TYPES,
   findDuplicateCustomers, emptyContainerLine,
   type Inquiry, type Customer, type SBU, type CustomerTier, type PaymentTerms, type DeliveryType,
-  type InquiryPriority, type CommodityType, type ContainerType, type SpecialEquipment, type CustomerType,
+  type InquiryPriority, type CommodityType, type ContainerType, type CustomerType,
   type LinerRecord, type ContainerLine,
-} from '../../mockData'
+} from '../../types'
 import { apiGetLiners } from '../../api'
 import { useRole } from '../../RoleContext'
 import { useWebSocket } from '../../useWebSocket'
@@ -32,7 +32,7 @@ interface QuickCommand {
 }
 
 const QUICK_COMMANDS: QuickCommand[] = [
-  { id: 'new-customer',   label: '/new customer',     icon: <UserPlus size={14} />,         color: '#4f46e5', description: 'Register a new customer' },
+  { id: 'new-customer',   label: '/new customer',     icon: <UserPlus size={14} />,         color: '#0f8fa8', description: 'Register a new customer' },
   { id: 'new-inquiry',    label: '/new inquiry',      icon: <PackagePlus size={14} />,      color: '#0891b2', description: 'Log a shipping inquiry' },
   { id: 'follow-up',      label: '/follow up',        icon: <MessageSquarePlus size={14} />,color: '#16a34a', description: 'Log a follow-up note' },
   { id: 'new-task',       label: '/new task',         icon: <ListPlus size={14} />,         color: '#d97706', description: 'Create a task or reminder' },
@@ -51,7 +51,7 @@ const QUICK_COMMANDS: QuickCommand[] = [
 /*  Form state types                                                   */
 /* ------------------------------------------------------------------ */
 interface NewCustomerForm { name: string; location: string; tier: CustomerTier; payment: PaymentTerms; customerType: CustomerType; contactPerson: string; contactChannel: 'Email' | 'WhatsApp' | 'WeChat' | ''; contactChannelValue: string }
-interface NewInquiryForm  { customer: string; request: string; origin: string; channel: 'WhatsApp' | 'Email' | 'Phone'; sbu: SBU; deliveryType: DeliveryType; priority: InquiryPriority; specialEquipment: SpecialEquipment; contactPerson: string; contactChannelId: string; preferredLiners: string[]; remark: string; containers: ContainerLine[] }
+interface NewInquiryForm  { customer: string; request: string; origin: string; channel: 'WhatsApp' | 'Email' | 'Phone'; sbu: SBU; deliveryType: DeliveryType; priority: InquiryPriority; contactPerson: string; contactChannelId: string; preferredLiners: string[]; remark: string; containers: ContainerLine[] }
 interface FollowUpForm    { customer: string; note: string; markComplete: boolean }
 interface NewTaskForm     { customer: string; task: string; dueDate: string }
 interface QuoteForm       { customer: string }
@@ -106,7 +106,7 @@ export default function ChatAssistant({
 
   // Form states
   const [custForm, setCustForm]           = useState<NewCustomerForm>({ name: '', location: '', tier: 'Regular', payment: 'Pay Upfront', customerType: 'Shipper', contactPerson: '', contactChannel: '', contactChannelValue: '' })
-  const defaultInqForm: NewInquiryForm = { customer: '', request: '', origin: '', channel: 'Email', sbu: 'Ocean Exports', deliveryType: 'port-to-port', priority: 'Medium', specialEquipment: 'None', contactPerson: '', contactChannelId: '', preferredLiners: [], remark: '', containers: [emptyContainerLine()] }
+  const defaultInqForm: NewInquiryForm = { customer: '', request: '', origin: '', channel: 'Email', sbu: 'Ocean Exports', deliveryType: 'port-to-port', priority: 'Medium', contactPerson: '', contactChannelId: '', preferredLiners: [], remark: '', containers: [emptyContainerLine()] }
   const [inqForm, setInqForm]             = useState<NewInquiryForm>(defaultInqForm)
   const [fuForm, setFuForm]               = useState<FollowUpForm>({ customer: '', note: '', markComplete: false })
   const [taskForm, setTaskForm]           = useState<NewTaskForm>({ customer: '', task: '', dueDate: '' })
@@ -223,7 +223,7 @@ export default function ChatAssistant({
       case 'new-inquiry': {
         if (!inqForm.customer.trim() || !inqForm.request.trim()) return
         const containersStr = inqForm.containers.map((c, i) => `container_${i + 1}=[type=${c.containerType}, qty=${c.quantity}, weight=${c.weight || ''}, commodity_type=${c.commodityType}, commodity_name=${c.commodityName || ''}, destination=${c.destination || 'TBD'}, fcl_lcl=${c.isFcl ? 'FCL' : 'LCL'}, zip_code=${c.zipCode || ''}, door_agents=${c.doorAgents.join(';') || ''}, free_time=${c.freeTime || ''}]`).join(' | ')
-        message = `[CMD /new inquiry] customer=${inqForm.customer} | request=${inqForm.request} | origin=${inqForm.origin || 'TBD'} | channel=${inqForm.channel} | sbu=${inqForm.sbu} | delivery_type=${inqForm.deliveryType} | priority=${inqForm.priority} | special_equipment=${inqForm.specialEquipment} | contact_person=${inqForm.contactPerson || ''} | contact_channel_id=${inqForm.contactChannelId || ''} | preferred_liners=${inqForm.preferredLiners.join(';') || ''} | remark=${inqForm.remark || ''} | ${containersStr}`
+        message = `[CMD /new inquiry] customer=${inqForm.customer} | request=${inqForm.request} | origin=${inqForm.origin || 'TBD'} | channel=${inqForm.channel} | sbu=${inqForm.sbu} | delivery_type=${inqForm.deliveryType} | priority=${inqForm.priority} | contact_person=${inqForm.contactPerson || ''} | contact_channel_id=${inqForm.contactChannelId || ''} | preferred_liners=${inqForm.preferredLiners.join(';') || ''} | remark=${inqForm.remark || ''} | ${containersStr}`
         break
       }
       case 'follow-up':
@@ -307,7 +307,7 @@ export default function ChatAssistant({
               </FormField>
               <div className="qc-form-row">
                 <FormField label="Origin">
-                  <input className="qc-input" placeholder="e.g. Colombo" value={inqForm.origin} onChange={e => setInqForm(p => ({ ...p, origin: e.target.value }))} />
+                  <input className="qc-input" placeholder="e.g. Colombo/Sri Lanka" value={inqForm.origin} onChange={e => setInqForm(p => ({ ...p, origin: e.target.value }))} />
                 </FormField>
                 <FormField label="Priority">
                   <select className="qc-select" value={inqForm.priority} onChange={e => setInqForm(p => ({ ...p, priority: e.target.value as InquiryPriority }))}>
@@ -339,11 +339,6 @@ export default function ChatAssistant({
                 </FormField>
               </div>
               <div className="qc-form-row">
-                <FormField label="Special Equipment">
-                  <select className="qc-select" value={inqForm.specialEquipment} onChange={e => setInqForm(p => ({ ...p, specialEquipment: e.target.value as SpecialEquipment }))}>
-                    {SPECIAL_EQUIPMENT_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
-                  </select>
-                </FormField>
                 <FormField label="Preferred Liners">
                   <TagInput
                     values={inqForm.preferredLiners}
@@ -382,7 +377,7 @@ export default function ChatAssistant({
                     </div>
                     <div className="qc-form-row" style={{ marginBottom: 6 }}>
                       <FormField label="Destination">
-                        <input className="qc-input" value={c.destination} onChange={e => setInqForm(p => ({ ...p, containers: p.containers.map((cc, i) => i === idx ? { ...cc, destination: e.target.value } : cc) }))} placeholder="e.g. Hamburg" />
+                        <input className="qc-input" value={c.destination} onChange={e => setInqForm(p => ({ ...p, containers: p.containers.map((cc, i) => i === idx ? { ...cc, destination: e.target.value } : cc) }))} placeholder="e.g. Hamburg/Germany" />
                       </FormField>
                       <FormField label="Container Type">
                         <select className="qc-select" value={c.containerType} onChange={e => setInqForm(p => ({ ...p, containers: p.containers.map((cc, i) => i === idx ? { ...cc, containerType: e.target.value as ContainerType } : cc) }))}>
@@ -428,7 +423,7 @@ export default function ChatAssistant({
                   style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--accent)', background: 'none', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 10px', cursor: 'pointer' }}
                   onClick={() => {
                     const first = inqForm.containers[0]
-                    setInqForm(p => ({ ...p, containers: [...p.containers, { ...emptyContainerLine(), commodityType: first?.commodityType ?? 'General', commodityName: first?.commodityName ?? '', destination: first?.destination ?? '' }] }))
+                    setInqForm(p => ({ ...p, containers: [...p.containers, { ...emptyContainerLine(), commodityType: first?.commodityType ?? 'Miscellaneous manufactured articles — furniture, toys', commodityName: first?.commodityName ?? '', destination: first?.destination ?? '' }] }))
                   }}
                 >
                   <Plus size={11} /> Add Container

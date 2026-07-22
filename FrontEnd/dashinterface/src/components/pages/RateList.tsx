@@ -4,8 +4,12 @@ import {
   RATE_SOURCE_COLORS,
   type UnifiedRate, type RateSourceType,
   type LinerRecord, type TradeLaneRecord,
-} from '../../mockData'
-import { apiSearchAllRates, apiUpdateRate, apiGetLiners, apiGetTradeLanes } from '../../api'
+} from '../../types'
+import { apiFetchAllRates, apiUpdateRate, apiGetLiners, apiGetTradeLanes } from '../../api'
+import { useRole } from '../../RoleContext'
+
+// Rate types visible to CS and Sales (read-only, no record access)
+const CS_SALES_ALLOWED: RateSourceType[] = ['FAK', 'Tariff Rate', 'Spot']
 
 // ---------------------------------------------------------------------------
 // Filter types
@@ -16,7 +20,7 @@ type LinerFilter  = 'all' | string
 type LaneFilter   = 'all' | string
 
 const SOURCE_OPTIONS: RateSourceType[] = [
-  'Contracted', 'FAK', 'Spot', 'Vessel-by-Vessel', 'Tariff Rate', 'NAC', 'Special',
+  'Contracted', 'FAK', 'Spot', 'Tariff Rate', 'NAC', 'Special',
 ]
 
 // ---------------------------------------------------------------------------
@@ -127,7 +131,7 @@ const colDepartureDate: ColDef = {
   render: r => <td style={MUTED}>{r.departure_date ?? '—'}</td>,
 }
 const colServiceScope: ColDef = {
-  key: 'scope', label: 'IWE (Scope)',
+  key: 'scope', label: 'Service Lane',
   render: r => {
     if (!r.service_scope) return <td style={MUTED}>—</td>
     const scopeColor: Record<string, string> = { Import: '#2563eb', Export: '#059669', Within: '#d97706' }
@@ -150,10 +154,7 @@ const colClient: ColDef = {
   key: 'client', label: 'Customer',
   render: r => <td style={{ ...TD, color: 'var(--text)', fontWeight: 600 }}>{r.client_name ?? dash}</td>,
 }
-const colContactPerson: ColDef = {
-  key: 'contactPerson', label: 'Contact Person',
-  render: r => <td style={SEC}>{r.contact_person_name ?? dash}</td>,
-}
+
 const colEmployee: ColDef = {
   key: 'employee', label: 'Salesperson',
   render: r => <td style={SEC}>{r.employee_name ?? dash}</td>,
@@ -171,20 +172,19 @@ const colCommodityType: ColDef = {
 
 // Columns per rate type
 const COLUMNS_BY_TYPE: Record<SourceFilter, ColDef[]> = {
-  all:                [colId, colType, colServiceScope, colLiner, colRoute, colContainer, colRate, colCurrency, colTradeLane, colValidFrom, colValidTo],
-  Contracted:         [colId, colServiceScope, colLiner, colTradeLane, colContainer, colRate, colCurrency, colValidFrom, colValidTo],
-  FAK:                [colId, colServiceScope, colLiner, colTradeLane, colContainer, colRate, colCurrency, colValidFrom, colValidTo],
-  Spot:               [colId, colServiceScope, colLiner, colTradeLane, colContainer, colRate, colCurrency, colValidFrom, colValidTo, colSoldStatus],
-  'Vessel-by-Vessel': [colId, colServiceScope, colLiner, colTradeLane, colContainer, colRate, colCurrency, colVessel, colDepartureDate, colValidFrom, colValidTo, colSoldStatus],
-  'Tariff Rate':       [colId, colServiceScope, colLiner, colTradeLane, colContainer, colRate, colCurrency, colValidFrom, colValidTo, colSoldStatus],
-  NAC:                [colId, colServiceScope, colClient, colContactPerson, colEmployee, colOrigin, colDestination, colTradeLane, colRate, colCurrency, colValidFrom, colValidTo],
-  Special:            [colId, colServiceScope, colCommodityName, colCommodityType, colRate, colCurrency, colValidFrom, colValidTo],
+  all:           [colId, colType, colServiceScope, colLiner, colRoute, colContainer, colRate, colCurrency, colTradeLane, colValidFrom, colValidTo],
+  Contracted:    [colId, colServiceScope, colLiner, colTradeLane, colContainer, colRate, colCurrency, colValidFrom, colValidTo],
+  FAK:           [colId, colServiceScope, colLiner, colTradeLane, colContainer, colRate, colCurrency, colValidFrom, colValidTo],
+  Spot:          [colId, colServiceScope, colLiner, colTradeLane, colContainer, colRate, colCurrency, colVessel, colDepartureDate, colValidFrom, colValidTo, colSoldStatus],
+  'Tariff Rate': [colId, colServiceScope, colLiner, colTradeLane, colContainer, colRate, colCurrency, colValidFrom, colValidTo],
+  NAC:           [colId, colServiceScope, colClient, colEmployee, colOrigin, colDestination, colTradeLane, colRate, colCurrency, colValidFrom, colValidTo],
+  Special:       [colId, colServiceScope, colCommodityName, colCommodityType, colRate, colCurrency, colValidFrom, colValidTo],
 }
 
 // Detail fields per rate type (for the view modal)
 function detailFields(r: UnifiedRate): [string, string][] {
   const common: [string, string][] = [
-    ['IWE (Service Scope)', r.service_scope ?? '—'],
+    ['Service Lane', r.service_scope ?? '—'],
     ['Rate', r.rate != null ? `$${r.rate.toLocaleString()}` : '—'],
     ['Currency', r.currency],
     ['Valid From', r.valid_from ?? '—'],
@@ -199,29 +199,26 @@ function detailFields(r: UnifiedRate): [string, string][] {
         ['Container Type', r.container_type ?? '—'],
         ...common,
       ]
-    case 'Vessel-by-Vessel':
-      return [
-        ['Liner', r.liner_name ?? '—'],
-        ['Trade Lane', r.trade_lane ?? '—'],
-        ['Container Type', r.container_type ?? '—'],
-        ...common,
-        ['Vessel', r.vessel_name ?? '—'],
-        ['Departure Date', r.departure_date ?? '—'],
-        ['Sold', r.is_sold === true ? 'Yes' : r.is_sold === false ? 'No' : '—'],
-      ]
-    case 'Tariff Rate':
     case 'Spot':
       return [
         ['Liner', r.liner_name ?? '—'],
         ['Trade Lane', r.trade_lane ?? '—'],
         ['Container Type', r.container_type ?? '—'],
+        ['Vessel', r.vessel_name ?? '—'],
+        ['Departure Date', r.departure_date ?? '—'],
         ...common,
         ['Sold', r.is_sold === true ? 'Yes' : r.is_sold === false ? 'No' : '—'],
+      ]
+    case 'Tariff Rate':
+      return [
+        ['Liner', r.liner_name ?? '—'],
+        ['Trade Lane', r.trade_lane ?? '—'],
+        ['Container Type', r.container_type ?? '—'],
+        ...common,
       ]
     case 'NAC':
       return [
         ['Customer', r.client_name ?? '—'],
-        ['Contact Person', r.contact_person_name ?? '—'],
         ['Salesperson', r.employee_name ?? '—'],
         ['Origin', r.origin || '—'],
         ['Destination', r.destination || '—'],
@@ -244,6 +241,9 @@ function detailFields(r: UnifiedRate): [string, string][] {
 // ---------------------------------------------------------------------------
 
 export default function RateList() {
+  const { activeRole } = useRole()
+  const isRestrictedRole = activeRole === 'CS' || activeRole === 'Sales'
+
   // ---- Data state ----
   const [rates, setRates] = useState<UnifiedRate[]>([])
   const [loading, setLoading] = useState(false)
@@ -330,13 +330,13 @@ export default function RateList() {
     payload.valid_to = editForm.valid_to || null
     payload.remark = editForm.remark || null
     // type-specific
-    if (['Contracted', 'FAK', 'Spot', 'Vessel-by-Vessel', 'Tariff Rate'].includes(t)) {
+    if (['Contracted', 'FAK', 'Spot', 'Tariff Rate'].includes(t)) {
       payload.container_type = editForm.container_type || null
     }
-    if (['Spot', 'Vessel-by-Vessel', 'Tariff Rate'].includes(t)) {
+    if (t === 'Spot') {
       payload.is_sold = editForm.is_sold
     }
-    if (t === 'Vessel-by-Vessel') {
+    if (t === 'Spot') {
       payload.departure_date = editForm.departure_date || null
     }
     if (t === 'NAC') {
@@ -358,15 +358,16 @@ export default function RateList() {
 
   const loadRates = () => {
     setLoading(true)
-    apiSearchAllRates({})
+    apiFetchAllRates()
       .then(data => { setRates(data); setLoaded(true) })
-      .catch(() => {})
+      .catch(err => { console.error('[RateList] apiFetchAllRates failed:', err); setLoaded(true) })
       .finally(() => setLoading(false))
   }
 
   // ---- Filtering ----
   const filtered = useMemo(() => {
     return rates.filter(r => {
+      if (isRestrictedRole && !CS_SALES_ALLOWED.includes(r.source_type)) return false
       if (sourceFilter !== 'all' && r.source_type !== sourceFilter) return false
       if (linerFilter !== 'all' && (r.liner_name ?? '') !== linerFilter) return false
       if (laneFilter !== 'all' && (r.trade_lane ?? '') !== laneFilter) return false
@@ -375,7 +376,7 @@ export default function RateList() {
       if (containerFilter && !(r.container_type ?? '').toLowerCase().includes(containerFilter.toLowerCase())) return false
       return true
     })
-  }, [rates, sourceFilter, linerFilter, laneFilter, originFilter, destFilter, containerFilter])
+  }, [rates, sourceFilter, linerFilter, laneFilter, originFilter, destFilter, containerFilter, isRestrictedRole])
 
   // ---- Active columns based on selected type ----
   const columns = COLUMNS_BY_TYPE[sourceFilter]
@@ -415,7 +416,7 @@ export default function RateList() {
               style={{ width: '100%', padding: '10px 12px', fontSize: 13, borderRadius: 8 }}
             >
               <option value="all">All Types</option>
-              {SOURCE_OPTIONS.map(s => (
+              {(isRestrictedRole ? CS_SALES_ALLOWED : SOURCE_OPTIONS).map(s => (
                 <option key={s} value={s}>{s}</option>
               ))}
             </select>
@@ -533,9 +534,11 @@ export default function RateList() {
                       <button className="lt-icon-btn" title="Add Note" onClick={() => openNote(r)} style={{ marginRight: 4 }}>
                         <MessageSquarePlus size={12} />
                       </button>
-                      <button className="lt-icon-btn" title="Edit Rate" onClick={() => openEdit(r)}>
-                        <Pencil size={12} />
-                      </button>
+                      {!isRestrictedRole && (
+                        <button className="lt-icon-btn" title="Edit Rate" onClick={() => openEdit(r)}>
+                          <Pencil size={12} />
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))
@@ -619,8 +622,8 @@ export default function RateList() {
         </div>
       )}
 
-      {/* Edit modal */}
-      {editing && (
+      {/* Edit modal — Procurement/Admin only */}
+      {editing && !isRestrictedRole && (
         <div className="lt-modal-backdrop" onClick={() => setEditing(null)}>
           <div className="lt-modal" style={{ maxWidth: 520 }} onClick={e => e.stopPropagation()}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
@@ -657,8 +660,8 @@ export default function RateList() {
                   placeholder="USD" />
               </div>
 
-              {/* Container Type — Contracted/FAK/Spot/VbV/Tariff Rate */}
-              {['Contracted', 'FAK', 'Spot', 'Vessel-by-Vessel', 'Tariff Rate'].includes(editing.source_type) && (
+              {/* Container Type — Contracted/FAK/Spot/Tariff Rate */}
+              {['Contracted', 'FAK', 'Spot', 'Tariff Rate'].includes(editing.source_type) && (
                 <div>
                   <label className="lt-label">Container Type</label>
                   <input className="lt-input" style={{ width: '100%' }}
@@ -667,8 +670,8 @@ export default function RateList() {
                 </div>
               )}
 
-              {/* Sold — Spot/VbV/Tariff Rate */}
-              {['Spot', 'Vessel-by-Vessel', 'Tariff Rate'].includes(editing.source_type) && (
+              {/* Sold — Spot only */}
+              {editing.source_type === 'Spot' && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingTop: 22 }}>
                   <input type="checkbox" id="edit-is-sold"
                     checked={editForm.is_sold as boolean}
@@ -678,8 +681,8 @@ export default function RateList() {
                 </div>
               )}
 
-              {/* Departure Date — VbV only */}
-              {editing.source_type === 'Vessel-by-Vessel' && (
+              {/* Departure Date — Spot only */}
+              {editing.source_type === 'Spot' && (
                 <div>
                   <label className="lt-label">Departure Date</label>
                   <input className="lt-input" type="date" style={{ width: '100%' }}

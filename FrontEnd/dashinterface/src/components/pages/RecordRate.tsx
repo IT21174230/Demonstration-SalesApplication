@@ -4,8 +4,8 @@ import {
   RATE_SOURCE_COLORS, portOptions,
   type PortRecord, type LinerRecord, type TradeLaneRecord, type EmployeeRecord, type ClientRecord,
   type RateSourceType,
-} from '../../mockData'
-import { apiGetPorts, apiGetLiners, apiGetTradeLanes, apiGetEmployeesDb, apiGetClientsDb } from '../../api'
+} from '../../types'
+import { apiGetPorts, apiGetLiners, apiGetTradeLanes, apiGetEmployeesDb, apiGetClientsDb, apiCreateTariffRate, apiCreateContractedRate, apiCreateNacRate } from '../../api'
 import TagInput from '../shared/TagInput'
 
 interface TariffContainerRate {
@@ -13,9 +13,8 @@ interface TariffContainerRate {
   weight: string
   rate: number | ''
   currency: string
-  freeDays: string
 }
-const emptyTariffContainer = (): TariffContainerRate => ({ containerType: '', weight: '', rate: '', currency: 'USD', freeDays: '' })
+const emptyTariffContainer = (): TariffContainerRate => ({ containerType: '', weight: '', rate: '', currency: 'USD' })
 
 interface ContractedContainerRate {
   containerType: string
@@ -23,9 +22,8 @@ interface ContractedContainerRate {
   weight: string
   rate: number | ''
   currency: string
-  freeDays: string
 }
-const emptyContractedContainer = (): ContractedContainerRate => ({ containerType: '', contractedVolume: '', weight: '', rate: '', currency: 'USD', freeDays: '' })
+const emptyContractedContainer = (): ContractedContainerRate => ({ containerType: '', contractedVolume: '', weight: '', rate: '', currency: 'USD' })
 
 interface RecordRateProps {
   onFlash: (msg: string, action?: { label: string; onClick: () => void }) => void
@@ -66,7 +64,6 @@ export default function RecordRate({ onFlash, onGoBack }: RecordRateProps) {
   // NAC extras
   const [rrNacRefNo, setRrNacRefNo] = useState('')
   const [rrNacCustomerName, setRrNacCustomerName] = useState('')
-  const [rrNacContactPersons, setRrNacContactPersons] = useState('')
   // Contracted — applicable customers
   const [rrApplicableCustomers, setRrApplicableCustomers] = useState<string[]>([])
 
@@ -94,7 +91,7 @@ export default function RecordRate({ onFlash, onGoBack }: RecordRateProps) {
     setRrOrigin(''); setRrDestination(''); setRrFreeTime('')
     setRrContainerWeight(''); setRrContractedVolume('')
     setRrNote(''); setRrSpecialRemark('')
-    setRrNacRefNo(''); setRrNacCustomerName(''); setRrNacContactPersons('')
+    setRrNacRefNo(''); setRrNacCustomerName('')
     setRrApplicableCustomers([])
     setRrTariffContainers([emptyTariffContainer()])
     setRrContractedContainers([emptyContractedContainer()])
@@ -129,6 +126,83 @@ export default function RecordRate({ onFlash, onGoBack }: RecordRateProps) {
       arr.filter(c => c.rate !== '').map(c => `${c.containerType || '?'}: ${c.rate} ${c.currency}`).join(', ')
     const containers = rrType === 'Tariff Rate' ? rrTariffContainers : rrType === 'Contracted' ? rrContractedContainers : rrNacContainers
     onFlash(`Rate recorded: ${rrType} · ${linerName} · ${laneName} · ${summarise(containers)}`)
+
+    // Fire API POSTs in background — one per container row that has a rate
+    if (rrType === 'Tariff Rate') {
+      rrTariffContainers.filter(c => c.rate !== '').forEach(ct => {
+        apiCreateTariffRate({
+          lin_id: rrLinerId !== '' ? rrLinerId : undefined,
+          tr_ln_id: 1,
+          updated_by: 1,
+          salesperson: 1,
+          origin: rrOrigin,
+          destination: rrDestination,
+          valid_from: rrValidFrom || undefined,
+          valid_to: rrValidTo || undefined,
+          max_weight: ct.weight.trim() ? (parseInt(ct.weight) || 0) : 0,
+          container_type: ct.containerType || undefined,
+          rate: ct.rate,
+          currency: ct.currency,
+          free_time: rrFreeTime.trim() || undefined,
+          note: rrNote || undefined,
+          special_remark: rrSpecialRemark || undefined,
+        }).catch(err => console.error('[RecordRate] tariff POST failed:', err))
+      })
+    } else if (rrType === 'Contracted') {
+      rrContractedContainers.filter(c => c.rate !== '').forEach(cc => {
+        apiCreateContractedRate({
+          lin_id: rrLinerId !== '' ? rrLinerId : undefined,
+          tr_ln_id: 1,
+          contract_ref_id: rrContractId || undefined,
+          valid_from: rrValidFrom || undefined,
+          valid_to: rrValidTo || undefined,
+          contracted_volume: cc.contractedVolume.trim() ? (parseInt(cc.contractedVolume) || 0) : 0,
+          container_type: cc.containerType || undefined,
+          updated_by: 1,
+          origin: rrOrigin,
+          destination: rrDestination,
+          rate: cc.rate,
+          currency: cc.currency,
+          emp_id_sales: 1,
+          emp_id_cs: 1,
+          free_time: rrFreeTime.trim() || undefined,
+          max_weight: cc.weight.trim() ? parseInt(cc.weight) : undefined,
+          note: rrNote || undefined,
+          special_remark: rrSpecialRemark || undefined,
+          client_ids: rrApplicableCustomers.length > 0
+            ? rrApplicableCustomers
+                .map(name => dbClientList.find(c => c.name === name)?.cli_id)
+                .filter((id): id is number => id !== undefined)
+            : undefined,
+        }).catch(err => console.error('[RecordRate] contracted POST failed:', err))
+      })
+    } else {
+      // NAC
+      const cliId = dbClientList.find(c => c.name === rrNacCustomerName)?.cli_id
+      rrNacContainers.filter(c => c.rate !== '').forEach(nc => {
+        apiCreateNacRate({
+          cli_id: cliId,
+          lin_id: rrLinerId !== '' ? rrLinerId : undefined,
+          tr_ln_id: 1,
+          nac_ref_id: rrNacRefNo || undefined,
+          origin: rrOrigin,
+          destination: rrDestination,
+          valid_from: rrValidFrom || undefined,
+          valid_to: rrValidTo || undefined,
+          container_type: nc.containerType || undefined,
+          rate: nc.rate,
+          currency: nc.currency,
+          contracted_volume: nc.contractedVolume.trim() ? (parseInt(nc.contractedVolume) || 0) : 0,
+          emp_id_sales: 1,
+          emp_id_cs: 1,
+          free_time: rrFreeTime.trim() || undefined,
+          max_weight: nc.weight.trim() ? parseInt(nc.weight) : undefined,
+          note: rrNote || undefined,
+          special_remark: rrSpecialRemark || undefined,
+        }).catch(err => console.error('[RecordRate] NAC POST failed:', err))
+      })
+    }
+
     resetForm()
   }
 
@@ -213,13 +287,6 @@ export default function RecordRate({ onFlash, onGoBack }: RecordRateProps) {
                 {dbEmployeeList.map(e => <option key={e.emp_id} value={e.emp_id}>{e.name}{e.desig ? ` (${e.desig})` : ''}</option>)}
               </select>
             </div>
-            <div>
-              <label className="lt-label">Service Lane</label>
-              <input list="rr-tr-service-lanes" className="lt-input" style={{ width: '100%' }} value={rrServiceLane} onChange={e => setRrServiceLane(e.target.value)} placeholder="Type to filter..." />
-              <datalist id="rr-tr-service-lanes">
-                {tradeLaneList.map(t => <option key={t.trln_id} value={t.trln_name} />)}
-              </datalist>
-            </div>
 
             {/* — Route — */}
             <div style={secHead}><span style={secDot(RATE_SOURCE_COLORS['Tariff Rate'])} />Route</div>
@@ -241,6 +308,13 @@ export default function RecordRate({ onFlash, onGoBack }: RecordRateProps) {
               <label className="lt-label">Free Time (days)</label>
               <input className="lt-input" type="number" style={{ width: '100%' }} value={rrFreeTime} onChange={e => setRrFreeTime(e.target.value)} min={0} placeholder="e.g. 14" />
             </div>
+            <div>
+              <label className="lt-label">Service Lane</label>
+              <input list="rr-tr-service-lanes" className="lt-input" style={{ width: '100%' }} value={rrServiceLane} onChange={e => setRrServiceLane(e.target.value)} placeholder="Type to filter..." />
+              <datalist id="rr-tr-service-lanes">
+                {tradeLaneList.map(t => <option key={t.trln_id} value={t.trln_name} />)}
+              </datalist>
+            </div>
             {/* — Validity — */}
             <div style={secHead}><span style={secDot(RATE_SOURCE_COLORS['Tariff Rate'])} />Validity</div>
             <div>
@@ -257,45 +331,34 @@ export default function RecordRate({ onFlash, onGoBack }: RecordRateProps) {
               <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><span style={secDot(RATE_SOURCE_COLORS['Tariff Rate'])} />Container Rates</span>
               <button type="button" className="db-btn" style={{ fontSize: 10, padding: '2px 8px', display: 'flex', alignItems: 'center', gap: 3 }} onClick={addTariffContainer}><Plus size={11} /> Add</button>
             </div>
-            {rrTariffContainers.map((ct, idx) => (
-              <div key={idx} style={{ gridColumn: '1 / -1', border: '1px solid var(--border)', borderRadius: 10, padding: 14, background: 'var(--bg)', position: 'relative' }}>
-                {rrTariffContainers.length > 1 && (
-                  <button type="button" className="lt-icon-btn" title="Remove" style={{ position: 'absolute', top: 8, right: 8, padding: 3 }} onClick={() => removeTariffContainer(idx)}>
+            <div style={{ gridColumn: '1 / -1', display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr 1fr 0.65fr 28px', gap: 8 }}>
+                <label className="lt-label" style={{ margin: 0 }}>Container Type <span style={{ color: '#dc2626' }}>*</span></label>
+                <label className="lt-label" style={{ margin: 0 }}>Max Weight</label>
+                <label className="lt-label" style={{ margin: 0 }}>Rate <span style={{ color: '#dc2626' }}>*</span></label>
+                <label className="lt-label" style={{ margin: 0 }}>Currency</label>
+                <div />
+              </div>
+              {rrTariffContainers.map((ct, idx) => (
+                <div key={idx} style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr 1fr 0.65fr 28px', gap: 8, alignItems: 'center' }}>
+                  <select className="lt-select" style={{ width: '100%', fontSize: 12, padding: '8px 10px', borderRadius: 8 }} value={ct.containerType} onChange={e => updateTariffContainer(idx, { containerType: e.target.value })}>
+                    <option value="">— Select —</option>
+                    <option value="20GP">20GP</option><option value="40GP">40GP</option><option value="40HC">40HC</option>
+                    <option value="20 Reefer">20 Reefer</option><option value="40 Reefer">40 Reefer</option>
+                    <option value="20 Flat Rack">20 Flat Rack</option><option value="40 Flat Rack">40 Flat Rack</option>
+                    <option value="20 Open Tops">20 Open Tops</option><option value="40 Open Tops">40 Open Tops</option>
+                  </select>
+                  <input className="lt-input" style={{ width: '100%' }} value={ct.weight} onChange={e => updateTariffContainer(idx, { weight: e.target.value })} placeholder="e.g. 28000 kg" />
+                  <input className="lt-input" type="number" style={{ width: '100%' }} value={ct.rate} onChange={e => updateTariffContainer(idx, { rate: e.target.value === '' ? '' : Number(e.target.value) })} min={0} placeholder="e.g. 2100.00" />
+                  <select className="lt-select" style={{ width: '100%', fontSize: 12, padding: '8px 6px', borderRadius: 8 }} value={ct.currency} onChange={e => updateTariffContainer(idx, { currency: e.target.value })}>
+                    <option value="USD">USD</option><option value="EUR">EUR</option><option value="LKR">LKR</option><option value="GBP">GBP</option><option value="SGD">SGD</option>
+                  </select>
+                  <button type="button" className="lt-icon-btn" title="Remove" style={{ padding: 3, opacity: rrTariffContainers.length > 1 ? 1 : 0.3, cursor: rrTariffContainers.length > 1 ? 'pointer' : 'not-allowed' }} disabled={rrTariffContainers.length === 1} onClick={() => removeTariffContainer(idx)}>
                     <X size={13} />
                   </button>
-                )}
-                <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>Container {idx + 1}</div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                  <div>
-                    <label className="lt-label">Container Type <span style={{ color: '#dc2626' }}>*</span></label>
-                    <select className="lt-select" style={selectStyle} value={ct.containerType} onChange={e => updateTariffContainer(idx, { containerType: e.target.value })}>
-                      <option value="">— Select —</option>
-                      <option value="20GP">20GP</option><option value="40GP">40GP</option><option value="40HC">40HC</option>
-                      <option value="20 Reefer">20 Reefer</option><option value="40 Reefer">40 Reefer</option>
-                      <option value="20 Flat Rack">20 Flat Rack</option><option value="40 Flat Rack">40 Flat Rack</option>
-                      <option value="20 Open Tops">20 Open Tops</option><option value="40 Open Tops">40 Open Tops</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="lt-label">Max Weight</label>
-                    <input className="lt-input" style={{ width: '100%' }} value={ct.weight} onChange={e => updateTariffContainer(idx, { weight: e.target.value })} placeholder="e.g. 28000 kg" />
-                  </div>
-                  <div>
-                    <label className="lt-label">Rate <span style={{ color: '#dc2626' }}>*</span></label>
-                    <div style={{ display: 'flex', gap: 6 }}>
-                      <input className="lt-input" type="number" style={{ flex: 1 }} value={ct.rate} onChange={e => updateTariffContainer(idx, { rate: e.target.value === '' ? '' : Number(e.target.value) })} min={0} placeholder="e.g. 2100.00" />
-                      <select className="lt-select" style={{ width: 80, padding: '10px 6px', fontSize: 13, borderRadius: 8 }} value={ct.currency} onChange={e => updateTariffContainer(idx, { currency: e.target.value })}>
-                        <option value="USD">USD</option><option value="EUR">EUR</option><option value="LKR">LKR</option><option value="GBP">GBP</option><option value="SGD">SGD</option>
-                      </select>
-                    </div>
-                  </div>
-                  <div style={{ gridColumn: '1 / -1' }}>
-                    <label className="lt-label">Free Days</label>
-                    <input className="lt-input" style={{ width: '100%' }} value={ct.freeDays} onChange={e => updateTariffContainer(idx, { freeDays: e.target.value })} placeholder="e.g. 14 days at origin, 21 days at destination" />
-                  </div>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
 
             {/* — Additional Information — */}
             <div style={secHead}><span style={secDot(RATE_SOURCE_COLORS['Tariff Rate'])} />Additional Information</div>
@@ -304,7 +367,7 @@ export default function RecordRate({ onFlash, onGoBack }: RecordRateProps) {
               <input className="lt-input" style={{ width: '100%' }} value={rrNote} onChange={e => setRrNote(e.target.value)} placeholder="Any notes..." />
             </div>
             <div style={{ gridColumn: '1 / -1' }}>
-              <label className="lt-label">Special Remark</label>
+              <label className="lt-label">Analysis Note</label>
               <input className="lt-input" style={{ width: '100%' }} value={rrSpecialRemark} onChange={e => setRrSpecialRemark(e.target.value)} placeholder="Special remarks..." />
             </div>
           </div>
@@ -316,7 +379,7 @@ export default function RecordRate({ onFlash, onGoBack }: RecordRateProps) {
             {/* — Contract & Assignment — */}
             <div style={secHead}><span style={secDot(RATE_SOURCE_COLORS['Contracted'])} />Contract & Assignment</div>
             <div>
-              <label className="lt-label">Contract ID <span style={{ color: '#dc2626' }}>*</span></label>
+              <label className="lt-label">Contract Reference <span style={{ color: '#dc2626' }}>*</span></label>
               <input className="lt-input" style={{ width: '100%' }} value={rrContractId} onChange={e => setRrContractId(e.target.value)} placeholder="Sent by the liner" />
             </div>
             <div>
@@ -333,12 +396,14 @@ export default function RecordRate({ onFlash, onGoBack }: RecordRateProps) {
                 {dbEmployeeList.map(e => <option key={e.emp_id} value={e.emp_id}>{e.name}{e.desig ? ` (${e.desig})` : ''}</option>)}
               </select>
             </div>
-            <div>
-              <label className="lt-label">Service Lane</label>
-              <input list="rr-service-lanes" className="lt-input" style={{ width: '100%' }} value={rrServiceLane} onChange={e => setRrServiceLane(e.target.value)} placeholder="Type to filter..." />
-              <datalist id="rr-service-lanes">
-                {tradeLaneList.map(t => <option key={t.trln_id} value={t.trln_name} />)}
-              </datalist>
+            <div style={{ gridColumn: '1 / -1' }}>
+              <label className="lt-label">Applicable Customers</label>
+              <TagInput
+                values={rrApplicableCustomers}
+                onChange={setRrApplicableCustomers}
+                suggestions={dbClientList.map(c => c.name)}
+                placeholder="Type to add customers..."
+              />
             </div>
 
             {/* — Route — */}
@@ -361,6 +426,13 @@ export default function RecordRate({ onFlash, onGoBack }: RecordRateProps) {
               <label className="lt-label">Free Time (days)</label>
               <input className="lt-input" type="number" style={{ width: '100%' }} value={rrFreeTime} onChange={e => setRrFreeTime(e.target.value)} min={0} placeholder="e.g. 14" />
             </div>
+            <div>
+              <label className="lt-label">Service Lane</label>
+              <input list="rr-service-lanes" className="lt-input" style={{ width: '100%' }} value={rrServiceLane} onChange={e => setRrServiceLane(e.target.value)} placeholder="Type to filter..." />
+              <datalist id="rr-service-lanes">
+                {tradeLaneList.map(t => <option key={t.trln_id} value={t.trln_name} />)}
+              </datalist>
+            </div>
             {/* — Validity — */}
             <div style={secHead}><span style={secDot(RATE_SOURCE_COLORS['Contracted'])} />Validity</div>
             <div>
@@ -377,46 +449,33 @@ export default function RecordRate({ onFlash, onGoBack }: RecordRateProps) {
               <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><span style={secDot(RATE_SOURCE_COLORS['Contracted'])} />Container Rates</span>
               <button type="button" className="db-btn" style={{ fontSize: 10, padding: '2px 8px', display: 'flex', alignItems: 'center', gap: 3 }} onClick={addContractedContainer}><Plus size={11} /> Add</button>
             </div>
-            {rrContractedContainers.map((cc, idx) => (
-              <div key={idx} style={{ gridColumn: '1 / -1', border: '1px solid var(--border)', borderRadius: 10, padding: 14, background: 'var(--bg)', position: 'relative' }}>
-                {rrContractedContainers.length > 1 && (
-                  <button type="button" className="lt-icon-btn" title="Remove" style={{ position: 'absolute', top: 8, right: 8, padding: 3 }} onClick={() => removeContractedContainer(idx)}>
+            <div style={{ gridColumn: '1 / -1', display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1.1fr 0.65fr 0.75fr 0.85fr 0.6fr 28px', gap: 8 }}>
+                <label className="lt-label" style={{ margin: 0 }}>Container Type <span style={{ color: '#dc2626' }}>*</span></label>
+                <label className="lt-label" style={{ margin: 0 }}>Contracted TUs</label>
+                <label className="lt-label" style={{ margin: 0 }}>Max Weight</label>
+                <label className="lt-label" style={{ margin: 0 }}>Rate <span style={{ color: '#dc2626' }}>*</span></label>
+                <label className="lt-label" style={{ margin: 0 }}>Currency</label>
+                <div />
+              </div>
+              {rrContractedContainers.map((cc, idx) => (
+                <div key={idx} style={{ display: 'grid', gridTemplateColumns: '1.1fr 0.65fr 0.75fr 0.85fr 0.6fr 28px', gap: 8, alignItems: 'center' }}>
+                  <select className="lt-select" style={{ width: '100%', fontSize: 12, padding: '8px 10px', borderRadius: 8 }} value={cc.containerType} onChange={e => updateContractedContainer(idx, { containerType: e.target.value })}>
+                    <option value="">— Select —</option>
+                    <option value="20GP">20GP</option><option value="40GP">40GP</option><option value="40HC">40HC</option>
+                  </select>
+                  <input className="lt-input" type="number" style={{ width: '100%' }} value={cc.contractedVolume} onChange={e => updateContractedContainer(idx, { contractedVolume: e.target.value })} min={0} placeholder="e.g. 500" />
+                  <input className="lt-input" style={{ width: '100%' }} value={cc.weight} onChange={e => updateContractedContainer(idx, { weight: e.target.value })} placeholder="e.g. 28000 kg" />
+                  <input className="lt-input" type="number" style={{ width: '100%' }} value={cc.rate} onChange={e => updateContractedContainer(idx, { rate: e.target.value === '' ? '' : Number(e.target.value) })} min={0} placeholder="e.g. 2450.00" />
+                  <select className="lt-select" style={{ width: '100%', fontSize: 12, padding: '8px 6px', borderRadius: 8 }} value={cc.currency} onChange={e => updateContractedContainer(idx, { currency: e.target.value })}>
+                    <option value="USD">USD</option><option value="EUR">EUR</option><option value="LKR">LKR</option><option value="GBP">GBP</option><option value="SGD">SGD</option>
+                  </select>
+                  <button type="button" className="lt-icon-btn" title="Remove" style={{ padding: 3, opacity: rrContractedContainers.length > 1 ? 1 : 0.3, cursor: rrContractedContainers.length > 1 ? 'pointer' : 'not-allowed' }} disabled={rrContractedContainers.length === 1} onClick={() => removeContractedContainer(idx)}>
                     <X size={13} />
                   </button>
-                )}
-                <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>Container {idx + 1}</div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                  <div>
-                    <label className="lt-label">Container Type <span style={{ color: '#dc2626' }}>*</span></label>
-                    <select className="lt-select" style={selectStyle} value={cc.containerType} onChange={e => updateContractedContainer(idx, { containerType: e.target.value })}>
-                      <option value="">— Select —</option>
-                      <option value="20GP">20GP</option><option value="40GP">40GP</option><option value="40HC">40HC</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="lt-label">Contracted TUs</label>
-                    <input className="lt-input" type="number" style={{ width: '100%' }} value={cc.contractedVolume} onChange={e => updateContractedContainer(idx, { contractedVolume: e.target.value })} min={0} placeholder="e.g. 500" />
-                  </div>
-                  <div>
-                    <label className="lt-label">Max Weight</label>
-                    <input className="lt-input" style={{ width: '100%' }} value={cc.weight} onChange={e => updateContractedContainer(idx, { weight: e.target.value })} placeholder="e.g. 28000 kg" />
-                  </div>
-                  <div>
-                    <label className="lt-label">Rate <span style={{ color: '#dc2626' }}>*</span></label>
-                    <div style={{ display: 'flex', gap: 6 }}>
-                      <input className="lt-input" type="number" style={{ flex: 1 }} value={cc.rate} onChange={e => updateContractedContainer(idx, { rate: e.target.value === '' ? '' : Number(e.target.value) })} min={0} placeholder="e.g. 2450.00" />
-                      <select className="lt-select" style={{ width: 80, padding: '10px 6px', fontSize: 13, borderRadius: 8 }} value={cc.currency} onChange={e => updateContractedContainer(idx, { currency: e.target.value })}>
-                        <option value="USD">USD</option><option value="EUR">EUR</option><option value="LKR">LKR</option><option value="GBP">GBP</option><option value="SGD">SGD</option>
-                      </select>
-                    </div>
-                  </div>
-                  <div style={{ gridColumn: '1 / -1' }}>
-                    <label className="lt-label">Free Days</label>
-                    <input className="lt-input" style={{ width: '100%' }} value={cc.freeDays} onChange={e => updateContractedContainer(idx, { freeDays: e.target.value })} placeholder="e.g. 14 days at origin, 21 days at destination" />
-                  </div>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
 
             {/* — Additional Information — */}
             <div style={secHead}><span style={secDot(RATE_SOURCE_COLORS['Contracted'])} />Additional Information</div>
@@ -425,17 +484,8 @@ export default function RecordRate({ onFlash, onGoBack }: RecordRateProps) {
               <input className="lt-input" style={{ width: '100%' }} value={rrNote} onChange={e => setRrNote(e.target.value)} placeholder="Any notes..." />
             </div>
             <div style={{ gridColumn: '1 / -1' }}>
-              <label className="lt-label">Special Remark</label>
+              <label className="lt-label">Analysis Note</label>
               <input className="lt-input" style={{ width: '100%' }} value={rrSpecialRemark} onChange={e => setRrSpecialRemark(e.target.value)} placeholder="Special remarks..." />
-            </div>
-            <div style={secHead}><span style={secDot(RATE_SOURCE_COLORS['Contracted'])} />Applicable Customers</div>
-            <div style={{ gridColumn: '1 / -1' }}>
-              <TagInput
-                values={rrApplicableCustomers}
-                onChange={setRrApplicableCustomers}
-                suggestions={dbClientList.map(c => c.name)}
-                placeholder="Type to add customers..."
-              />
             </div>
           </div>
         )}
@@ -455,10 +505,6 @@ export default function RecordRate({ onFlash, onGoBack }: RecordRateProps) {
               <datalist id="rr-nac-clients">
                 {dbClientList.map(c => <option key={c.cli_id} value={c.name} />)}
               </datalist>
-            </div>
-            <div>
-              <label className="lt-label">Contact Person(s)</label>
-              <input className="lt-input" style={{ width: '100%' }} value={rrNacContactPersons} onChange={e => setRrNacContactPersons(e.target.value)} placeholder="e.g. John Doe, Jane Smith" />
             </div>
             <div>
               <label className="lt-label">Sales Person <span style={{ color: '#dc2626' }}>*</span></label>
@@ -512,46 +558,33 @@ export default function RecordRate({ onFlash, onGoBack }: RecordRateProps) {
               <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><span style={secDot(RATE_SOURCE_COLORS['NAC'])} />Container Rates</span>
               <button type="button" className="db-btn" style={{ fontSize: 10, padding: '2px 8px', display: 'flex', alignItems: 'center', gap: 3 }} onClick={addNacContainer}><Plus size={11} /> Add</button>
             </div>
-            {rrNacContainers.map((nc, idx) => (
-              <div key={idx} style={{ gridColumn: '1 / -1', border: '1px solid var(--border)', borderRadius: 10, padding: 14, background: 'var(--bg)', position: 'relative' }}>
-                {rrNacContainers.length > 1 && (
-                  <button type="button" className="lt-icon-btn" title="Remove" style={{ position: 'absolute', top: 8, right: 8, padding: 3 }} onClick={() => removeNacContainer(idx)}>
+            <div style={{ gridColumn: '1 / -1', display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1.1fr 0.65fr 0.75fr 0.85fr 0.6fr 28px', gap: 8 }}>
+                <label className="lt-label" style={{ margin: 0 }}>Container Type <span style={{ color: '#dc2626' }}>*</span></label>
+                <label className="lt-label" style={{ margin: 0 }}>Contracted TUs</label>
+                <label className="lt-label" style={{ margin: 0 }}>Max Weight</label>
+                <label className="lt-label" style={{ margin: 0 }}>Rate <span style={{ color: '#dc2626' }}>*</span></label>
+                <label className="lt-label" style={{ margin: 0 }}>Currency</label>
+                <div />
+              </div>
+              {rrNacContainers.map((nc, idx) => (
+                <div key={idx} style={{ display: 'grid', gridTemplateColumns: '1.1fr 0.65fr 0.75fr 0.85fr 0.6fr 28px', gap: 8, alignItems: 'center' }}>
+                  <select className="lt-select" style={{ width: '100%', fontSize: 12, padding: '8px 10px', borderRadius: 8 }} value={nc.containerType} onChange={e => updateNacContainer(idx, { containerType: e.target.value })}>
+                    <option value="">— Select —</option>
+                    <option value="20GP">20GP</option><option value="40GP">40GP</option><option value="40HC">40HC</option>
+                  </select>
+                  <input className="lt-input" type="number" style={{ width: '100%' }} value={nc.contractedVolume} onChange={e => updateNacContainer(idx, { contractedVolume: e.target.value })} min={0} placeholder="e.g. 500" />
+                  <input className="lt-input" style={{ width: '100%' }} value={nc.weight} onChange={e => updateNacContainer(idx, { weight: e.target.value })} placeholder="e.g. 28000 kg" />
+                  <input className="lt-input" type="number" style={{ width: '100%' }} value={nc.rate} onChange={e => updateNacContainer(idx, { rate: e.target.value === '' ? '' : Number(e.target.value) })} min={0} placeholder="e.g. 3200.00" />
+                  <select className="lt-select" style={{ width: '100%', fontSize: 12, padding: '8px 6px', borderRadius: 8 }} value={nc.currency} onChange={e => updateNacContainer(idx, { currency: e.target.value })}>
+                    <option value="USD">USD</option><option value="EUR">EUR</option><option value="LKR">LKR</option><option value="GBP">GBP</option><option value="SGD">SGD</option>
+                  </select>
+                  <button type="button" className="lt-icon-btn" title="Remove" style={{ padding: 3, opacity: rrNacContainers.length > 1 ? 1 : 0.3, cursor: rrNacContainers.length > 1 ? 'pointer' : 'not-allowed' }} disabled={rrNacContainers.length === 1} onClick={() => removeNacContainer(idx)}>
                     <X size={13} />
                   </button>
-                )}
-                <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>Container {idx + 1}</div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                  <div>
-                    <label className="lt-label">Container Type <span style={{ color: '#dc2626' }}>*</span></label>
-                    <select className="lt-select" style={selectStyle} value={nc.containerType} onChange={e => updateNacContainer(idx, { containerType: e.target.value })}>
-                      <option value="">— Select —</option>
-                      <option value="20GP">20GP</option><option value="40GP">40GP</option><option value="40HC">40HC</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="lt-label">Contracted TUs</label>
-                    <input className="lt-input" type="number" style={{ width: '100%' }} value={nc.contractedVolume} onChange={e => updateNacContainer(idx, { contractedVolume: e.target.value })} min={0} placeholder="e.g. 500" />
-                  </div>
-                  <div>
-                    <label className="lt-label">Max Weight</label>
-                    <input className="lt-input" style={{ width: '100%' }} value={nc.weight} onChange={e => updateNacContainer(idx, { weight: e.target.value })} placeholder="e.g. 28000 kg" />
-                  </div>
-                  <div>
-                    <label className="lt-label">Rate <span style={{ color: '#dc2626' }}>*</span></label>
-                    <div style={{ display: 'flex', gap: 6 }}>
-                      <input className="lt-input" type="number" style={{ flex: 1 }} value={nc.rate} onChange={e => updateNacContainer(idx, { rate: e.target.value === '' ? '' : Number(e.target.value) })} min={0} placeholder="e.g. 3200.00" />
-                      <select className="lt-select" style={{ width: 80, padding: '10px 6px', fontSize: 13, borderRadius: 8 }} value={nc.currency} onChange={e => updateNacContainer(idx, { currency: e.target.value })}>
-                        <option value="USD">USD</option><option value="EUR">EUR</option><option value="LKR">LKR</option><option value="GBP">GBP</option><option value="SGD">SGD</option>
-                      </select>
-                    </div>
-                  </div>
-                  <div style={{ gridColumn: '1 / -1' }}>
-                    <label className="lt-label">Free Days</label>
-                    <input className="lt-input" style={{ width: '100%' }} value={nc.freeDays} onChange={e => updateNacContainer(idx, { freeDays: e.target.value })} placeholder="e.g. 14 days at origin, 21 days at destination" />
-                  </div>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
 
             {/* — Additional Information — */}
             <div style={secHead}><span style={secDot(RATE_SOURCE_COLORS['NAC'])} />Additional Information</div>
@@ -560,7 +593,7 @@ export default function RecordRate({ onFlash, onGoBack }: RecordRateProps) {
               <input className="lt-input" style={{ width: '100%' }} value={rrNote} onChange={e => setRrNote(e.target.value)} placeholder="Any notes..." />
             </div>
             <div style={{ gridColumn: '1 / -1' }}>
-              <label className="lt-label">Special Remark</label>
+              <label className="lt-label">Analysis Note</label>
               <input className="lt-input" style={{ width: '100%' }} value={rrSpecialRemark} onChange={e => setRrSpecialRemark(e.target.value)} placeholder="Special remarks..." />
             </div>
           </div>
@@ -603,7 +636,6 @@ export default function RecordRate({ onFlash, onGoBack }: RecordRateProps) {
                   {'contractedVolume' in c && c.contractedVolume && <><span style={{ color: 'var(--text-muted)' }}>Contracted TUs</span><strong>{c.contractedVolume}</strong></>}
                   {c.weight && <><span style={{ color: 'var(--text-muted)' }}>Max Weight</span><strong>{c.weight}</strong></>}
                   <span style={{ color: 'var(--text-muted)' }}>Rate</span><strong>{c.rate} {c.currency}</strong>
-                  {c.freeDays && <><span style={{ color: 'var(--text-muted)' }}>Free Days</span><strong>{c.freeDays}</strong></>}
                 </div>
               </div>
             ))
@@ -626,7 +658,7 @@ export default function RecordRate({ onFlash, onGoBack }: RecordRateProps) {
 
               {rrType === 'Contracted' && <>
                 <div style={secHead}><span style={secDot(accent)} />Contract & Assignment</div>
-                {row('Contract ID', rrContractId)}
+                {row('Contract Reference', rrContractId)}
                 {row('Liner', linerName)}
                 {row('Sales Person', salesName)}
                 {row('Service Lane', rrServiceLane)}
@@ -637,7 +669,6 @@ export default function RecordRate({ onFlash, onGoBack }: RecordRateProps) {
                 <div style={secHead}><span style={secDot(accent)} />Customer & Reference</div>
                 {row('NAC Reference No', rrNacRefNo)}
                 {row('Customer Name', rrNacCustomerName)}
-                {row('Contact Person(s)', rrNacContactPersons)}
                 {row('Sales Person', salesName)}
                 <div style={{ ...secHead, marginTop: 16 }}><span style={secDot(accent)} />Carrier</div>
                 {row('Liner', linerName)}
@@ -671,7 +702,7 @@ export default function RecordRate({ onFlash, onGoBack }: RecordRateProps) {
             {(rrNote || rrSpecialRemark) && <div style={{ marginBottom: 8 }}>
               <div style={secHead}><span style={secDot(accent)} />Additional Information</div>
               {rrNote && row('Note', rrNote)}
-              {rrSpecialRemark && row('Special Remark', rrSpecialRemark)}
+              {rrSpecialRemark && row('Analysis Note', rrSpecialRemark)}
             </div>}
 
             {/* Review Actions */}

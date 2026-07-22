@@ -1,0 +1,1651 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body, #root { height: 100%; }
+  body { font-family: 'Inter', -apple-system, sans-serif; background: #f8fafc; color: #1e293b; -webkit-font-smoothing: antialiased; }
+  a { color: #0f8fa8; } a:hover { color: #0c7690; }
+  .fx-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
+  .fx-scroll::-webkit-scrollbar-thumb { background: rgba(0,0,0,.14); border-radius: 4px; }
+  .fx-scroll::-webkit-scrollbar-track { background: transparent; }
+  @keyframes fxpulse { 0%,100% { opacity: 1; } 50% { opacity: .45; } }
+  button { font-family: inherit; }
+</style>
+</helmet>
+
+<div style="height:100vh;overflow:hidden;display:flex;flex-direction:column;background:#f8fafc;">
+
+  <!-- ===== Topbar ===== -->
+  <header style="height:56px;flex-shrink:0;background:#2c2c82;border-bottom:2px solid #3f4b5e;display:flex;align-items:center;gap:14px;padding:0 22px;">
+    <div style="display:flex;align-items:baseline;gap:1px;font-weight:800;font-size:19px;letter-spacing:-.01em;"><span style="color:#53d8e9;">CLS</span><span style="color:#fff;">ynergy</span></div>
+    <div style="width:1px;height:20px;background:rgba(255,255,255,.18);"></div>
+    <span style="font-size:13px;color:#adadcf;font-weight:500;">{{ pageLabel }}</span>
+    <div style="margin-left:auto;display:flex;align-items:center;gap:12px;">
+      <span style="font-size:12px;color:#8f8fc0;">16 Jul 2026</span>
+      <span style="{{ rolePillStyle }}">{{ roleLabel }}</span>
+      <div style="{{ avatarStyle }}">{{ roleInitials }}</div>
+    </div>
+  </header>
+
+  <div style="flex:1;display:flex;min-height:0;">
+    <!-- ===== Sidebar ===== -->
+    <nav style="width:196px;flex-shrink:0;background:#fff;border-right:1px solid #e2e8f0;padding:16px 12px;display:flex;flex-direction:column;gap:2px;">
+      <div style="font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#94a3b8;padding:0 8px;margin-bottom:8px;">Menu</div>
+      <div style="padding:8px 10px;border-radius:8px;font-size:13px;font-weight:500;color:#64748b;">Dashboard</div>
+      <div style="padding:8px 10px;border-radius:8px;font-size:13px;font-weight:500;color:#64748b;">Command Center</div>
+      <div onClick="{{ goWorkspace }}" style="{{ navWorkspaceStyle }}">Workspace</div>
+      <div onClick="{{ goInquiries }}" style="{{ navInquiriesStyle }}">Inquiry List</div>
+      <div onClick="{{ goRates }}" style="{{ navRatesStyle }}">Rate List</div>
+      <div style="padding:8px 10px;border-radius:8px;font-size:13px;font-weight:500;color:#64748b;">Quotations</div>
+      <div style="padding:8px 10px;border-radius:8px;font-size:13px;font-weight:500;color:#64748b;">Shipments</div>
+      <div style="padding:8px 10px;border-radius:8px;font-size:13px;font-weight:500;color:#64748b;">Operations</div>
+      <div onClick="{{ goCustomers }}" style="{{ navCustomersStyle }}">Customers</div>
+      <div style="padding:8px 10px;border-radius:8px;font-size:13px;font-weight:500;color:#64748b;">KYC Form</div>
+    </nav>
+
+    <!-- ===== Main ===== -->
+    <main style="flex:1;min-width:0;display:flex;flex-direction:column;">
+      <!-- role switch (demo aid, not part of the shipped UI) -->
+      <sc-if value="{{ pageIsWorkspace }}">
+        <div style="flex-shrink:0;display:flex;align-items:center;gap:8px;padding:14px 28px 0;">
+          <span style="font-size:11px;color:#94a3b8;margin-right:4px;">Viewing as:</span>
+          <button onClick="{{ setRoleCS }}" style="{{ tabCsStyle }}">Customer Service</button>
+          <button onClick="{{ setRoleProc }}" style="{{ tabProcStyle }}">Procurement</button>
+        </div>
+      </sc-if>
+
+      <!-- ============================================================
+           CS WORKSPACE — List + Detail (1b)
+      ============================================================= -->
+      <sc-if value="{{ isCS }}" hint-placeholder-val="{{ true }}">
+        <div style="flex:1;display:flex;min-height:0;">
+          <div style="width:344px;flex-shrink:0;border-right:1px solid #e2e8f0;background:#fff;display:flex;flex-direction:column;min-height:0;">
+            <div style="padding:18px 20px 12px;display:flex;align-items:flex-start;justify-content:space-between;gap:8px;">
+              <div>
+                <h1 style="font-size:19px;font-weight:800;letter-spacing:-.02em;">Your workspace</h1>
+                <p style="font-size:12px;color:#94a3b8;margin-top:3px;">{{ csQueueCountText }}</p>
+              </div>
+              <button onClick="{{ goNewInquiry }}" title="New Inquiry" style="flex-shrink:0;width:30px;height:30px;border-radius:8px;background:#0f8fa8;color:#fff;border:none;font-size:17px;font-weight:600;cursor:pointer;line-height:1;">+</button>
+            </div>
+            <div class="fx-scroll" style="flex:1;overflow-y:auto;padding:0 12px 12px;display:flex;flex-direction:column;gap:4px;">
+              <sc-for list="{{ csRows }}" as="row" hint-placeholder-count="2">
+                <div onClick="{{ row.onClick }}" style="{{ row.style }}">
+                  <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px;">
+                    <span style="font-size:14px;font-weight:700;color:#0f172a;">{{ row.customer }}</span>
+                    <sc-if value="{{ row.urgent }}"><span style="width:6px;height:6px;border-radius:50%;background:#dc2626;margin-left:auto;"></span></sc-if>
+                  </div>
+                  <div style="font-size:12px;color:#64748b;margin-bottom:8px;">{{ row.route }}</div>
+                  <span style="{{ row.chipStyle }}">{{ row.chipLabel }}</span>
+                </div>
+              </sc-for>
+              <sc-if value="{{ csListEmpty }}">
+                <div style="padding:28px 10px;text-align:center;color:#94a3b8;font-size:13px;">Nothing in this step right now.</div>
+              </sc-if>
+            </div>
+          </div>
+
+          <div class="fx-scroll" style="flex:1;min-width:0;overflow-y:auto;padding:30px 36px;background:#f8fafc;">
+            <sc-if value="{{ csHasSelected }}">
+              <div style="max-width:620px;">
+                <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+                  <span style="font-family:ui-monospace,monospace;font-size:12px;color:#94a3b8;">{{ selId }}</span>
+                  <sc-if value="{{ selUrgent }}"><span style="padding:2px 8px;border-radius:999px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;background:rgba(220,38,38,.08);color:#dc2626;">{{ selBadge }}</span></sc-if>
+                </div>
+                <h1 style="font-size:26px;font-weight:800;letter-spacing:-.03em;margin-bottom:4px;">{{ selCustomer }}</h1>
+                <p style="font-size:15px;color:#475569;margin-bottom:24px;">{{ selDesc }}</p>
+
+                <div style="padding:14px 16px;background:#fff;border:1px solid #e2e8f0;border-left:3px solid #0f8fa8;border-radius:10px;margin-bottom:26px;">
+                  <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;margin-bottom:6px;">Where it came from</div>
+                  <div style="font-size:13.5px;color:#334155;line-height:1.55;">{{ selContext }}</div>
+                </div>
+
+                <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;margin-bottom:14px;">Complete this step</div>
+                <div style="background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:24px;box-shadow:0 1px 2px rgba(15,23,42,.03);">
+
+                  <!-- Inquiry action -->
+                  <sc-if value="{{ selIsInquiry }}">
+                    <div style="font-size:16px;font-weight:700;margin-bottom:18px;">Verify customer &amp; route it forward</div>
+                    <div style="display:flex;flex-direction:column;gap:18px;">
+                      <div>
+                        <div style="font-size:12px;font-weight:600;color:#475569;margin-bottom:7px;">Customer status</div>
+                        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                          <span style="{{ selKycChipStyle }}">{{ selKycChipLabel }}</span>
+                          <span style="padding:6px 12px;border-radius:8px;font-size:12px;font-weight:600;background:rgba(15,143,168,.06);color:#0f8fa8;border:1px solid rgba(15,143,168,.18);">{{ selTier }}</span>
+                        </div>
+                      </div>
+                      <div>
+                        <div style="font-size:12px;font-weight:600;color:#475569;margin-bottom:7px;">Note for the next team <span style="color:#94a3b8;font-weight:400;">(optional)</span></div>
+                        <textarea value="{{ csNote }}" onChange="{{ setCsNote }}" placeholder="Anything the next team should know…" style="width:100%;height:64px;border:1px solid #e2e8f0;border-radius:9px;background:#fff;padding:10px 12px;font-size:13px;font-family:inherit;resize:vertical;outline:none;"></textarea>
+                      </div>
+                    </div>
+                    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:22px;padding-top:18px;border-top:1px solid #eef2f6;">
+                      <button onClick="{{ completeSelected }}" style="padding:10px 16px;border-radius:9px;background:#fff;color:#64748b;border:1px solid #e2e8f0;font-size:13px;font-weight:600;cursor:pointer;">Escalate to Procurement</button>
+                      <button onClick="{{ completeSelected }}" style="padding:10px 18px;border-radius:9px;background:#0f8fa8;color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer;">{{ selPrimaryLabel }}</button>
+                    </div>
+                  </sc-if>
+
+                  <!-- Release / SI action (send method) -->
+                  <sc-if value="{{ selIsSend }}">
+                    <div style="font-size:16px;font-weight:700;margin-bottom:18px;">{{ selSendTitle }}</div>
+                    <div style="display:flex;flex-direction:column;gap:18px;">
+                      <div>
+                        <div style="font-size:12px;font-weight:600;color:#475569;margin-bottom:7px;">Send method</div>
+                        <div style="display:flex;gap:8px;">
+                          <button onClick="{{ setSendEmail }}" style="{{ sendEmailBtnStyle }}">Email</button>
+                          <button onClick="{{ setSendWhatsapp }}" style="{{ sendWaBtnStyle }}">WhatsApp</button>
+                        </div>
+                      </div>
+                      <sc-if value="{{ sendIsEmail }}">
+                        <div>
+                          <div style="font-size:12px;font-weight:600;color:#475569;margin-bottom:7px;">Customer email</div>
+                          <input value="{{ csEmail }}" onChange="{{ setCsEmail }}" placeholder="customer@example.com" style="width:100%;height:40px;border:1px solid #e2e8f0;border-radius:9px;background:#fff;padding:0 12px;font-size:13px;font-family:inherit;outline:none;"/>
+                        </div>
+                      </sc-if>
+                      <div>
+                        <div style="font-size:12px;font-weight:600;color:#475569;margin-bottom:7px;">Notes <span style="color:#94a3b8;font-weight:400;">(optional)</span></div>
+                        <input value="{{ csNote }}" onChange="{{ setCsNote }}" placeholder="Any additional notes…" style="width:100%;height:40px;border:1px solid #e2e8f0;border-radius:9px;background:#fff;padding:0 12px;font-size:13px;font-family:inherit;outline:none;"/>
+                      </div>
+                    </div>
+                    <div style="display:flex;justify-content:flex-end;margin-top:22px;padding-top:18px;border-top:1px solid #eef2f6;">
+                      <button onClick="{{ completeSelected }}" style="padding:10px 18px;border-radius:9px;background:#0f8fa8;color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer;">{{ selPrimaryLabel }}</button>
+                    </div>
+                  </sc-if>
+                </div>
+              </div>
+            </sc-if>
+            <sc-if value="{{ csAllDone }}">
+              <div style="max-width:420px;margin:60px auto 0;text-align:center;">
+                <div style="font-size:17px;font-weight:700;color:#334155;margin-bottom:6px;">All caught up</div>
+                <div style="font-size:13px;color:#94a3b8;">No items need your attention in this step.</div>
+              </div>
+            </sc-if>
+          </div>
+        </div>
+
+        <!-- KEPT step bar -->
+        <div class="fx-scroll" style="flex-shrink:0;background:#fff;border-top:1px solid #e2e8f0;box-shadow:0 -2px 12px rgba(0,0,0,.04);padding:8px 12px;display:flex;align-items:center;overflow-x:auto;gap:0;">
+          <sc-for list="{{ csSteps }}" as="step" hint-placeholder-count="14">
+            <div onClick="{{ step.onClick }}" style="{{ step.wrapStyle }}">
+              <div style="{{ step.circleStyle }}">{{ step.num }}</div>
+              <span style="{{ step.labelStyle }}">{{ step.label }}</span>
+              <sc-if value="{{ step.hasCount }}"><span style="{{ step.badgeStyle }}">{{ step.count }}</span></sc-if>
+            </div>
+          </sc-for>
+        </div>
+      </sc-if>
+
+      <!-- ============================================================
+           PROCUREMENT WORKSPACE — Grouped by stage (1c)
+      ============================================================= -->
+      <sc-if value="{{ isProc }}">
+        <div class="fx-scroll" style="flex:1;overflow-y:auto;padding:24px 34px;">
+          <div style="margin-bottom:26px;">
+            <h1 style="font-size:24px;font-weight:800;letter-spacing:-.03em;">Your workspace</h1>
+            <p style="font-size:13.5px;color:#94a3b8;margin-top:4px;">Grouped by workflow stage</p>
+          </div>
+
+          <!-- Stage 1: Rate Check -->
+          <div style="margin-bottom:30px;">
+            <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
+              <span style="width:26px;height:26px;border-radius:50%;background:#d97706;color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;">1</span>
+              <span style="font-size:15px;font-weight:800;color:#0f172a;">Rate Check</span>
+              <span style="{{ procRateCountStyle }}">{{ procRateCount }}</span>
+            </div>
+            <sc-if value="{{ procHasRate }}">
+              <div style="padding:20px 22px;background:#fff;border:1px solid #e2e8f0;border-radius:14px;box-shadow:0 1px 2px rgba(15,23,42,.03);max-width:820px;">
+                <div style="font-size:15px;font-weight:800;color:#0f172a;margin-bottom:6px;">Serendib Apparels</div>
+                <div style="font-size:13px;color:#64748b;margin-bottom:6px;">Colombo → Rotterdam · 6× 40′HC</div>
+                <div style="font-size:11.5px;color:#94a3b8;margin-bottom:16px;">INQ-305 · escalated by CS · 1h ago</div>
+                <sc-if value="{{ procRateCollapsed }}">
+                  <button onClick="{{ expandRate }}" style="padding:10px 16px;border-radius:9px;background:#d97706;color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer;">Check rates →</button>
+                </sc-if>
+                <sc-if value="{{ procRateExpanded }}">
+                  <div style="border-top:1px solid #eef2f6;margin-top:4px;padding-top:18px;">
+                    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;margin-bottom:10px;">Database rates</div>
+                    <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:18px;">
+                      <label style="{{ contractedRowStyle }}">
+                        <input type="checkbox" checked="{{ contractedChecked }}" onChange="{{ toggleContracted }}"/>
+                        <div style="flex:1;"><span style="font-size:9px;font-weight:700;padding:1px 6px;border-radius:4px;background:rgba(15,143,168,.12);color:#0f8fa8;margin-right:6px;">CONTRACTED</span><strong style="font-size:13px;">Maersk Line</strong><span style="font-size:11px;color:#94a3b8;"> · 40′HC · valid Jun–Dec 2026</span></div>
+                        <div style="font-size:14px;font-weight:800;">$1,950</div>
+                      </label>
+                      <label style="{{ tariffRowStyle }}">
+                        <input type="checkbox" checked="{{ tariffChecked }}" onChange="{{ toggleTariff }}"/>
+                        <div style="flex:1;"><span style="font-size:9px;font-weight:700;padding:1px 6px;border-radius:4px;background:rgba(100,116,139,.12);color:#475569;margin-right:6px;">TARIFF</span><strong style="font-size:13px;">MSC</strong><span style="font-size:11px;color:#94a3b8;"> · 40′HC · valid Aug 2026</span></div>
+                        <div style="font-size:14px;font-weight:800;">$2,100</div>
+                      </label>
+                      <label style="{{ nacRowStyle }}">
+                        <input type="checkbox" checked="{{ nacChecked }}" onChange="{{ toggleNac }}"/>
+                        <div style="flex:1;"><span style="font-size:9px;font-weight:700;padding:1px 6px;border-radius:4px;background:rgba(217,119,6,.12);color:#b45309;margin-right:6px;">NAC</span><strong style="font-size:13px;">CMA CGM</strong><span style="font-size:11px;color:#94a3b8;"> · 40′HC · customer-specific</span></div>
+                        <div style="font-size:14px;font-weight:800;">$1,875</div>
+                      </label>
+                    </div>
+                    <div style="border-top:1px solid #eef2f6;margin-top:18px;padding-top:18px;">
+                      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;margin-bottom:4px;">Manual rate entry</div>
+                      <div style="font-size:12px;color:#94a3b8;margin-bottom:12px;">When the database doesn't have it — source directly from a liner.</div>
+
+                      <div style="display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap;">
+                        <button onClick="{{ setTabSpot }}" style="{{ tabSpotStyle }}">Spot Rate</button>
+                        <button onClick="{{ setTabVessel }}" style="{{ tabVesselStyle }}">Vessel Spot</button>
+                        <button onClick="{{ setTabFak }}" style="{{ tabFakStyle }}">FAK</button>
+                        <button onClick="{{ setTabSpecial }}" style="{{ tabSpecialStyle }}">Special Rate</button>
+                      </div>
+
+                      <div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:20px 22px;display:flex;flex-direction:column;gap:20px;">
+
+                        <!-- Carrier & service -->
+                        <div>
+                          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#d97706;margin-bottom:10px;">Carrier &amp; service</div>
+                          <div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap;">
+                            <button onClick="{{ pickLinerMaersk }}" style="{{ linerChipStyle }}">Maersk Line</button>
+                            <button onClick="{{ pickLinerMsc }}" style="{{ linerChipStyle }}">MSC</button>
+                            <button onClick="{{ pickLinerCma }}" style="{{ linerChipStyle }}">CMA CGM</button>
+                            <button onClick="{{ pickLinerWanHai }}" style="{{ linerChipStyle }}">Wan Hai Lines</button>
+                          </div>
+                          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px 16px;">
+                            <div>
+                              <div style="{{ fieldLabelStyle }}">Liner <span style="color:#dc2626;">*</span></div>
+                              <input value="{{ mLiner }}" onChange="{{ setMLiner }}" placeholder="Type or pick above" style="{{ fieldStyle }}"/>
+                            </div>
+                            <div>
+                              <div style="{{ fieldLabelStyle }}">Trade lane</div>
+                              <input value="{{ mTradeLane }}" onChange="{{ setMTradeLane }}" placeholder="e.g. Indian Subcontinent → N. Europe" style="{{ fieldStyle }}"/>
+                            </div>
+                            <div>
+                              <div style="{{ fieldLabelStyle }}">Service lane</div>
+                              <input value="{{ mServiceLane }}" onChange="{{ setMServiceLane }}" placeholder="Type to filter…" style="{{ fieldStyle }}"/>
+                            </div>
+                            <div>
+                              <div style="{{ fieldLabelStyle }}">Sales contact</div>
+                              <input value="{{ mSalesContact }}" onChange="{{ setMSalesContact }}" placeholder="e.g. Ruwan Perera" style="{{ fieldStyle }}"/>
+                            </div>
+                          </div>
+                        </div>
+
+                        <!-- Route -->
+                        <div>
+                          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#d97706;margin-bottom:10px;">Route &amp; free time</div>
+                          <div style="display:grid;grid-template-columns:1fr 1fr 0.7fr;gap:12px 16px;">
+                            <div>
+                              <div style="{{ fieldLabelStyle }}">Origin <span style="color:#dc2626;">*</span></div>
+                              <input value="{{ mOrigin }}" onChange="{{ setMOrigin }}" placeholder="e.g. Colombo/Sri Lanka" style="{{ fieldStyle }}"/>
+                            </div>
+                            <div>
+                              <div style="{{ fieldLabelStyle }}">Destination <span style="color:#dc2626;">*</span></div>
+                              <input value="{{ mDestination }}" onChange="{{ setMDestination }}" placeholder="e.g. Rotterdam/Netherlands" style="{{ fieldStyle }}"/>
+                            </div>
+                            <div>
+                              <div style="{{ fieldLabelStyle }}">Free days</div>
+                              <input value="{{ mFreeTime }}" onChange="{{ setMFreeTime }}" placeholder="e.g. 14" style="{{ fieldStyle }}"/>
+                            </div>
+                          </div>
+                        </div>
+
+                        <!-- Vessel (vessel-spot only) -->
+                        <sc-if value="{{ isTabVessel }}">
+                          <div>
+                            <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#d97706;margin-bottom:10px;">Vessel</div>
+                            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px 16px;margin-bottom:14px;">
+                              <div>
+                                <div style="{{ fieldLabelStyle }}">Vessel name</div>
+                                <input value="{{ mVessel }}" onChange="{{ setMVessel }}" placeholder="e.g. Wan Hai 307" style="{{ fieldStyle }}"/>
+                              </div>
+                              <div>
+                                <div style="{{ fieldLabelStyle }}">Voyage</div>
+                                <input value="{{ mVoyage }}" onChange="{{ setMVoyage }}" placeholder="e.g. 118W" style="{{ fieldStyle }}"/>
+                              </div>
+                              <div>
+                                <div style="{{ fieldLabelStyle }}">Vessel ETD</div>
+                                <input type="date" value="{{ mVesselEtd }}" onChange="{{ setMVesselEtd }}" style="{{ fieldStyle }}"/>
+                              </div>
+                              <div>
+                                <div style="{{ fieldLabelStyle }}">Vessel ETA</div>
+                                <input type="date" value="{{ mVesselEta }}" onChange="{{ setMVesselEta }}" style="{{ fieldStyle }}"/>
+                              </div>
+                            </div>
+                            <div style="{{ fieldLabelStyle }}">FCL opening</div>
+                            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px 16px;margin-bottom:14px;">
+                              <input type="date" value="{{ mFclOpenDate }}" onChange="{{ setMFclOpenDate }}" style="{{ fieldStyle }}"/>
+                              <input type="time" value="{{ mFclOpenTime }}" onChange="{{ setMFclOpenTime }}" style="{{ fieldStyle }}"/>
+                            </div>
+                            <div style="{{ fieldLabelStyle }}">FCL cutoff</div>
+                            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px 16px;">
+                              <input type="date" value="{{ mFclCutDate }}" onChange="{{ setMFclCutDate }}" style="{{ fieldStyle }}"/>
+                              <input type="time" value="{{ mFclCutTime }}" onChange="{{ setMFclCutTime }}" style="{{ fieldStyle }}"/>
+                            </div>
+                          </div>
+                        </sc-if>
+
+                        <!-- Commodity (special only) -->
+                        <sc-if value="{{ isTabSpecial }}">
+                          <div>
+                            <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#d97706;margin-bottom:10px;">Commodity</div>
+                            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px 16px;">
+                              <div>
+                                <div style="{{ fieldLabelStyle }}">Commodity type</div>
+                                <input value="{{ mCommodityType }}" onChange="{{ setMCommodityType }}" placeholder="e.g. Perishable" style="{{ fieldStyle }}"/>
+                              </div>
+                              <div>
+                                <div style="{{ fieldLabelStyle }}">Commodity name</div>
+                                <input value="{{ mCommodityName }}" onChange="{{ setMCommodityName }}" placeholder="e.g. Chilled seafood" style="{{ fieldStyle }}"/>
+                              </div>
+                            </div>
+                          </div>
+                        </sc-if>
+
+                        <!-- Container rates repeater -->
+                        <div>
+                          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+                            <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#d97706;">Container rates</span>
+                            <button onClick="{{ addContainerRow }}" style="padding:5px 11px;border-radius:7px;background:#fff;border:1px solid #fbd8a8;color:#d97706;font-size:11.5px;font-weight:600;cursor:pointer;">+ Add container</button>
+                          </div>
+                          <div style="display:flex;flex-direction:column;gap:8px;">
+                            <sc-for list="{{ mContainers }}" as="c" hint-placeholder-count="1">
+                              <div style="border:1px solid #eef2f6;border-radius:9px;padding:12px;display:grid;grid-template-columns:1.1fr 0.7fr 0.9fr 0.9fr 0.8fr 24px;gap:8px;align-items:end;background:#fbfcfd;">
+                                <div>
+                                  <div style="{{ miniLabelStyle }}">Container type</div>
+                                  <input value="{{ c.containerType }}" onChange="{{ c.onType }}" placeholder="40'HC" style="{{ fieldStyleSm }}"/>
+                                </div>
+                                <div>
+                                  <div style="{{ miniLabelStyle }}">TUs</div>
+                                  <input value="{{ c.tus }}" onChange="{{ c.onTus }}" placeholder="10" style="{{ fieldStyleSm }}"/>
+                                </div>
+                                <div>
+                                  <div style="{{ miniLabelStyle }}">Max weight</div>
+                                  <input value="{{ c.maxWeight }}" onChange="{{ c.onWeight }}" placeholder="28000 kg" style="{{ fieldStyleSm }}"/>
+                                </div>
+                                <div>
+                                  <div style="{{ miniLabelStyle }}">Rate</div>
+                                  <input value="{{ c.rate }}" onChange="{{ c.onRate }}" placeholder="1650" style="{{ fieldStyleSm }}"/>
+                                </div>
+                                <div>
+                                  <div style="{{ miniLabelStyle }}">Currency</div>
+                                  <select value="{{ c.currency }}" onChange="{{ c.onCurrency }}" style="{{ fieldStyleSm }}">
+                                    <option value="USD">USD</option><option value="EUR">EUR</option><option value="LKR">LKR</option><option value="GBP">GBP</option><option value="SGD">SGD</option>
+                                  </select>
+                                </div>
+                                <button onClick="{{ c.onRemove }}" title="Remove" style="height:34px;background:none;border:none;cursor:pointer;color:#94a3b8;font-size:15px;">×</button>
+                              </div>
+                            </sc-for>
+                          </div>
+                        </div>
+
+                        <!-- Validity -->
+                        <div>
+                          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#d97706;margin-bottom:10px;">Validity</div>
+                          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px 16px;">
+                            <div>
+                              <div style="{{ fieldLabelStyle }}">Valid from</div>
+                              <input type="date" value="{{ mValidFrom }}" onChange="{{ setMValidFrom }}" style="{{ fieldStyle }}"/>
+                            </div>
+                            <div>
+                              <div style="{{ fieldLabelStyle }}">Valid to</div>
+                              <input type="date" value="{{ mValidTo }}" onChange="{{ setMValidTo }}" style="{{ fieldStyle }}"/>
+                            </div>
+                          </div>
+                        </div>
+
+                        <!-- Flags -->
+                        <div style="display:flex;flex-wrap:wrap;gap:18px;align-items:center;">
+                          <label style="display:flex;align-items:center;gap:7px;font-size:12.5px;cursor:pointer;color:#334155;">
+                            <input type="checkbox" checked="{{ mIsSold }}" onChange="{{ toggleSold }}"/> Mark as sold
+                          </label>
+                          <sc-if value="{{ isTabSpotOrVessel }}">
+                            <label style="display:flex;align-items:center;gap:7px;font-size:12.5px;cursor:pointer;color:#334155;">
+                              <input type="checkbox" checked="{{ mIsCancelled }}" onChange="{{ toggleCancelled }}"/> Mark as cancelled
+                            </label>
+                          </sc-if>
+                        </div>
+                        <sc-if value="{{ showCancelReason }}">
+                          <div>
+                            <div style="{{ fieldLabelStyle }}">Cancellation reason</div>
+                            <input value="{{ mCancelReason }}" onChange="{{ setMCancelReason }}" placeholder="Reason for cancellation…" style="{{ fieldStyle }}"/>
+                          </div>
+                        </sc-if>
+
+                        <!-- Surcharges (special only) -->
+                        <sc-if value="{{ isTabSpecial }}">
+                          <div>
+                            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+                              <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#d97706;">Surcharges</span>
+                              <button onClick="{{ addSurcharge }}" style="padding:5px 11px;border-radius:7px;background:#fff;border:1px solid #fbd8a8;color:#d97706;font-size:11.5px;font-weight:600;cursor:pointer;">+ Add</button>
+                            </div>
+                            <sc-if value="{{ noSurcharges }}"><div style="font-size:12px;color:#94a3b8;">No surcharges added.</div></sc-if>
+                            <div style="display:flex;flex-direction:column;gap:8px;">
+                              <sc-for list="{{ mSurcharges }}" as="sc" hint-placeholder-count="0">
+                                <div style="display:grid;grid-template-columns:1.4fr 1fr 0.8fr 24px;gap:8px;align-items:end;">
+                                  <input value="{{ sc.type }}" onChange="{{ sc.onType }}" placeholder="e.g. BAF" style="{{ fieldStyleSm }}"/>
+                                  <input value="{{ sc.amount }}" onChange="{{ sc.onAmount }}" placeholder="Amount" style="{{ fieldStyleSm }}"/>
+                                  <select value="{{ sc.currency }}" onChange="{{ sc.onCurrency }}" style="{{ fieldStyleSm }}">
+                                    <option value="USD">USD</option><option value="EUR">EUR</option><option value="LKR">LKR</option>
+                                  </select>
+                                  <button onClick="{{ sc.onRemove }}" style="height:34px;background:none;border:none;cursor:pointer;color:#94a3b8;font-size:15px;">×</button>
+                                </div>
+                              </sc-for>
+                            </div>
+                          </div>
+                        </sc-if>
+
+                        <!-- Additional info -->
+                        <div>
+                          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#d97706;margin-bottom:10px;">Additional information</div>
+                          <div style="display:flex;flex-direction:column;gap:12px;">
+                            <div>
+                              <div style="{{ fieldLabelStyle }}">Note</div>
+                              <input value="{{ mNote }}" onChange="{{ setMNote }}" placeholder="Any notes…" style="{{ fieldStyle }}"/>
+                            </div>
+                            <div>
+                              <div style="{{ fieldLabelStyle }}">Special remark</div>
+                              <input value="{{ mSpecialRemark }}" onChange="{{ setMSpecialRemark }}" placeholder="Special remarks…" style="{{ fieldStyle }}"/>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div style="display:flex;justify-content:flex-end;">
+                          <button onClick="{{ addManualEntry }}" style="{{ addEntryBtnStyle }}">+ Add to brief</button>
+                        </div>
+                      </div>
+
+                      <sc-if value="{{ hasManualEntries }}">
+                        <div style="display:flex;flex-direction:column;gap:6px;margin-top:12px;">
+                          <sc-for list="{{ manualEntries }}" as="entry" hint-placeholder-count="1">
+                            <div style="padding:10px 12px;border:1px solid #e2e8f0;border-radius:8px;background:#fff;">
+                              <div style="display:flex;align-items:center;gap:10px;">
+                                <span style="{{ entry.tagStyle }}">{{ entry.tagLabel }}</span>
+                                <div style="flex:1;min-width:0;font-size:12.5px;color:#334155;">
+                                  <strong style="color:#0f172a;">{{ entry.liner }}</strong> · {{ entry.origin }} → {{ entry.destination }} · {{ entry.containerSummary }}
+                                </div>
+                                <button onClick="{{ entry.onRemove }}" style="background:none;border:none;cursor:pointer;color:#94a3b8;font-size:14px;padding:2px 4px;">×</button>
+                              </div>
+                              <sc-if value="{{ entry.hasFlags }}"><div style="font-size:11px;color:#b45309;margin-top:4px;font-weight:600;">{{ entry.flagsText }}</div></sc-if>
+                            </div>
+                          </sc-for>
+                        </div>
+                      </sc-if>
+                    </div>
+
+                    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:18px;">
+                      <button onClick="{{ collapseRate }}" style="padding:9px 14px;border-radius:9px;background:#fff;color:#64748b;border:1px solid #e2e8f0;font-size:12.5px;font-weight:600;cursor:pointer;">Cancel</button>
+                      <button onClick="{{ pushRateToSales }}" style="padding:9px 16px;border-radius:9px;background:#d97706;color:#fff;border:none;font-size:12.5px;font-weight:600;cursor:pointer;">{{ pushRateLabel }}</button>
+                    </div>
+                  </div>
+                </sc-if>
+              </div>
+            </sc-if>
+            <sc-if value="{{ procRateEmpty }}"><div style="font-size:13px;color:#94a3b8;padding:4px 2px;">Nothing waiting here.</div></sc-if>
+          </div>
+
+          <!-- Stage 2: Book Liner -->
+          <div style="margin-bottom:30px;">
+            <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
+              <span style="width:26px;height:26px;border-radius:50%;background:#d97706;color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;">2</span>
+              <span style="font-size:15px;font-weight:800;color:#0f172a;">Book Liner</span>
+              <span style="{{ procLinerCountStyle }}">{{ procLinerCount }}</span>
+            </div>
+            <sc-if value="{{ procHasLiner }}">
+              <div style="padding:20px 22px;background:#fff;border:1px solid #e2e8f0;border-radius:14px;box-shadow:0 1px 2px rgba(15,23,42,.03);max-width:820px;">
+                <div style="font-size:15px;font-weight:800;color:#0f172a;margin-bottom:6px;">Trans Asia Traders</div>
+                <div style="font-size:13px;color:#64748b;margin-bottom:6px;">2× 20′GP · Colombo → Singapore · CMA CGM requested</div>
+                <div style="font-size:11.5px;color:#94a3b8;margin-bottom:16px;">BKG-910 · booking request from CS · 40m ago</div>
+                <sc-if value="{{ procLinerCollapsed }}">
+                  <button onClick="{{ expandLiner }}" style="padding:10px 16px;border-radius:9px;background:#d97706;color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer;">Confirm liner →</button>
+                </sc-if>
+                <sc-if value="{{ procLinerExpanded }}">
+                  <div style="border-top:1px solid #eef2f6;margin-top:4px;padding-top:18px;display:flex;flex-direction:column;gap:14px;">
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+                      <div>
+                        <div style="font-size:12px;font-weight:600;color:#475569;margin-bottom:7px;">Vessel name</div>
+                        <input value="{{ procVessel }}" onChange="{{ setProcVessel }}" placeholder="e.g. CMA CGM Bahia" style="width:100%;height:40px;border:1px solid #e2e8f0;border-radius:9px;background:#fff;padding:0 12px;font-size:13px;font-family:inherit;outline:none;"/>
+                      </div>
+                      <div>
+                        <div style="font-size:12px;font-weight:600;color:#475569;margin-bottom:7px;">Voyage</div>
+                        <input value="{{ procVoyage }}" onChange="{{ setProcVoyage }}" placeholder="e.g. 118W" style="width:100%;height:40px;border:1px solid #e2e8f0;border-radius:9px;background:#fff;padding:0 12px;font-size:13px;font-family:inherit;outline:none;"/>
+                      </div>
+                    </div>
+                    <div style="display:flex;justify-content:flex-end;gap:8px;">
+                      <button onClick="{{ collapseLiner }}" style="padding:9px 14px;border-radius:9px;background:#fff;color:#64748b;border:1px solid #e2e8f0;font-size:12.5px;font-weight:600;cursor:pointer;">Cancel</button>
+                      <button onClick="{{ confirmLiner }}" style="padding:9px 16px;border-radius:9px;background:#d97706;color:#fff;border:none;font-size:12.5px;font-weight:600;cursor:pointer;">Confirm liner</button>
+                    </div>
+                  </div>
+                </sc-if>
+              </div>
+            </sc-if>
+            <sc-if value="{{ procLinerEmpty }}"><div style="font-size:13px;color:#94a3b8;padding:4px 2px;">Nothing waiting here.</div></sc-if>
+          </div>
+
+          <!-- Stage 3: Urgent -->
+          <div>
+            <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
+              <span style="width:26px;height:26px;border-radius:50%;background:#dc2626;color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;">3</span>
+              <span style="font-size:15px;font-weight:800;color:#0f172a;">Urgent</span>
+              <span style="{{ procUrgentCountStyle }}">{{ procUrgentCount }}</span>
+            </div>
+            <sc-if value="{{ procHasUrgent }}">
+              <div style="padding:20px 22px;background:#fff;border:1px solid #e2e8f0;border-left:3px solid #dc2626;border-radius:14px;box-shadow:0 1px 2px rgba(15,23,42,.03);max-width:820px;display:flex;align-items:center;gap:20px;">
+                <div style="flex:1;">
+                  <div style="font-size:15px;font-weight:800;color:#0f172a;margin-bottom:6px;">Ceylon Beverages</div>
+                  <div style="font-size:13px;color:#64748b;margin-bottom:6px;">Urgent bypass · CS booked directly with liner</div>
+                  <div style="font-size:11.5px;color:#94a3b8;">BKG-915 · booked 20m ago</div>
+                </div>
+                <button onClick="{{ acknowledgeUrgent }}" style="padding:10px 18px;border-radius:9px;background:#dc2626;color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;">Acknowledge</button>
+              </div>
+            </sc-if>
+            <sc-if value="{{ procUrgentEmpty }}"><div style="font-size:13px;color:#94a3b8;padding:4px 2px;">Nothing waiting here.</div></sc-if>
+          </div>
+        </div>
+
+        <!-- KEPT step bar (procurement's 3-step order) -->
+        <div style="flex-shrink:0;background:#fff;border-top:1px solid #e2e8f0;box-shadow:0 -2px 12px rgba(0,0,0,.04);padding:8px 12px;display:flex;align-items:center;gap:0;">
+          <div style="display:flex;flex-direction:column;align-items:center;gap:3px;min-width:90px;padding:6px 14px;border-radius:10px;">
+            <div style="width:26px;height:26px;border-radius:50%;background:rgba(217,119,6,.18);color:#d97706;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;">1</div>
+            <span style="font-size:10px;font-weight:600;color:#475569;">Rate Check</span>
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:3px;min-width:90px;padding:6px 14px;border-radius:10px;">
+            <div style="width:26px;height:26px;border-radius:50%;background:rgba(217,119,6,.18);color:#d97706;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;">2</div>
+            <span style="font-size:10px;font-weight:600;color:#475569;">Book Liner</span>
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:3px;min-width:90px;padding:6px 14px;border-radius:10px;">
+            <div style="width:26px;height:26px;border-radius:50%;background:rgba(220,38,38,.15);color:#dc2626;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;">3</div>
+            <span style="font-size:10px;font-weight:600;color:#475569;">Urgent</span>
+          </div>
+        </div>
+      </sc-if>
+
+      <!-- ============================================================
+           INQUIRY LIST
+      ============================================================= -->
+      <sc-if value="{{ pageIsInquiries }}">
+        <div class="fx-scroll" style="flex:1;overflow-y:auto;padding:24px 34px;">
+          <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:20px;">
+            <div>
+              <h1 style="font-size:24px;font-weight:800;letter-spacing:-.03em;">Inquiry List</h1>
+              <p style="font-size:13.5px;color:#94a3b8;margin-top:4px;">{{ inqResultText }}</p>
+            </div>
+          </div>
+
+          <!-- filters -->
+          <div style="background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:16px 20px;margin-bottom:18px;">
+            <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+              <input value="{{ inqSearch }}" onChange="{{ setInqSearch }}" placeholder="Search customer…" style="flex:1;min-width:200px;height:38px;border:1px solid #e2e8f0;border-radius:9px;background:#fff;padding:0 12px;font-size:13px;font-family:inherit;outline:none;"/>
+              <div style="display:flex;gap:6px;">
+                <sc-for list="{{ inqStatusChips }}" as="chip" hint-placeholder-count="3">
+                  <button onClick="{{ chip.onClick }}" style="{{ chip.style }}">{{ chip.label }}</button>
+                </sc-for>
+              </div>
+              <button onClick="{{ toggleInqMore }}" style="{{ inqMoreBtnStyle }}">{{ inqMoreLabel }}</button>
+            </div>
+            <sc-if value="{{ inqMoreOpen }}">
+              <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;padding-top:14px;border-top:1px solid #eef2f6;">
+                <div style="display:flex;gap:6px;align-items:center;">
+                  <span style="font-size:11px;color:#94a3b8;font-weight:600;">Priority</span>
+                  <sc-for list="{{ inqPriorityChips }}" as="chip" hint-placeholder-count="5">
+                    <button onClick="{{ chip.onClick }}" style="{{ chip.style }}">{{ chip.label }}</button>
+                  </sc-for>
+                </div>
+                <div style="display:flex;gap:6px;align-items:center;margin-left:14px;">
+                  <span style="font-size:11px;color:#94a3b8;font-weight:600;">SBU</span>
+                  <sc-for list="{{ inqSbuChips }}" as="chip" hint-placeholder-count="3">
+                    <button onClick="{{ chip.onClick }}" style="{{ chip.style }}">{{ chip.label }}</button>
+                  </sc-for>
+                </div>
+                <div style="display:flex;gap:6px;align-items:center;margin-left:14px;">
+                  <span style="font-size:11px;color:#94a3b8;font-weight:600;">Salesperson</span>
+                  <sc-for list="{{ inqSalesChips }}" as="chip" hint-placeholder-count="3">
+                    <button onClick="{{ chip.onClick }}" style="{{ chip.style }}">{{ chip.label }}</button>
+                  </sc-for>
+                </div>
+              </div>
+            </sc-if>
+          </div>
+
+          <!-- table -->
+          <div style="background:#fff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;">
+            <div style="display:grid;grid-template-columns:2.2fr 1.6fr 1.3fr 1fr 1.1fr 0.9fr;gap:0;padding:11px 20px;background:#f8fafc;border-bottom:1px solid #e2e8f0;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;">
+              <span>Customer</span><span>Route</span><span>Container</span><span>Status</span><span>Quote</span><span>Date</span>
+            </div>
+            <sc-for list="{{ inqRows }}" as="row" hint-placeholder-count="4">
+              <div onClick="{{ row.onClick }}" style="{{ row.rowStyle }}">
+                <div>
+                  <div style="display:flex;align-items:center;gap:7px;">
+                    <sc-if value="{{ row.urgent }}"><span style="width:6px;height:6px;border-radius:50%;background:#dc2626;flex-shrink:0;"></span></sc-if>
+                    <span style="font-size:13.5px;font-weight:700;color:#0f172a;">{{ row.customer }}</span>
+                  </div>
+                  <div style="margin-top:3px;"><span style="{{ row.tierStyle }}">{{ row.tier }}</span></div>
+                </div>
+                <div style="font-size:12.5px;color:#475569;align-self:center;">{{ row.route }}</div>
+                <div style="font-size:12px;color:#64748b;align-self:center;">{{ row.container }}</div>
+                <div style="align-self:center;"><span style="{{ row.statusStyle }}">{{ row.statusLabel }}</span></div>
+                <div style="align-self:center;"><span style="{{ row.quoteStyle }}">{{ row.quoteLabel }}</span></div>
+                <div style="font-size:11.5px;color:#94a3b8;align-self:center;">{{ row.date }}</div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+
+        <!-- side peek panel -->
+        <sc-if value="{{ inqHasSelected }}">
+          <div style="position:absolute;top:52px;right:0;bottom:0;width:420px;background:#fff;border-left:1px solid #e2e8f0;box-shadow:-12px 0 32px rgba(15,23,42,.08);display:flex;flex-direction:column;z-index:20;">
+            <div class="fx-scroll" style="flex:1;overflow-y:auto;padding:26px 28px;">
+              <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;">
+                <span style="font-family:ui-monospace,monospace;font-size:12px;color:#94a3b8;">{{ inqSelId }}</span>
+                <button onClick="{{ closeInqPanel }}" style="background:none;border:none;cursor:pointer;color:#94a3b8;font-size:18px;">×</button>
+              </div>
+              <h2 style="font-size:21px;font-weight:800;letter-spacing:-.02em;margin-bottom:4px;">{{ inqSelCustomer }}</h2>
+              <p style="font-size:13.5px;color:#64748b;margin-bottom:20px;">{{ inqSelText }}</p>
+
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px 16px;margin-bottom:20px;">
+                <div><div style="{{ miniLabelStyle }}">SBU</div><div style="font-size:13px;color:#0f172a;font-weight:600;">{{ inqSelSbu }}</div></div>
+                <div><div style="{{ miniLabelStyle }}">Salesperson</div><div style="font-size:13px;color:#0f172a;font-weight:600;">{{ inqSelSales }}</div></div>
+                <div><div style="{{ miniLabelStyle }}">Priority</div><div style="font-size:13px;color:#0f172a;font-weight:600;">{{ inqSelPriority }}</div></div>
+                <div><div style="{{ miniLabelStyle }}">Delivery</div><div style="font-size:13px;color:#0f172a;font-weight:600;">{{ inqSelDelivery }}</div></div>
+              </div>
+
+              <div style="padding:12px 14px;background:#f8fafc;border:1px solid #eef2f6;border-radius:10px;margin-bottom:20px;">
+                <div style="{{ miniLabelStyle }}">Workflow stage</div>
+                <div style="font-size:13px;font-weight:700;color:#0f8fa8;margin-top:2px;">{{ inqSelStage }}</div>
+              </div>
+
+              <sc-if value="{{ inqHasFollowups }}">
+                <div style="{{ fieldLabelStyle }}margin-bottom:10px;">Follow-up history</div>
+                <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:20px;">
+                  <sc-for list="{{ inqSelFollowups }}" as="f" hint-placeholder-count="1">
+                    <div style="padding:9px 11px;background:#f8fafc;border:1px solid #eef2f6;border-radius:8px;">
+                      <div style="display:flex;justify-content:space-between;font-size:11px;color:#94a3b8;margin-bottom:3px;"><span>{{ f.author }}</span><span>{{ f.date }}</span></div>
+                      <div style="font-size:12.5px;color:#334155;">{{ f.note }}</div>
+                    </div>
+                  </sc-for>
+                </div>
+              </sc-if>
+
+              <sc-if value="{{ inqSelPending }}">
+                <div style="border-top:1px solid #eef2f6;padding-top:16px;">
+                  <div style="{{ fieldLabelStyle }}margin-bottom:8px;">Add follow-up</div>
+                  <textarea value="{{ inqNote }}" onChange="{{ setInqNote }}" placeholder="Write a note…" style="width:100%;height:64px;border:1px solid #e2e8f0;border-radius:9px;background:#fff;padding:10px 12px;font-size:13px;font-family:inherit;resize:vertical;outline:none;box-sizing:border-box;"></textarea>
+                  <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px;">
+                    <button onClick="{{ addInqFollowup }}" style="padding:9px 14px;border-radius:8px;background:#fff;color:#0f8fa8;border:1px solid #a3e0ea;font-size:12.5px;font-weight:600;cursor:pointer;">Add note</button>
+                    <button onClick="{{ completeInq }}" style="padding:9px 16px;border-radius:8px;background:#0f8fa8;color:#fff;border:none;font-size:12.5px;font-weight:600;cursor:pointer;">Complete &amp; close</button>
+                  </div>
+                </div>
+              </sc-if>
+            </div>
+          </div>
+        </sc-if>
+      </sc-if>
+
+      <!-- ============================================================
+           RATE LIST
+      ============================================================= -->
+      <sc-if value="{{ pageIsRates }}">
+        <div class="fx-scroll" style="flex:1;overflow-y:auto;padding:24px 34px;">
+          <div style="margin-bottom:20px;">
+            <h1 style="font-size:24px;font-weight:800;letter-spacing:-.03em;">Rate List</h1>
+            <p style="font-size:13.5px;color:#94a3b8;margin-top:4px;">{{ rateResultText }}</p>
+          </div>
+
+          <div style="background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:16px 20px;margin-bottom:18px;">
+            <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;">
+              <sc-for list="{{ rateTypeChips }}" as="chip" hint-placeholder-count="6">
+                <button onClick="{{ chip.onClick }}" style="{{ chip.style }}">{{ chip.label }}</button>
+              </sc-for>
+            </div>
+            <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+              <input value="{{ rateSearch }}" onChange="{{ setRateSearch }}" placeholder="Search liner, route or container…" style="flex:1;min-width:240px;height:38px;border:1px solid #e2e8f0;border-radius:9px;background:#fff;padding:0 12px;font-size:13px;font-family:inherit;outline:none;box-sizing:border-box;"/>
+            </div>
+          </div>
+
+          <div style="background:#fff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;">
+            <div style="display:grid;grid-template-columns:1.35fr 1.5fr 1.5fr 1.1fr 1.2fr 1.2fr;gap:0;padding:11px 20px;background:#f8fafc;border-bottom:1px solid #e2e8f0;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;">
+              <span>Type</span><span>Liner / Customer</span><span>Route</span><span>Container</span><span>Rate</span><span>Validity</span>
+            </div>
+            <sc-for list="{{ rateRows }}" as="row" hint-placeholder-count="4">
+              <div onClick="{{ row.onClick }}" style="{{ row.rowStyle }}">
+                <div style="align-self:center;"><span style="{{ row.typeStyle }}">{{ row.typeLabel }}</span></div>
+                <div style="align-self:center;">
+                  <div style="font-size:13px;font-weight:700;color:#0f172a;">{{ row.primary }}</div>
+                  <sc-if value="{{ row.hasSecondary }}"><div style="font-size:11px;color:#94a3b8;margin-top:2px;">{{ row.secondary }}</div></sc-if>
+                </div>
+                <div style="font-size:12.5px;color:#475569;align-self:center;">{{ row.route }}</div>
+                <div style="font-size:12px;color:#64748b;align-self:center;">{{ row.container }}</div>
+                <div style="font-size:13.5px;font-weight:700;color:#0f172a;align-self:center;">{{ row.rate }}</div>
+                <div style="font-size:11.5px;color:#94a3b8;align-self:center;">{{ row.validity }}</div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+
+        <sc-if value="{{ rateHasSelected }}">
+          <div style="position:absolute;top:52px;right:0;bottom:0;width:420px;background:#fff;border-left:1px solid #e2e8f0;box-shadow:-12px 0 32px rgba(15,23,42,.08);display:flex;flex-direction:column;z-index:20;">
+            <div class="fx-scroll" style="flex:1;overflow-y:auto;padding:26px 28px;">
+              <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;">
+                <span style="{{ rateSelTypeStyle }}">{{ rateSelType }}</span>
+                <button onClick="{{ closeRatePanel }}" style="background:none;border:none;cursor:pointer;color:#94a3b8;font-size:18px;">×</button>
+              </div>
+              <h2 style="font-size:22px;font-weight:800;letter-spacing:-.02em;margin-bottom:16px;">{{ rateSelRate }}</h2>
+
+              <div style="display:flex;flex-direction:column;gap:0;margin-bottom:20px;">
+                <sc-for list="{{ rateSelFields }}" as="f" hint-placeholder-count="6">
+                  <div style="display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid #f1f5f9;font-size:12.5px;">
+                    <span style="color:#94a3b8;">{{ f.k }}</span><span style="font-weight:600;color:#0f172a;">{{ f.v }}</span>
+                  </div>
+                </sc-for>
+              </div>
+
+              <div style="border-top:1px solid #eef2f6;padding-top:16px;">
+                <div style="{{ fieldLabelStyle }}margin-bottom:8px;">Remark</div>
+                <textarea value="{{ rateRemark }}" onChange="{{ setRateRemark }}" placeholder="Add a note about this rate…" style="width:100%;height:64px;border:1px solid #e2e8f0;border-radius:9px;background:#fff;padding:10px 12px;font-size:13px;font-family:inherit;resize:vertical;outline:none;box-sizing:border-box;"></textarea>
+                <div style="display:flex;justify-content:flex-end;margin-top:10px;">
+                  <button onClick="{{ saveRateRemark }}" style="padding:9px 16px;border-radius:8px;background:#0f8fa8;color:#fff;border:none;font-size:12.5px;font-weight:600;cursor:pointer;">Save remark</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </sc-if>
+      </sc-if>
+
+      <!-- ============================================================
+           CUSTOMERS
+      ============================================================= -->
+      <sc-if value="{{ pageIsCustomers }}">
+        <div class="fx-scroll" style="flex:1;overflow-y:auto;padding:24px 34px;">
+          <div style="margin-bottom:20px;">
+            <h1 style="font-size:24px;font-weight:800;letter-spacing:-.03em;">Customers</h1>
+            <p style="font-size:13.5px;color:#94a3b8;margin-top:4px;">{{ custResultText }}</p>
+          </div>
+
+          <div style="background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:16px 20px;margin-bottom:18px;">
+            <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px;">
+              <input value="{{ custSearch }}" onChange="{{ setCustSearch }}" placeholder="Search customer…" style="flex:1;min-width:200px;height:38px;border:1px solid #e2e8f0;border-radius:9px;background:#fff;padding:0 12px;font-size:13px;font-family:inherit;outline:none;box-sizing:border-box;"/>
+            </div>
+            <div style="display:flex;gap:14px;flex-wrap:wrap;">
+              <div style="display:flex;gap:6px;align-items:center;">
+                <span style="font-size:11px;color:#94a3b8;font-weight:600;">Tier</span>
+                <sc-for list="{{ custTierChips }}" as="chip" hint-placeholder-count="4">
+                  <button onClick="{{ chip.onClick }}" style="{{ chip.style }}">{{ chip.label }}</button>
+                </sc-for>
+              </div>
+              <div style="display:flex;gap:6px;align-items:center;">
+                <span style="font-size:11px;color:#94a3b8;font-weight:600;">Status</span>
+                <sc-for list="{{ custStatusChips }}" as="chip" hint-placeholder-count="4">
+                  <button onClick="{{ chip.onClick }}" style="{{ chip.style }}">{{ chip.label }}</button>
+                </sc-for>
+              </div>
+            </div>
+          </div>
+
+          <div style="background:#fff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;">
+            <div style="display:grid;grid-template-columns:2fr 1.3fr 1.2fr 1.3fr 1fr;gap:0;padding:11px 20px;background:#f8fafc;border-bottom:1px solid #e2e8f0;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;">
+              <span>Customer</span><span>Location</span><span>Payment</span><span>Inquiries</span><span>Last contact</span>
+            </div>
+            <sc-for list="{{ custRows }}" as="row" hint-placeholder-count="5">
+              <div onClick="{{ row.onClick }}" style="{{ row.rowStyle }}">
+                <div>
+                  <div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;">
+                    <span style="font-size:13.5px;font-weight:700;color:#0f172a;">{{ row.name }}</span>
+                    <span style="{{ row.tierStyle }}">{{ row.tier }}</span>
+                    <sc-if value="{{ row.hasFlag }}"><span style="{{ row.flagStyle }}">{{ row.flagLabel }}</span></sc-if>
+                  </div>
+                </div>
+                <div style="font-size:12.5px;color:#475569;align-self:center;">{{ row.location }}</div>
+                <div style="font-size:12.5px;color:#475569;align-self:center;">{{ row.payment }}</div>
+                <div style="align-self:center;font-size:12.5px;color:#475569;">
+                  {{ row.totalInq }}
+                  <sc-if value="{{ row.hasPending }}"><span style="{{ pendingPillStyle }}">{{ row.pendingLabel }}</span></sc-if>
+                </div>
+                <div style="font-size:11.5px;color:#94a3b8;align-self:center;">{{ row.lastContact }}</div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+
+        <sc-if value="{{ custHasSelected }}">
+          <div style="position:absolute;top:52px;right:0;bottom:0;width:420px;background:#fff;border-left:1px solid #e2e8f0;box-shadow:-12px 0 32px rgba(15,23,42,.08);display:flex;flex-direction:column;z-index:20;">
+            <div class="fx-scroll" style="flex:1;overflow-y:auto;padding:26px 28px;">
+              <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;">
+                <span style="font-family:ui-monospace,monospace;font-size:12px;color:#94a3b8;">{{ custSelId }}</span>
+                <button onClick="{{ closeCustPanel }}" style="background:none;border:none;cursor:pointer;color:#94a3b8;font-size:18px;">×</button>
+              </div>
+              <h2 style="font-size:21px;font-weight:800;letter-spacing:-.02em;margin-bottom:16px;">{{ custSelName }}</h2>
+
+              <div style="display:flex;flex-direction:column;gap:16px;">
+                <div>
+                  <div style="{{ fieldLabelStyle }}">Tier</div>
+                  <div style="display:flex;gap:6px;margin-top:6px;">
+                    <sc-for list="{{ custTierEditChips }}" as="chip" hint-placeholder-count="3">
+                      <button onClick="{{ chip.onClick }}" style="{{ chip.style }}">{{ chip.label }}</button>
+                    </sc-for>
+                  </div>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px 16px;">
+                  <div><div style="{{ miniLabelStyle }}">Type</div><div style="font-size:13px;color:#0f172a;font-weight:600;">{{ custSelType }}</div></div>
+                  <div><div style="{{ miniLabelStyle }}">Salesperson</div><div style="font-size:13px;color:#0f172a;font-weight:600;">{{ custSelSales }}</div></div>
+                  <div>
+                    <div style="{{ fieldLabelStyle }}">Payment terms</div>
+                    <input value="{{ custSelPayment }}" onChange="{{ setCustSelPayment }}" style="{{ fieldStyle }}margin-top:4px;"/>
+                  </div>
+                  <div>
+                    <div style="{{ fieldLabelStyle }}">Min margin %</div>
+                    <input value="{{ custSelMargin }}" onChange="{{ setCustSelMargin }}" style="{{ fieldStyle }}margin-top:4px;"/>
+                  </div>
+                </div>
+                <div style="display:flex;flex-wrap:wrap;gap:16px;padding-top:4px;">
+                  <label style="display:flex;align-items:center;gap:7px;font-size:12.5px;cursor:pointer;color:#334155;">
+                    <input type="checkbox" checked="{{ custSelCreditHold }}" onChange="{{ toggleCustCreditHold }}"/> Credit hold
+                  </label>
+                  <label style="display:flex;align-items:center;gap:7px;font-size:12.5px;cursor:pointer;color:#334155;">
+                    <input type="checkbox" checked="{{ custSelBlacklisted }}" onChange="{{ toggleCustBlacklisted }}"/> Blacklisted
+                  </label>
+                </div>
+                <div style="padding:12px 14px;background:#f8fafc;border:1px solid #eef2f6;border-radius:10px;">
+                  <div style="{{ miniLabelStyle }}">Inquiry activity</div>
+                  <div style="font-size:13px;color:#0f172a;font-weight:600;margin-top:2px;">{{ custSelInqSummary }}</div>
+                </div>
+                <div style="display:flex;justify-content:flex-end;">
+                  <button onClick="{{ saveCustomer }}" style="padding:9px 18px;border-radius:8px;background:#0f8fa8;color:#fff;border:none;font-size:12.5px;font-weight:600;cursor:pointer;">Save changes</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </sc-if>
+      </sc-if>
+
+      <!-- ============================================================
+           NEW INQUIRY FORM
+      ============================================================= -->
+      <sc-if value="{{ pageIsNewInquiry }}">
+        <div class="fx-scroll" style="flex:1;overflow-y:auto;padding:28px 34px 60px;">
+          <div style="max-width:880px;margin:0 auto;">
+            <div style="display:flex;align-items:center;gap:12px;margin-bottom:22px;">
+              <button onClick="{{ goWorkspace }}" style="width:34px;height:34px;border-radius:9px;background:#fff;border:1px solid #e2e8f0;color:#475569;cursor:pointer;font-size:16px;">←</button>
+              <div>
+                <h1 style="font-size:22px;font-weight:800;letter-spacing:-.02em;">New Inquiry</h1>
+                <p style="font-size:12.5px;color:#94a3b8;margin-top:2px;">Log a new shipping inquiry — it enters the workflow at Step 1.</p>
+              </div>
+            </div>
+
+            <div style="display:flex;flex-direction:column;gap:18px;">
+
+              <!-- Customer & contact -->
+              <div style="background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:22px 24px;">
+                <div style="display:flex;align-items:center;gap:10px;margin-bottom:18px;">
+                  <span style="width:24px;height:24px;border-radius:7px;background:rgba(15,143,168,.1);color:#0f8fa8;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;">1</span>
+                  <span style="font-size:15px;font-weight:700;">Customer &amp; contact</span>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px 20px;margin-bottom:16px;">
+                  <div>
+                    <div style="{{ fieldLabelStyle }}">Customer name <span style="color:#dc2626;">*</span></div>
+                    <input value="{{ niCustomer }}" onChange="{{ setNiCustomer }}" placeholder="Select or type customer name" style="{{ fieldStyle }}"/>
+                  </div>
+                  <div>
+                    <div style="{{ fieldLabelStyle }}">Contact person</div>
+                    <input value="{{ niContactPerson }}" onChange="{{ setNiContactPerson }}" placeholder="Name of the person making the inquiry" style="{{ fieldStyle }}"/>
+                  </div>
+                </div>
+                <div style="margin-bottom:16px;">
+                  <div style="{{ fieldLabelStyle }}">Channel <span style="color:#dc2626;">*</span></div>
+                  <div style="display:flex;gap:6px;">
+                    <sc-for list="{{ niChannelChips }}" as="chip" hint-placeholder-count="3">
+                      <button onClick="{{ chip.onClick }}" style="{{ chip.style }}">{{ chip.label }}</button>
+                    </sc-for>
+                  </div>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px 20px;">
+                  <div>
+                    <div style="{{ fieldLabelStyle }}">{{ niContactLabel }}</div>
+                    <input value="{{ niContactDetail }}" onChange="{{ setNiContactDetail }}" placeholder="{{ niContactPlaceholder }}" style="{{ fieldStyle }}"/>
+                  </div>
+                  <div>
+                    <div style="{{ fieldLabelStyle }}">Priority <span style="color:#dc2626;">*</span></div>
+                    <div style="display:flex;gap:6px;">
+                      <sc-for list="{{ niPriorityChips }}" as="chip" hint-placeholder-count="4">
+                        <button onClick="{{ chip.onClick }}" style="{{ chip.style }}">{{ chip.label }}</button>
+                      </sc-for>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Route & service -->
+              <div style="background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:22px 24px;">
+                <div style="display:flex;align-items:center;gap:10px;margin-bottom:18px;">
+                  <span style="width:24px;height:24px;border-radius:7px;background:rgba(15,143,168,.1);color:#0f8fa8;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;">2</span>
+                  <span style="font-size:15px;font-weight:700;">Route &amp; service</span>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px 20px;margin-bottom:16px;">
+                  <div>
+                    <div style="{{ fieldLabelStyle }}">Origin <span style="color:#dc2626;">*</span></div>
+                    <input value="{{ niOrigin }}" onChange="{{ setNiOrigin }}" placeholder="e.g. Colombo/Sri Lanka or LKCMB" style="{{ fieldStyle }}"/>
+                  </div>
+                  <div>
+                    <div style="{{ fieldLabelStyle }}">SBU <span style="color:#dc2626;">*</span></div>
+                    <select value="{{ niSbu }}" onChange="{{ setNiSbu }}" style="{{ fieldStyle }}">
+                      <option value="Ocean Freight">Ocean Freight</option>
+                      <option value="Perishables">Perishables</option>
+                      <option value="Project Cargo">Project Cargo</option>
+                    </select>
+                  </div>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px 20px;margin-bottom:16px;">
+                  <div>
+                    <div style="{{ fieldLabelStyle }}">Delivery type <span style="color:#dc2626;">*</span></div>
+                    <div style="display:flex;gap:6px;">
+                      <sc-for list="{{ niDeliveryChips }}" as="chip" hint-placeholder-count="2">
+                        <button onClick="{{ chip.onClick }}" style="{{ chip.style }}">{{ chip.label }}</button>
+                      </sc-for>
+                    </div>
+                  </div>
+                  <div>
+                    <div style="{{ fieldLabelStyle }}">Special equipment</div>
+                    <select value="{{ niSpecialEquip }}" onChange="{{ setNiSpecialEquip }}" style="{{ fieldStyle }}">
+                      <option value="None">None</option>
+                      <option value="Genset">Genset</option>
+                      <option value="Flexi-bag">Flexi-bag</option>
+                      <option value="Lashing">Lashing</option>
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <div style="{{ fieldLabelStyle }}">Preferred liners</div>
+                  <div style="display:flex;gap:8px;margin-bottom:8px;">
+                    <input value="{{ niLinerDraft }}" onChange="{{ setNiLinerDraft }}" placeholder="Type a liner name and press Add\u2026" style="{{ fieldStyle }}"/>
+                    <button onClick="{{ addNiLiner }}" style="padding:0 16px;border-radius:8px;background:#fff;border:1px solid #a3e0ea;color:#0f8fa8;font-size:12.5px;font-weight:600;cursor:pointer;white-space:nowrap;">+ Add</button>
+                  </div>
+                  <sc-if value="{{ hasNiLiners }}">
+                    <div style="display:flex;flex-wrap:wrap;gap:6px;">
+                      <sc-for list="{{ niLinerChips }}" as="l" hint-placeholder-count="1">
+                        <span style="display:inline-flex;align-items:center;gap:6px;padding:4px 6px 4px 10px;border-radius:999px;background:#f1f5f9;font-size:12px;color:#334155;">{{ l.name }}<button onClick="{{ l.onRemove }}" style="background:none;border:none;cursor:pointer;color:#94a3b8;font-size:13px;">×</button></span>
+                      </sc-for>
+                    </div>
+                  </sc-if>
+                </div>
+              </div>
+
+              <!-- Cargo -->
+              <div style="background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:22px 24px;">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;">
+                  <div style="display:flex;align-items:center;gap:10px;">
+                    <span style="width:24px;height:24px;border-radius:7px;background:rgba(15,143,168,.1);color:#0f8fa8;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;">3</span>
+                    <span style="font-size:15px;font-weight:700;">Cargo</span>
+                  </div>
+                  <button onClick="{{ addNiContainer }}" style="padding:6px 12px;border-radius:7px;background:#fff;border:1px solid #a3e0ea;color:#0f8fa8;font-size:11.5px;font-weight:600;cursor:pointer;">+ Add container</button>
+                </div>
+
+                <div style="display:flex;flex-direction:column;gap:14px;">
+                  <sc-for list="{{ niContainers }}" as="c" hint-placeholder-count="1">
+                    <div style="border:1px solid #eef2f6;border-radius:12px;padding:16px 18px;background:#fbfcfd;position:relative;">
+                      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+                        <span style="font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.05em;">{{ c.label }}</span>
+                        <sc-if value="{{ c.canRemove }}"><button onClick="{{ c.onRemove }}" style="background:none;border:none;cursor:pointer;color:#94a3b8;font-size:15px;">×</button></sc-if>
+                      </div>
+                      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px 16px;margin-bottom:12px;">
+                        <div>
+                          <div style="{{ miniLabelStyle }}">Commodity type <span style="color:#dc2626;">*</span></div>
+                          <select value="{{ c.commodityType }}" onChange="{{ c.onCommodityType }}" style="{{ fieldStyleSm }}">
+                            <option value="General">General</option><option value="Perishable">Perishable</option>
+                            <option value="Textiles">Textiles</option><option value="Machinery">Machinery</option>
+                          </select>
+                        </div>
+                        <div>
+                          <div style="{{ miniLabelStyle }}">Commodity name</div>
+                          <input value="{{ c.commodityName }}" onChange="{{ c.onCommodityName }}" placeholder="e.g. Cotton T-shirts" style="{{ fieldStyleSm }}"/>
+                        </div>
+                        <div>
+                          <div style="{{ miniLabelStyle }}">Destination <span style="color:#dc2626;">*</span></div>
+                          <input value="{{ c.destination }}" onChange="{{ c.onDestination }}" placeholder="e.g. Hamburg/Germany" style="{{ fieldStyleSm }}"/>
+                        </div>
+                        <div>
+                          <div style="{{ miniLabelStyle }}">Container type <span style="color:#dc2626;">*</span></div>
+                          <select value="{{ c.containerType }}" onChange="{{ c.onContainerType }}" style="{{ fieldStyleSm }}">
+                            <option value="20'GP">20&apos;GP</option><option value="40'GP">40&apos;GP</option>
+                            <option value="40'HC">40&apos;HC</option><option value="20'RF">20&apos;RF</option>
+                            <option value="40'RF">40&apos;RF</option>
+                          </select>
+                        </div>
+                        <div>
+                          <div style="{{ miniLabelStyle }}">Qty <span style="color:#dc2626;">*</span></div>
+                          <input value="{{ c.quantity }}" onChange="{{ c.onQuantity }}" placeholder="1" style="{{ fieldStyleSm }}"/>
+                        </div>
+                        <div>
+                          <div style="{{ miniLabelStyle }}">Weight (kg)</div>
+                          <input value="{{ c.weight }}" onChange="{{ c.onWeight }}" placeholder="e.g. 18000" style="{{ fieldStyleSm }}"/>
+                        </div>
+                        <div>
+                          <div style="{{ miniLabelStyle }}">FCL / LCL <span style="color:#dc2626;">*</span></div>
+                          <div style="display:flex;gap:6px;">
+                            <button onClick="{{ c.onFcl }}" style="{{ c.fclBtnStyle }}">FCL</button>
+                            <button onClick="{{ c.onLcl }}" style="{{ c.lclBtnStyle }}">LCL</button>
+                          </div>
+                        </div>
+                        <div>
+                          <div style="{{ miniLabelStyle }}">Zip code</div>
+                          <input value="{{ c.zipCode }}" onChange="{{ c.onZip }}" placeholder="e.g. 20095" style="{{ fieldStyleSm }}"/>
+                        </div>
+                        <div>
+                          <div style="{{ miniLabelStyle }}">Free time (days)</div>
+                          <input value="{{ c.freeTime }}" onChange="{{ c.onFreeTime }}" placeholder="e.g. 14" style="{{ fieldStyleSm }}"/>
+                        </div>
+                      </div>
+                      <div>
+                        <div style="{{ miniLabelStyle }}">Door agent</div>
+                        <div style="display:flex;gap:8px;margin-bottom:8px;">
+                          <input value="{{ c.doorAgentDraft }}" onChange="{{ c.onDoorAgentDraft }}" placeholder="Type an agent name and press Add\u2026" style="{{ fieldStyleSm }}"/>
+                          <button onClick="{{ c.onAddDoorAgent }}" style="padding:0 14px;border-radius:7px;background:#fff;border:1px solid #a3e0ea;color:#0f8fa8;font-size:11.5px;font-weight:600;cursor:pointer;white-space:nowrap;">+ Add</button>
+                        </div>
+                        <sc-if value="{{ c.hasDoorAgents }}">
+                          <div style="display:flex;flex-wrap:wrap;gap:6px;">
+                            <sc-for list="{{ c.doorAgentChips }}" as="a" hint-placeholder-count="0">
+                              <span style="display:inline-flex;align-items:center;gap:6px;padding:3px 6px 3px 9px;border-radius:999px;background:#eef2f6;font-size:11.5px;color:#334155;">{{ a.name }}<button onClick="{{ a.onRemove }}" style="background:none;border:none;cursor:pointer;color:#94a3b8;font-size:12px;">×</button></span>
+                            </sc-for>
+                          </div>
+                        </sc-if>
+                      </div>
+                    </div>
+                  </sc-for>
+                </div>
+              </div>
+
+              <!-- Notes -->
+              <div style="background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:22px 24px;">
+                <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;">
+                  <span style="width:24px;height:24px;border-radius:7px;background:rgba(15,143,168,.1);color:#0f8fa8;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;">4</span>
+                  <span style="font-size:15px;font-weight:700;">Notes</span>
+                </div>
+                <div style="{{ fieldLabelStyle }}">Remarks</div>
+                <input value="{{ niRemark }}" onChange="{{ setNiRemark }}" placeholder="Any special instructions or notes" style="{{ fieldStyle }}"/>
+              </div>
+
+              <div style="display:flex;justify-content:flex-end;gap:10px;padding-bottom:20px;">
+                <button onClick="{{ goWorkspace }}" style="padding:10px 16px;border-radius:9px;background:#fff;color:#64748b;border:1px solid #e2e8f0;font-size:13px;font-weight:600;cursor:pointer;">Back to Workspace</button>
+                <button onClick="{{ saveNewInquiry }}" style="{{ saveNiBtnStyle }}">Save Inquiry</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </sc-if>
+    </main>
+  </div>
+
+  <sc-if value="{{ hasToast }}">
+    <div style="position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#fff;border:1px solid rgba(22,163,74,.3);color:#1e293b;padding:10px 18px;border-radius:10px;font-size:13px;font-weight:600;box-shadow:0 12px 40px rgba(0,0,0,.14);z-index:500;">{{ toastText }}</div>
+  </sc-if>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = {
+    role: 'CS',
+    csItems: [
+      { id: 'INQ-302', step: 'inquiry', customer: 'Lanka Textiles Ltd', urgent: true, badge: 'Urgent',
+        route: 'Colombo → Hamburg · 12× 40\u2032HC', meta: 'INQ-302 · from Anjali (CS) · 2h ago',
+        desc: 'Process new inquiry · Colombo → Hamburg · 12× 40\u2032HC · Port-to-Port',
+        context: 'Anjali (CS) logged this inquiry from a WhatsApp message. \u201cCustomer needs 12 reefer-spec containers to Hamburg, sailing before month-end.\u201d',
+        kycApproved: true, tier: 'Key Account' },
+      { id: 'INQ-298', step: 'inquiry', customer: 'Ceylon Auto Parts', urgent: false, badge: '',
+        route: 'Colombo → Singapore · 3× 20\u2032GP', meta: 'INQ-298 · from Ruwan (CS) · 5h ago',
+        desc: 'Process new inquiry · Colombo → Singapore · 3× 20\u2032GP · Port-to-Port',
+        context: 'Ruwan (CS) logged this inquiry by phone. Customer is new to the Singapore lane.',
+        kycApproved: false, tier: 'Regular' },
+      { id: 'BKG-903', step: 'release', customer: 'Oceanic Traders', urgent: false, badge: '',
+        route: '4× 20\u2032GP · Maersk / voyage 2607E', meta: 'BKG-903 · confirmed by Procurement · 3h ago',
+        desc: 'Release booking to customer · 4× 20\u2032GP · Maersk / voyage 2607E',
+        context: 'Procurement confirmed liner space with Maersk, voyage 2607E, ETD 22 Jul.' },
+      { id: 'BKG-901', step: 'si', customer: 'Global Foods Lanka', urgent: true, badge: '2 days left',
+        route: 'Colombo → Jebel Ali · BL cut-off 18 Jul', meta: 'BKG-901 · liner confirmed by Procurement · yesterday',
+        desc: 'Send SI reminder · BL cut-off 18 Jul · Colombo → Jebel Ali',
+        context: 'Booking released to customer. SI (Shipping Instruction) still pending from their side.' },
+    ],
+    csActiveStep: 'inquiry',
+    csSelectedId: 'INQ-302',
+    csNote: '', csEmail: '', csSendMethod: 'email',
+    procRateItem: { id: 'INQ-305' }, procLinerItem: { id: 'BKG-910' }, procUrgentItem: { id: 'BKG-915' },
+    procRateExpanded: false, procLinerExpanded: false,
+    contractedChecked: false, tariffChecked: false, nacChecked: false,
+    page: 'workspace',
+    inqList: [
+      { id: 'INQ-302', customer: 'Lanka Textiles Ltd', tier: 'Key Account', priority: 'Urgent', urgent: true, origin: 'Colombo', destination: 'Hamburg', container: "12\u00d7 40'HC", sbu: 'Ocean Freight', salesperson: 'Anjali', status: 'pending', quote: 'Awaiting Approval', date: '14 Jul', text: 'Customer needs 12 reefer-spec containers to Hamburg, sailing before month-end.', delivery: 'Port-to-Port', stage: 'Rate Check', followups: [{ author: 'Anjali (CS)', date: '14 Jul', note: 'Logged from WhatsApp message.' }] },
+      { id: 'INQ-298', customer: 'Ceylon Auto Parts', tier: 'Regular', priority: 'Medium', urgent: false, origin: 'Colombo', destination: 'Singapore', container: "3\u00d7 20'GP", sbu: 'Ocean Freight', salesperson: 'Ruwan', status: 'pending', quote: 'No quote', date: '11 Jul', text: '3 containers of automotive spare parts to Singapore.', delivery: 'Port-to-Port', stage: 'Inquiry Received', followups: [] },
+      { id: 'INQ-305', customer: 'Serendib Apparels', tier: 'Key Account', priority: 'High', urgent: false, origin: 'Colombo', destination: 'Rotterdam', container: "6\u00d7 40'HC", sbu: 'Ocean Freight', salesperson: 'Anjali', status: 'pending', quote: 'Draft', date: '15 Jul', text: '6 containers of garments to Rotterdam, urgent turnaround needed.', delivery: 'Port-to-Port', stage: 'Quotation Prep', followups: [{ author: 'Ruwan (Procurement)', date: '15 Jul', note: 'Rate brief sent \u2014 3 options attached.' }] },
+      { id: 'INQ-290', customer: 'Global Foods Lanka', tier: 'Regular', priority: 'Low', urgent: false, origin: 'Colombo', destination: 'Jebel Ali', container: "4\u00d7 20'RF", sbu: 'Perishables', salesperson: 'Ruwan', status: 'completed', quote: 'Confirmed', date: '05 Jul', text: '4 reefer containers of frozen seafood to Jebel Ali.', delivery: 'Door-to-Door', stage: 'Completed', followups: [{ author: 'Ruwan (CS)', date: '06 Jul', note: 'Customer confirmed booking, shipment released.' }] },
+      { id: 'INQ-284', customer: 'Oceanic Traders', tier: 'Walk-in', priority: 'Medium', urgent: false, origin: 'Colombo', destination: 'Singapore', container: "4\u00d7 20'GP", sbu: 'Ocean Freight', salesperson: 'Anjali', status: 'completed', quote: 'Sent', date: '01 Jul', text: '4 containers of general cargo to Singapore.', delivery: 'Port-to-Port', stage: 'Completed', followups: [] },
+    ],
+    inqSearch: '', inqStatus: 'all', inqPriority: 'all', inqSbu: 'all', inqSales: 'all', inqMoreOpen: false, inqSelectedId: null, inqNote: '',
+
+    rateListItems: [
+      { id: 'RT-1', type: 'Contracted', primary: 'Maersk Line', secondary: '', origin: 'Colombo', destination: 'Hamburg', container: "40'HC", rate: 1950, currency: 'USD', validFrom: '01 Jun 2026', validTo: '31 Dec 2026', remark: '' },
+      { id: 'RT-2', type: 'Tariff Rate', primary: 'MSC', secondary: '', origin: 'Colombo', destination: 'Singapore', container: "20'GP", rate: 980, currency: 'USD', validFrom: '01 Aug 2026', validTo: '31 Aug 2026', remark: '' },
+      { id: 'RT-3', type: 'Spot', primary: 'Wan Hai Lines', secondary: 'Available', origin: 'Colombo', destination: 'Jebel Ali', container: "40'HC", rate: 1450, currency: 'USD', validFrom: '10 Jul 2026', validTo: '24 Jul 2026', remark: '' },
+      { id: 'RT-4', type: 'Vessel-by-Vessel', primary: 'CMA CGM', secondary: 'CMA CGM Marco Polo \u00b7 departs 20 Jul', origin: 'Colombo', destination: 'Rotterdam', container: "40'HC", rate: 2100, currency: 'USD', validFrom: '18 Jul 2026', validTo: '20 Jul 2026', remark: '' },
+      { id: 'RT-5', type: 'NAC', primary: 'Trans Asia Traders', secondary: 'CMA CGM \u00b7 contact R. Silva', origin: 'Colombo', destination: 'Singapore', container: "20'GP", rate: 1100, currency: 'USD', validFrom: '01 Jan 2026', validTo: '31 Dec 2026', remark: '' },
+      { id: 'RT-6', type: 'Special', primary: 'Fresh tuna', secondary: 'Perishable commodity', origin: 'Colombo', destination: 'Rotterdam', container: "40'RF", rate: 2400, currency: 'USD', validFrom: '01 Jul 2026', validTo: '31 Jul 2026', remark: '' },
+    ],
+    rateType: 'all', rateSearch: '', rateSelectedId: null, rateRemark: '',
+
+    custList: [
+      { id: 'CUS-101', name: 'Lanka Textiles Ltd', tier: 'Key Account', type: 'Shipper', location: 'Colombo', payment: 'Net 30', margin: 12, salesperson: 'Anjali', totalInq: 8, pending: 2, lastContact: '14 Jul', creditHold: false, blacklisted: false },
+      { id: 'CUS-102', name: 'Ceylon Auto Parts', tier: 'Regular', type: 'Buyer', location: 'Colombo', payment: 'Pay Upfront', margin: 15, salesperson: 'Ruwan', totalInq: 3, pending: 1, lastContact: '11 Jul', creditHold: false, blacklisted: false },
+      { id: 'CUS-103', name: 'Serendib Apparels', tier: 'Key Account', type: 'Shipper', location: 'Colombo', payment: 'Net 30', margin: 10, salesperson: 'Anjali', totalInq: 5, pending: 1, lastContact: '15 Jul', creditHold: false, blacklisted: false },
+      { id: 'CUS-104', name: 'Global Foods Lanka', tier: 'Regular', type: 'Trader', location: 'Colombo', payment: 'Net 15', margin: 14, salesperson: 'Ruwan', totalInq: 6, pending: 0, lastContact: '05 Jul', creditHold: true, blacklisted: false },
+      { id: 'CUS-105', name: 'Oceanic Traders', tier: 'Walk-in', type: 'Agent', location: 'Colombo', payment: 'Pay Upfront', margin: 18, salesperson: 'Anjali', totalInq: 2, pending: 0, lastContact: '01 Jul', creditHold: false, blacklisted: false },
+      { id: 'CUS-106', name: 'QuickCargo Ltd', tier: 'Walk-in', type: 'Trader', location: 'Colombo', payment: 'Pay Upfront', margin: 20, salesperson: '\u2014', totalInq: 1, pending: 0, lastContact: '22 Jun', creditHold: false, blacklisted: true },
+    ],
+    custSearch: '', custTier: 'all', custStatus: 'all', custSelectedId: null,
+    custDraftTier: '', custDraftPayment: '', custDraftMargin: '', custDraftCreditHold: false, custDraftBlacklisted: false,
+
+    niCustomer: '', niContactPerson: '', niOrigin: '', niChannel: 'Email', niContactDetail: '',
+    niPriority: 'Medium', niSbu: 'Ocean Freight', niDelivery: 'port-to-port', niSpecialEquip: 'None',
+    niLiners: [], niLinerDraft: '', niRemark: '',
+    niContainers: [{ commodityType: 'General', commodityName: '', destination: '', containerType: "20'GP", quantity: '1', weight: '', isFcl: true, zipCode: '', freeTime: '', doorAgents: [], doorAgentDraft: '' }],
+
+    procVessel: '', procVoyage: '',
+    mTab: 'spot', mLiner: '', mTradeLane: '', mServiceLane: '', mSalesContact: '',
+    mOrigin: '', mDestination: '', mFreeTime: '',
+    mVessel: '', mVoyage: '', mVesselEtd: '', mVesselEta: '', mFclOpenDate: '', mFclOpenTime: '', mFclCutDate: '', mFclCutTime: '',
+    mCommodityType: '', mCommodityName: '',
+    mContainers: [{ containerType: '', tus: '', maxWeight: '', rate: '', currency: 'USD' }],
+    mValidFrom: '', mValidTo: '', mIsSold: false, mIsCancelled: false, mCancelReason: '',
+    mSurcharges: [], mNote: '', mSpecialRemark: '',
+    manualEntries: [],
+    toast: null,
+  };
+  MTAB_LABELS = { spot: 'Spot Rate', vessel: 'Vessel Spot', fak: 'FAK', special: 'Special Rate' };
+  emptyContainer() { return { containerType: '', tus: '', maxWeight: '', rate: '', currency: 'USD' }; }
+  addContainerRow() { this.setState(p => ({ mContainers: [...p.mContainers, this.emptyContainer()] })); }
+  removeContainerRow(idx) { this.setState(p => ({ mContainers: p.mContainers.length > 1 ? p.mContainers.filter((_, i) => i !== idx) : p.mContainers })); }
+  updateContainerRow(idx, field, value) { this.setState(p => ({ mContainers: p.mContainers.map((c, i) => i === idx ? { ...c, [field]: value } : c) })); }
+  addSurcharge() { this.setState(p => ({ mSurcharges: [...p.mSurcharges, { type: '', amount: '', currency: 'USD' }] })); }
+  removeSurcharge(idx) { this.setState(p => ({ mSurcharges: p.mSurcharges.filter((_, i) => i !== idx) })); }
+  updateSurcharge(idx, field, value) { this.setState(p => ({ mSurcharges: p.mSurcharges.map((sc, i) => i === idx ? { ...sc, [field]: value } : sc) })); }
+
+  STEP_DEFS = [
+    ['inquiry', 1, 'Inquiry'], ['kyc', 2, 'KYC'], ['rates', 3, 'Rates'], ['quote', 4, 'Send Quote'],
+    ['response', 5, 'Response'], ['booking', 6, 'Booking'], ['release', 7, 'Release'], ['cutoff', 8, 'Cutoff'],
+    ['si', 9, 'SI Reminder'], ['submitsi', 10, 'Submit SI'], ['draftbl', 11, 'Draft BL'],
+    ['masterbl', 12, 'Master BL'], ['housebl', 13, 'House BL'], ['blapproval', 14, 'BL Approval'],
+  ];
+
+  flash(text) { this.setState({ toast: text }); clearTimeout(this._t); this._t = setTimeout(() => this.setState({ toast: null }), 2600); }
+
+  selectCsItem(id) { this.setState({ csSelectedId: id, csNote: '', csEmail: '', csSendMethod: 'email' }); }
+  setCsStep(step) {
+    const first = this.state.csItems.find(i => i.step === step);
+    this.setState({ csActiveStep: step, csSelectedId: first ? first.id : null, csNote: '', csEmail: '', csSendMethod: 'email' });
+  }
+  completeSelected() {
+    const { csItems, csSelectedId } = this.state;
+    const item = csItems.find(i => i.id === csSelectedId);
+    const remaining = csItems.filter(i => i.id !== csSelectedId);
+    const next = remaining.find(i => i.step === this.state.csActiveStep);
+    this.setState({ csItems: remaining, csSelectedId: next ? next.id : null, csNote: '', csEmail: '' });
+    if (item) this.flash(`${item.id} \u2192 pushed to the next team`);
+  }
+
+  toggleRate(key) { this.setState(s => ({ [key]: !s[key] })); }
+  addManualEntry() {
+    const s = this.state;
+    const validContainers = s.mContainers.filter(c => c.containerType.trim() && String(c.rate).trim());
+    if (!s.mLiner.trim() || !s.mOrigin.trim() || !s.mDestination.trim() || validContainers.length === 0) {
+      this.flash('Liner, origin, destination and at least one container rate are required'); return;
+    }
+    const containerSummary = validContainers.map(c => `${c.containerType}: $${c.rate} ${c.currency}`).join(', ');
+    const flags = [];
+    if (s.mIsSold) flags.push('SOLD');
+    if ((s.mTab === 'spot' || s.mTab === 'vessel') && s.mIsCancelled) flags.push('CANCELLED' + (s.mCancelReason ? ': ' + s.mCancelReason : ''));
+    const entry = {
+      id: 'm' + Date.now(), tab: s.mTab, liner: s.mLiner, origin: s.mOrigin, destination: s.mDestination,
+      containerSummary, flagsText: flags.join(' · '), hasFlags: flags.length > 0,
+    };
+    this.setState(prev => ({
+      manualEntries: [...prev.manualEntries, entry],
+      mContainers: [this.emptyContainer()], mValidFrom: '', mValidTo: '', mIsSold: false, mIsCancelled: false, mCancelReason: '',
+      mVessel: '', mVoyage: '', mVesselEtd: '', mVesselEta: '', mFclOpenDate: '', mFclOpenTime: '', mFclCutDate: '', mFclCutTime: '',
+      mCommodityType: '', mCommodityName: '', mSurcharges: [], mNote: '', mSpecialRemark: '', mFreeTime: '',
+    }));
+  }
+  removeManualEntry(id) { this.setState(prev => ({ manualEntries: prev.manualEntries.filter(e => e.id !== id) })); }
+  pushRateToSales() {
+    const dbCount = (this.state.contractedChecked ? 1 : 0) + (this.state.tariffChecked ? 1 : 0) + (this.state.nacChecked ? 1 : 0);
+    const total = dbCount + this.state.manualEntries.length;
+    if (total === 0) { this.flash('Select at least one rate or add a manual entry first'); return; }
+    this.setState({
+      procRateItem: null, procRateExpanded: false, contractedChecked: false, tariffChecked: false, nacChecked: false,
+      manualEntries: [], mLiner: '', mTradeLane: '', mServiceLane: '', mSalesContact: '', mOrigin: '', mDestination: '',
+      mVessel: '', mVoyage: '', mCommodityType: '', mCommodityName: '', mTab: 'spot',
+      mContainers: [this.emptyContainer()], mSurcharges: [],
+    });
+    this.flash(`INQ-305 \u2192 rate brief sent to Sales (${total} rate${total === 1 ? '' : 's'})`);
+  }
+  confirmLiner() {
+    this.setState({ procLinerItem: null, procLinerExpanded: false, procVessel: '', procVoyage: '' });
+    this.flash('BKG-910 \u2192 liner confirmed');
+  }
+  acknowledgeUrgent() { this.setState({ procUrgentItem: null }); this.flash('BKG-915 \u2192 acknowledged'); }
+
+  goPage(p) { this.setState({ page: p }); }
+
+  selectInq(id) { this.setState({ inqSelectedId: id, inqNote: '' }); }
+  closeInqPanel() { this.setState({ inqSelectedId: null, inqNote: '' }); }
+  addInqFollowup() {
+    const s = this.state; if (!s.inqNote.trim()) return;
+    this.setState({
+      inqList: s.inqList.map(i => i.id === s.inqSelectedId ? { ...i, followups: [...i.followups, { author: 'You', date: 'just now', note: s.inqNote.trim() }] } : i),
+      inqNote: '',
+    });
+    this.flash('Follow-up added');
+  }
+  completeInq() {
+    const s = this.state; const item = s.inqList.find(i => i.id === s.inqSelectedId);
+    const note = s.inqNote.trim() || 'Marked complete';
+    this.setState({
+      inqList: s.inqList.map(i => i.id === s.inqSelectedId ? { ...i, status: 'completed', followups: [...i.followups, { author: 'You', date: 'just now', note }] } : i),
+      inqNote: '',
+    });
+    if (item) this.flash(`${item.id} \u2192 marked complete`);
+  }
+
+  selectRate(id) { this.setState({ rateSelectedId: id, rateRemark: (this.state.rateListItems.find(r => r.id === id) || {}).remark || '' }); }
+  closeRatePanel() { this.setState({ rateSelectedId: null }); }
+  saveRateRemark() {
+    const s = this.state;
+    this.setState({ rateListItems: s.rateListItems.map(r => r.id === s.rateSelectedId ? { ...r, remark: s.rateRemark } : r) });
+    this.flash('Remark saved');
+  }
+
+  selectCust(id) {
+    const c = this.state.custList.find(x => x.id === id);
+    if (!c) return;
+    this.setState({ custSelectedId: id, custDraftTier: c.tier, custDraftPayment: c.payment, custDraftMargin: String(c.margin), custDraftCreditHold: c.creditHold, custDraftBlacklisted: c.blacklisted });
+  }
+  closeCustPanel() { this.setState({ custSelectedId: null }); }
+
+  emptyNiContainer() { return { commodityType: 'General', commodityName: '', destination: '', containerType: "20'GP", quantity: '1', weight: '', isFcl: true, zipCode: '', freeTime: '', doorAgents: [], doorAgentDraft: '' }; }
+  addNiContainer() { this.setState(p => ({ niContainers: [...p.niContainers, this.emptyNiContainer()] })); }
+  removeNiContainer(idx) { this.setState(p => ({ niContainers: p.niContainers.length > 1 ? p.niContainers.filter((_, i) => i !== idx) : p.niContainers })); }
+  updateNiContainer(idx, field, value) { this.setState(p => ({ niContainers: p.niContainers.map((c, i) => i === idx ? { ...c, [field]: value } : c) })); }
+  addNiLiner() { const v = this.state.niLinerDraft.trim(); if (!v) return; this.setState(p => ({ niLiners: [...p.niLiners, v], niLinerDraft: '' })); }
+  removeNiLiner(idx) { this.setState(p => ({ niLiners: p.niLiners.filter((_, i) => i !== idx) })); }
+  addNiDoorAgent(idx) {
+    this.setState(p => ({ niContainers: p.niContainers.map((c, i) => {
+      if (i !== idx) return c;
+      const v = c.doorAgentDraft.trim(); if (!v) return c;
+      return { ...c, doorAgents: [...c.doorAgents, v], doorAgentDraft: '' };
+    }) }));
+  }
+  removeNiDoorAgent(idx, agentIdx) {
+    this.setState(p => ({ niContainers: p.niContainers.map((c, i) => i === idx ? { ...c, doorAgents: c.doorAgents.filter((_, ai) => ai !== agentIdx) } : c) }));
+  }
+  saveNewInquiry() {
+    const s = this.state;
+    if (!s.niCustomer.trim() || !s.niOrigin.trim()) { this.flash('Customer name and origin are required'); return; }
+    const first = s.niContainers[0];
+    if (!first.destination.trim()) { this.flash('Destination is required on the first container'); return; }
+    const newId = `INQ-${310 + s.inqList.length}`;
+    const containerLabel = `${first.quantity || 1}\u00d7 ${first.containerType}`;
+    const newInq = {
+      id: newId, customer: s.niCustomer.trim(), tier: 'Regular', priority: s.niPriority, urgent: s.niPriority === 'Urgent',
+      origin: s.niOrigin.trim(), destination: first.destination.trim(), container: containerLabel,
+      sbu: s.niSbu, salesperson: 'You', status: 'pending', quote: 'No quote', date: 'just now',
+      text: `${containerLabel} from ${s.niOrigin.trim()} to ${first.destination.trim()}${first.commodityName ? ' \u2014 ' + first.commodityName : ''}.`,
+      delivery: s.niDelivery === 'door-to-door' ? 'Door-to-Door' : 'Port-to-Port', stage: 'Inquiry Received', followups: [],
+    };
+    this.setState({
+      inqList: [newInq, ...s.inqList],
+      niCustomer: '', niContactPerson: '', niOrigin: '', niChannel: 'Email', niContactDetail: '',
+      niPriority: 'Medium', niSbu: 'Ocean Freight', niDelivery: 'port-to-port', niSpecialEquip: 'None',
+      niLiners: [], niLinerDraft: '', niRemark: '', niContainers: [this.emptyNiContainer()],
+      page: 'workspace',
+    });
+    this.flash(`Inquiry ${newId} created for ${newInq.customer}`);
+  }
+  saveCustomer() {
+    const s = this.state;
+    this.setState({
+      custList: s.custList.map(c => c.id === s.custSelectedId
+        ? { ...c, tier: s.custDraftTier, payment: s.custDraftPayment, margin: Number(s.custDraftMargin) || 0, creditHold: s.custDraftCreditHold, blacklisted: s.custDraftBlacklisted }
+        : c),
+    });
+    const c = s.custList.find(x => x.id === s.custSelectedId);
+    this.flash(`Updated ${c ? c.name : 'customer'}`);
+  }
+
+  renderVals() {
+    const s = this.state;
+    const onWorkspace = s.page === 'workspace';
+    const isCS = onWorkspace && s.role === 'CS';
+    const isProc = onWorkspace && s.role === 'Procurement';
+    const chipBase = 'padding:6px 12px;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid;white-space:nowrap;';
+    const chipStyle = active => chipBase + (active ? 'background:#0f8fa8;color:#fff;border-color:#0f8fa8;' : 'background:#fff;color:#64748b;border-color:#e2e8f0;');
+    const navStyle = active => 'padding:8px 10px;border-radius:8px;font-size:13px;cursor:pointer;' + (active ? 'font-weight:700;color:#0f8fa8;background:rgba(15,143,168,.08);border:1px solid rgba(15,143,168,.16);' : 'font-weight:500;color:#64748b;border:1px solid transparent;');
+
+    const tierColorMap = { 'Key Account': '#0f8fa8', 'Regular': '#64748b', 'Walk-in': '#7c3aed' };
+    const tierChipStyle = tier => { const c = tierColorMap[tier] || '#64748b'; return `display:inline-flex;padding:2px 8px;border-radius:999px;font-size:10px;font-weight:700;background:${c}18;color:${c};`; };
+    const statusPillStyle = status => status === 'pending'
+      ? 'display:inline-flex;padding:3px 9px;border-radius:999px;font-size:11px;font-weight:700;background:rgba(217,119,6,.1);color:#b45309;'
+      : 'display:inline-flex;padding:3px 9px;border-radius:999px;font-size:11px;font-weight:700;background:rgba(22,163,74,.1);color:#15803d;';
+    const quoteColorMap = { 'Awaiting Approval': '#b45309', 'Draft': '#64748b', 'No quote': '#94a3b8', 'Confirmed': '#15803d', 'Sent': '#7c3aed' };
+    const quoteBadgeStyle = label => { const c = quoteColorMap[label] || '#64748b'; return `display:inline-flex;padding:3px 9px;border-radius:999px;font-size:11px;font-weight:700;background:${c}18;color:${c};`; };
+    const typeColorMap = { Contracted: '#0f8fa8', 'Tariff Rate': '#64748b', Spot: '#16a34a', 'Vessel-by-Vessel': '#0891b2', NAC: '#d97706', Special: '#7c3aed', FAK: '#b45309' };
+    const typeBadgeStyle = t => { const c = typeColorMap[t] || '#64748b'; return `display:inline-flex;padding:3px 8px;border-radius:6px;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.02em;white-space:nowrap;background:${c}18;color:${c};`; };
+    const listRowStyle = selected => 'display:grid;gap:0;padding:14px 20px;cursor:pointer;border-bottom:1px solid #f1f5f9;' + (selected ? 'background:rgba(15,143,168,.04);' : 'background:#fff;');
+
+    const inqFiltered = s.inqList.filter(i => {
+      if (s.inqSearch && !i.customer.toLowerCase().includes(s.inqSearch.toLowerCase())) return false;
+      if (s.inqStatus !== 'all' && i.status !== s.inqStatus) return false;
+      if (s.inqPriority !== 'all' && i.priority !== s.inqPriority) return false;
+      if (s.inqSbu !== 'all' && i.sbu !== s.inqSbu) return false;
+      if (s.inqSales !== 'all' && i.salesperson !== s.inqSales) return false;
+      return true;
+    });
+    const inqSel = s.inqList.find(i => i.id === s.inqSelectedId) || null;
+
+    const rateFiltered = s.rateListItems.filter(r => {
+      if (s.rateType !== 'all' && r.type !== s.rateType) return false;
+      if (s.rateSearch) {
+        const hay = `${r.primary} ${r.secondary} ${r.origin} ${r.destination} ${r.container}`.toLowerCase();
+        if (!hay.includes(s.rateSearch.toLowerCase())) return false;
+      }
+      return true;
+    });
+    const rateSel = s.rateListItems.find(r => r.id === s.rateSelectedId) || null;
+
+    const custFiltered = s.custList.filter(c => {
+      if (s.custSearch && !c.name.toLowerCase().includes(s.custSearch.toLowerCase())) return false;
+      if (s.custTier !== 'all' && c.tier !== s.custTier) return false;
+      if (s.custStatus === 'active' && (c.creditHold || c.blacklisted)) return false;
+      if (s.custStatus === 'credit-hold' && !c.creditHold) return false;
+      if (s.custStatus === 'blacklisted' && !c.blacklisted) return false;
+      return true;
+    });
+    const custSel = s.custList.find(c => c.id === s.custSelectedId) || null;
+
+    const rolePillStyle = 'padding:3px 10px;border-radius:999px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;' +
+      (isCS ? 'background:rgba(83,216,233,.18);color:#53d8e9;border:1px solid rgba(83,216,233,.4);' : 'background:rgba(217,119,6,.22);color:#fbbf6d;border:1px solid rgba(217,119,6,.45);');
+    const avatarStyle = 'width:28px;height:28px;border-radius:50%;color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;background:' +
+      (isCS ? 'linear-gradient(135deg,#53d8e9,#2c2c82)' : 'linear-gradient(135deg,#d97706,#ea580c)') + ';';
+    const tabBase = 'padding:6px 14px;border-radius:8px;font-size:12.5px;font-weight:600;cursor:pointer;border:1px solid;white-space:nowrap;';
+    const tabCsStyle = tabBase + (isCS ? 'background:#0f8fa8;color:#fff;border-color:#0f8fa8;' : 'background:#fff;color:#64748b;border-color:#e2e8f0;');
+    const tabProcStyle = tabBase + (!isCS ? 'background:#d97706;color:#fff;border-color:#d97706;' : 'background:#fff;color:#64748b;border-color:#e2e8f0;');
+
+    const csFiltered = s.csItems.filter(i => i.step === s.csActiveStep);
+    const selected = s.csItems.find(i => i.id === s.csSelectedId) || null;
+
+    const csRows = csFiltered.map(it => ({
+      customer: it.customer, route: it.route, urgent: it.urgent,
+      onClick: () => this.selectCsItem(it.id),
+      style: 'padding:13px 14px;border-radius:11px;cursor:pointer;border:1px solid ' + (it.id === s.csSelectedId ? 'rgba(15,143,168,.22)' : 'transparent') + ';background:' + (it.id === s.csSelectedId ? 'rgba(15,143,168,.06)' : 'transparent') + ';',
+      chipLabel: it.step === 'inquiry' ? '\u2460 Inquiry' : it.step === 'release' ? '\u2466 Release' : '\u2468 SI Reminder',
+      chipStyle: 'display:inline-flex;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700;' + (it.step === 'inquiry' ? 'background:rgba(15,143,168,.1);color:#0f8fa8;' : it.step === 'release' ? 'background:rgba(22,163,74,.1);color:#15803d;' : 'background:rgba(217,119,6,.1);color:#b45309;'),
+    }));
+
+    const csSteps = this.STEP_DEFS.map(([key, num, label]) => {
+      const count = s.csItems.filter(i => i.step === key).length;
+      const active = key === s.csActiveStep;
+      const empty = count === 0 && !active;
+      return {
+        num, label, count, hasCount: count > 0,
+        onClick: () => this.setCsStep(key),
+        wrapStyle: 'display:flex;flex-direction:column;align-items:center;gap:3px;min-width:70px;padding:6px 12px;border-radius:10px;flex-shrink:0;cursor:pointer;position:relative;background:' + (active ? 'rgba(15,143,168,.10)' : 'transparent') + ';',
+        circleStyle: 'width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;background:' + (active ? '#0f8fa8' : empty ? 'rgba(0,0,0,.06)' : 'rgba(15,143,168,.18)') + ';color:' + (active ? '#fff' : empty ? '#94a3b8' : '#0f8fa8') + ';',
+        labelStyle: 'font-size:10px;font-weight:' + (active ? 700 : 500) + ';color:' + (active ? '#0f8fa8' : empty ? '#94a3b8' : '#475569') + ';white-space:nowrap;',
+        badgeStyle: 'position:absolute;top:2px;right:8px;min-width:16px;height:16px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;background:' + (active ? '#0f8fa8' : '#ef4444') + ';color:#fff;padding:0 4px;line-height:1;',
+      };
+    });
+
+    const mTabStyle = active => 'padding:7px 13px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid;' + (active ? 'background:#d97706;color:#fff;border-color:#d97706;' : 'background:#fff;color:#64748b;border-color:#e2e8f0;');
+
+    const selIsInquiry = !!selected && selected.step === 'inquiry';
+    const selIsSend = !!selected && (selected.step === 'release' || selected.step === 'si');
+    const sendIsEmail = s.csSendMethod === 'email';
+    const sendBtnBase = 'padding:8px 14px;border-radius:8px;font-size:12.5px;font-weight:600;cursor:pointer;border:1px solid;';
+
+    return {
+      isCS, isProc,
+      pageIsWorkspace: onWorkspace, pageIsInquiries: s.page === 'inquiries', pageIsRates: s.page === 'rates', pageIsCustomers: s.page === 'customers', pageIsNewInquiry: s.page === 'new-inquiry',
+      goWorkspace: () => this.goPage('workspace'), goInquiries: () => this.goPage('inquiries'), goRates: () => this.goPage('rates'), goCustomers: () => this.goPage('customers'), goNewInquiry: () => this.goPage('new-inquiry'),
+      navWorkspaceStyle: navStyle(s.page === 'workspace'), navInquiriesStyle: navStyle(s.page === 'inquiries'), navRatesStyle: navStyle(s.page === 'rates'), navCustomersStyle: navStyle(s.page === 'customers'),
+      pageLabel: s.page === 'workspace' ? 'Workspace' : s.page === 'inquiries' ? 'Inquiry List' : s.page === 'rates' ? 'Rate List' : s.page === 'new-inquiry' ? 'New Inquiry' : 'Customers',
+      roleLabel: isCS ? 'Customer Service' : 'Procurement',
+      roleInitials: isCS ? 'AN' : 'RK',
+      rolePillStyle, avatarStyle, tabCsStyle, tabProcStyle,
+      setRoleCS: () => this.setState({ role: 'CS' }),
+      setRoleProc: () => this.setState({ role: 'Procurement' }),
+
+      csQueueCountText: `${csFiltered.length} task${csFiltered.length === 1 ? '' : 's'} in this step`,
+      csRows, csListEmpty: csFiltered.length === 0,
+      csSteps,
+      csHasSelected: !!selected,
+      csAllDone: !selected,
+      selId: selected ? selected.id : '', selUrgent: selected ? selected.urgent : false, selBadge: selected ? selected.badge : '',
+      selCustomer: selected ? selected.customer : '', selDesc: selected ? selected.desc : '', selContext: selected ? selected.context : '',
+      selIsInquiry, selIsSend,
+      selTier: selected ? selected.tier : '',
+      selKycChipLabel: selected && selected.kycApproved ? '\u2713 KYC approved' : 'KYC pending',
+      selKycChipStyle: 'padding:6px 12px;border-radius:8px;font-size:12px;font-weight:600;' + (selected && selected.kycApproved ? 'background:rgba(22,163,74,.08);color:#15803d;border:1px solid rgba(22,163,74,.2);' : 'background:rgba(217,119,6,.08);color:#b45309;border:1px solid rgba(217,119,6,.2);'),
+      selPrimaryLabel: selIsInquiry ? (selected && selected.kycApproved ? 'Check rates \u2192' : 'Send KYC form \u2192') : selected && selected.step === 'release' ? 'Release to customer \u2192' : 'Send reminder \u2192',
+      selSendTitle: selected && selected.step === 'release' ? 'Release booking to customer' : 'Send SI reminder to customer',
+      csNote: s.csNote, setCsNote: e => this.setState({ csNote: e.target.value }),
+      csEmail: s.csEmail, setCsEmail: e => this.setState({ csEmail: e.target.value }),
+      sendIsEmail,
+      setSendEmail: () => this.setState({ csSendMethod: 'email' }),
+      setSendWhatsapp: () => this.setState({ csSendMethod: 'whatsapp' }),
+      sendEmailBtnStyle: sendBtnBase + (sendIsEmail ? 'background:#0f8fa8;color:#fff;border-color:#0f8fa8;' : 'background:#fff;color:#64748b;border-color:#e2e8f0;'),
+      sendWaBtnStyle: sendBtnBase + (!sendIsEmail ? 'background:#25d366;color:#fff;border-color:#25d366;' : 'background:#fff;color:#64748b;border-color:#e2e8f0;'),
+      completeSelected: () => this.completeSelected(),
+
+      procHasRate: !!s.procRateItem, procRateEmpty: !s.procRateItem,
+      procRateCount: s.procRateItem ? 1 : 0, procRateCountStyle: 'padding:2px 9px;border-radius:999px;font-size:11px;font-weight:700;background:' + (s.procRateItem ? 'rgba(220,38,38,.08);color:#dc2626' : '#eef2f6;color:#64748b') + ';',
+      procRateCollapsed: !s.procRateExpanded, procRateExpanded: s.procRateExpanded,
+      expandRate: () => this.setState({ procRateExpanded: true }), collapseRate: () => this.setState({ procRateExpanded: false }),
+      contractedChecked: s.contractedChecked, tariffChecked: s.tariffChecked, nacChecked: s.nacChecked,
+      toggleContracted: () => this.toggleRate('contractedChecked'), toggleTariff: () => this.toggleRate('tariffChecked'), toggleNac: () => this.toggleRate('nacChecked'),
+      contractedRowStyle: 'display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;cursor:pointer;border:1px solid ' + (s.contractedChecked ? '#0f8fa8' : '#e2e8f0') + ';background:' + (s.contractedChecked ? 'rgba(15,143,168,.04)' : 'transparent') + ';',
+      tariffRowStyle: 'display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;cursor:pointer;border:1px solid ' + (s.tariffChecked ? '#0f8fa8' : '#e2e8f0') + ';background:' + (s.tariffChecked ? 'rgba(15,143,168,.04)' : 'transparent') + ';',
+      nacRowStyle: 'display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;cursor:pointer;border:1px solid ' + (s.nacChecked ? '#0f8fa8' : '#e2e8f0') + ';background:' + (s.nacChecked ? 'rgba(15,143,168,.04)' : 'transparent') + ';',
+      pushRateLabel: 'Push to Sales', pushRateToSales: () => this.pushRateToSales(),
+      isTabVessel: s.mTab === 'vessel', isTabSpecial: s.mTab === 'special', isTabSpotOrVessel: s.mTab === 'spot' || s.mTab === 'vessel',
+      setTabSpot: () => this.setState({ mTab: 'spot' }), setTabVessel: () => this.setState({ mTab: 'vessel' }),
+      setTabFak: () => this.setState({ mTab: 'fak' }), setTabSpecial: () => this.setState({ mTab: 'special' }),
+      tabSpotStyle: mTabStyle(s.mTab === 'spot'), tabVesselStyle: mTabStyle(s.mTab === 'vessel'),
+      tabFakStyle: mTabStyle(s.mTab === 'fak'), tabSpecialStyle: mTabStyle(s.mTab === 'special'),
+
+      fieldLabelStyle: 'font-size:11.5px;font-weight:600;color:#475569;margin-bottom:6px;',
+      miniLabelStyle: 'font-size:10px;font-weight:600;color:#94a3b8;margin-bottom:4px;',
+      fieldStyle: 'width:100%;height:38px;border:1px solid #e2e8f0;border-radius:8px;background:#fff;padding:0 11px;font-size:12.5px;font-family:inherit;outline:none;box-sizing:border-box;',
+      fieldStyleSm: 'width:100%;height:34px;border:1px solid #e2e8f0;border-radius:7px;background:#fff;padding:0 9px;font-size:12px;font-family:inherit;outline:none;box-sizing:border-box;',
+      linerChipStyle: 'padding:5px 11px;border-radius:7px;font-size:11.5px;font-weight:600;cursor:pointer;background:#fff;color:#64748b;border:1px solid #e2e8f0;',
+      pickLinerMaersk: () => this.setState({ mLiner: 'Maersk Line' }), pickLinerMsc: () => this.setState({ mLiner: 'MSC' }),
+      pickLinerCma: () => this.setState({ mLiner: 'CMA CGM' }), pickLinerWanHai: () => this.setState({ mLiner: 'Wan Hai Lines' }),
+      mLiner: s.mLiner, setMLiner: e => this.setState({ mLiner: e.target.value }),
+      mTradeLane: s.mTradeLane, setMTradeLane: e => this.setState({ mTradeLane: e.target.value }),
+      mServiceLane: s.mServiceLane, setMServiceLane: e => this.setState({ mServiceLane: e.target.value }),
+      mSalesContact: s.mSalesContact, setMSalesContact: e => this.setState({ mSalesContact: e.target.value }),
+      mOrigin: s.mOrigin, setMOrigin: e => this.setState({ mOrigin: e.target.value }),
+      mDestination: s.mDestination, setMDestination: e => this.setState({ mDestination: e.target.value }),
+      mFreeTime: s.mFreeTime, setMFreeTime: e => this.setState({ mFreeTime: e.target.value }),
+      mVessel: s.mVessel, setMVessel: e => this.setState({ mVessel: e.target.value }),
+      mVoyage: s.mVoyage, setMVoyage: e => this.setState({ mVoyage: e.target.value }),
+      mVesselEtd: s.mVesselEtd, setMVesselEtd: e => this.setState({ mVesselEtd: e.target.value }),
+      mVesselEta: s.mVesselEta, setMVesselEta: e => this.setState({ mVesselEta: e.target.value }),
+      mFclOpenDate: s.mFclOpenDate, setMFclOpenDate: e => this.setState({ mFclOpenDate: e.target.value }),
+      mFclOpenTime: s.mFclOpenTime, setMFclOpenTime: e => this.setState({ mFclOpenTime: e.target.value }),
+      mFclCutDate: s.mFclCutDate, setMFclCutDate: e => this.setState({ mFclCutDate: e.target.value }),
+      mFclCutTime: s.mFclCutTime, setMFclCutTime: e => this.setState({ mFclCutTime: e.target.value }),
+      mCommodityType: s.mCommodityType, setMCommodityType: e => this.setState({ mCommodityType: e.target.value }),
+      mCommodityName: s.mCommodityName, setMCommodityName: e => this.setState({ mCommodityName: e.target.value }),
+      mValidFrom: s.mValidFrom, setMValidFrom: e => this.setState({ mValidFrom: e.target.value }),
+      mValidTo: s.mValidTo, setMValidTo: e => this.setState({ mValidTo: e.target.value }),
+      mIsSold: s.mIsSold, toggleSold: () => this.setState(p => ({ mIsSold: !p.mIsSold })),
+      mIsCancelled: s.mIsCancelled, toggleCancelled: () => this.setState(p => ({ mIsCancelled: !p.mIsCancelled })),
+      showCancelReason: s.mIsCancelled && (s.mTab === 'spot' || s.mTab === 'vessel'),
+      mCancelReason: s.mCancelReason, setMCancelReason: e => this.setState({ mCancelReason: e.target.value }),
+      mNote: s.mNote, setMNote: e => this.setState({ mNote: e.target.value }),
+      mSpecialRemark: s.mSpecialRemark, setMSpecialRemark: e => this.setState({ mSpecialRemark: e.target.value }),
+
+      mContainers: s.mContainers.map((c, idx) => ({
+        containerType: c.containerType, tus: c.tus, maxWeight: c.maxWeight, rate: c.rate, currency: c.currency,
+        onType: e => this.updateContainerRow(idx, 'containerType', e.target.value),
+        onTus: e => this.updateContainerRow(idx, 'tus', e.target.value),
+        onWeight: e => this.updateContainerRow(idx, 'maxWeight', e.target.value),
+        onRate: e => this.updateContainerRow(idx, 'rate', e.target.value),
+        onCurrency: e => this.updateContainerRow(idx, 'currency', e.target.value),
+        onRemove: () => this.removeContainerRow(idx),
+      })),
+      addContainerRow: () => this.addContainerRow(),
+
+      mSurcharges: s.mSurcharges.map((sc, idx) => ({
+        type: sc.type, amount: sc.amount, currency: sc.currency,
+        onType: e => this.updateSurcharge(idx, 'type', e.target.value),
+        onAmount: e => this.updateSurcharge(idx, 'amount', e.target.value),
+        onCurrency: e => this.updateSurcharge(idx, 'currency', e.target.value),
+        onRemove: () => this.removeSurcharge(idx),
+      })),
+      addSurcharge: () => this.addSurcharge(), noSurcharges: s.mSurcharges.length === 0,
+
+      addManualEntry: () => this.addManualEntry(),
+      addEntryBtnStyle: 'padding:9px 18px;border-radius:8px;background:#d97706;color:#fff;border:none;font-size:12.5px;font-weight:600;cursor:pointer;',
+      hasManualEntries: s.manualEntries.length > 0,
+      manualEntries: s.manualEntries.map(e => ({
+        id: e.id, liner: e.liner, origin: e.origin, destination: e.destination, containerSummary: e.containerSummary,
+        hasFlags: e.hasFlags, flagsText: e.flagsText,
+        tagLabel: this.MTAB_LABELS[e.tab],
+        tagStyle: 'font-size:9px;font-weight:700;padding:2px 7px;border-radius:4px;background:rgba(217,119,6,.1);color:#b45309;white-space:nowrap;',
+        onRemove: () => this.removeManualEntry(e.id),
+      })),
+
+      procHasLiner: !!s.procLinerItem, procLinerEmpty: !s.procLinerItem,
+      procLinerCount: s.procLinerItem ? 1 : 0, procLinerCountStyle: 'padding:2px 9px;border-radius:999px;font-size:11px;font-weight:700;background:#eef2f6;color:#64748b;',
+      procLinerCollapsed: !s.procLinerExpanded, procLinerExpanded: s.procLinerExpanded,
+      expandLiner: () => this.setState({ procLinerExpanded: true }), collapseLiner: () => this.setState({ procLinerExpanded: false }),
+      procVessel: s.procVessel, setProcVessel: e => this.setState({ procVessel: e.target.value }),
+      procVoyage: s.procVoyage, setProcVoyage: e => this.setState({ procVoyage: e.target.value }),
+      confirmLiner: () => this.confirmLiner(),
+
+      procHasUrgent: !!s.procUrgentItem, procUrgentEmpty: !s.procUrgentItem,
+      procUrgentCount: s.procUrgentItem ? 1 : 0, procUrgentCountStyle: 'padding:2px 9px;border-radius:999px;font-size:11px;font-weight:700;background:' + (s.procUrgentItem ? 'rgba(220,38,38,.1);color:#dc2626' : '#eef2f6;color:#64748b') + ';',
+      acknowledgeUrgent: () => this.acknowledgeUrgent(),
+
+      // ---- Inquiry List ----
+      inqSearch: s.inqSearch, setInqSearch: e => this.setState({ inqSearch: e.target.value }),
+      inqResultText: `${inqFiltered.length} of ${s.inqList.length} inquiries`,
+      inqMoreOpen: s.inqMoreOpen, toggleInqMore: () => this.setState(p => ({ inqMoreOpen: !p.inqMoreOpen })),
+      inqMoreLabel: s.inqMoreOpen ? 'Fewer filters \u2039' : 'More filters \u203a',
+      inqMoreBtnStyle: 'padding:7px 12px;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;background:#fff;color:#0f8fa8;border:1px solid #a3e0ea;margin-left:auto;white-space:nowrap;',
+      inqStatusChips: ['all', 'pending', 'completed'].map(v => ({ label: v === 'all' ? 'All' : v === 'pending' ? 'Pending' : 'Completed', onClick: () => this.setState({ inqStatus: v }), style: chipStyle(s.inqStatus === v) })),
+      inqPriorityChips: ['all', 'Low', 'Medium', 'High', 'Urgent'].map(v => ({ label: v === 'all' ? 'All' : v, onClick: () => this.setState({ inqPriority: v }), style: chipStyle(s.inqPriority === v) })),
+      inqSbuChips: ['all', 'Ocean Freight', 'Perishables'].map(v => ({ label: v === 'all' ? 'All' : v, onClick: () => this.setState({ inqSbu: v }), style: chipStyle(s.inqSbu === v) })),
+      inqSalesChips: ['all', 'Anjali', 'Ruwan'].map(v => ({ label: v === 'all' ? 'All' : v, onClick: () => this.setState({ inqSales: v }), style: chipStyle(s.inqSales === v) })),
+      inqRows: inqFiltered.map(i => ({
+        customer: i.customer, urgent: i.urgent, tier: i.tier, tierStyle: tierChipStyle(i.tier),
+        route: `${i.origin} \u2192 ${i.destination}`, container: i.container,
+        statusLabel: i.status === 'pending' ? 'Pending' : 'Completed', statusStyle: statusPillStyle(i.status),
+        quoteLabel: i.quote, quoteStyle: quoteBadgeStyle(i.quote), date: i.date,
+        onClick: () => this.selectInq(i.id),
+        rowStyle: listRowStyle(i.id === s.inqSelectedId) + 'grid-template-columns:2.2fr 1.6fr 1.3fr 1fr 1.1fr 0.9fr;',
+      })),
+      inqHasSelected: !!inqSel,
+      inqSelId: inqSel ? inqSel.id : '', inqSelCustomer: inqSel ? inqSel.customer : '', inqSelText: inqSel ? inqSel.text : '',
+      inqSelSbu: inqSel ? inqSel.sbu : '', inqSelSales: inqSel ? inqSel.salesperson : '', inqSelPriority: inqSel ? inqSel.priority : '',
+      inqSelDelivery: inqSel ? inqSel.delivery : '', inqSelStage: inqSel ? inqSel.stage : '',
+      inqHasFollowups: !!inqSel && inqSel.followups.length > 0,
+      inqSelFollowups: inqSel ? inqSel.followups.map(f => ({ author: f.author, date: f.date, note: f.note })) : [],
+      inqSelPending: !!inqSel && inqSel.status === 'pending',
+      inqNote: s.inqNote, setInqNote: e => this.setState({ inqNote: e.target.value }),
+      addInqFollowup: () => this.addInqFollowup(), completeInq: () => this.completeInq(), closeInqPanel: () => this.closeInqPanel(),
+
+      // ---- Rate List ----
+      rateSearch: s.rateSearch, setRateSearch: e => this.setState({ rateSearch: e.target.value }),
+      rateResultText: `${rateFiltered.length} of ${s.rateListItems.length} rates`,
+      rateTypeChips: ['all', 'Contracted', 'Tariff Rate', 'Spot', 'Vessel-by-Vessel', 'NAC', 'Special'].map(v => ({ label: v === 'all' ? 'All' : v, onClick: () => this.setState({ rateType: v }), style: chipStyle(s.rateType === v) })),
+      rateRows: rateFiltered.map(r => ({
+        typeLabel: r.type, typeStyle: typeBadgeStyle(r.type), primary: r.primary, hasSecondary: !!r.secondary, secondary: r.secondary,
+        route: `${r.origin} \u2192 ${r.destination}`, container: r.container, rate: `$${r.rate.toLocaleString()}`, validity: `${r.validFrom} \u2192 ${r.validTo}`,
+        onClick: () => this.selectRate(r.id),
+        rowStyle: listRowStyle(r.id === s.rateSelectedId) + 'grid-template-columns:1.35fr 1.5fr 1.5fr 1.1fr 1.2fr 1.2fr;',
+      })),
+      rateHasSelected: !!rateSel,
+      rateSelType: rateSel ? rateSel.type : '', rateSelTypeStyle: rateSel ? typeBadgeStyle(rateSel.type) : '',
+      rateSelRate: rateSel ? `$${rateSel.rate.toLocaleString()} ${rateSel.currency}` : '',
+      rateSelFields: rateSel ? [
+        { k: 'Liner / Party', v: rateSel.primary }, { k: 'Route', v: `${rateSel.origin} \u2192 ${rateSel.destination}` },
+        { k: 'Container', v: rateSel.container }, { k: 'Valid from', v: rateSel.validFrom }, { k: 'Valid to', v: rateSel.validTo },
+        ...(rateSel.secondary ? [{ k: 'Detail', v: rateSel.secondary }] : []),
+      ] : [],
+      rateRemark: s.rateRemark, setRateRemark: e => this.setState({ rateRemark: e.target.value }),
+      saveRateRemark: () => this.saveRateRemark(), closeRatePanel: () => this.closeRatePanel(),
+
+      // ---- Customers ----
+      custSearch: s.custSearch, setCustSearch: e => this.setState({ custSearch: e.target.value }),
+      custResultText: `${custFiltered.length} of ${s.custList.length} customers`,
+      custTierChips: ['all', 'Key Account', 'Regular', 'Walk-in'].map(v => ({ label: v === 'all' ? 'All' : v, onClick: () => this.setState({ custTier: v }), style: chipStyle(s.custTier === v) })),
+      custStatusChips: ['all', 'active', 'credit-hold', 'blacklisted'].map(v => ({ label: v === 'all' ? 'All' : v === 'active' ? 'Active' : v === 'credit-hold' ? 'Credit Hold' : 'Blacklisted', onClick: () => this.setState({ custStatus: v }), style: chipStyle(s.custStatus === v) })),
+      pendingPillStyle: 'margin-left:6px;padding:2px 7px;border-radius:999px;font-size:10px;font-weight:700;background:rgba(217,119,6,.1);color:#b45309;',
+      custRows: custFiltered.map(c => ({
+        name: c.name, tier: c.tier, tierStyle: tierChipStyle(c.tier),
+        hasFlag: c.blacklisted || c.creditHold, flagLabel: c.blacklisted ? 'Blacklisted' : 'Credit Hold',
+        flagStyle: c.blacklisted ? 'display:inline-flex;padding:2px 8px;border-radius:999px;font-size:10px;font-weight:700;background:rgba(220,38,38,.1);color:#dc2626;' : 'display:inline-flex;padding:2px 8px;border-radius:999px;font-size:10px;font-weight:700;background:rgba(217,119,6,.1);color:#b45309;',
+        location: c.location, payment: c.payment, totalInq: c.totalInq, hasPending: c.pending > 0, pendingLabel: `${c.pending} pending`,
+        lastContact: c.lastContact, onClick: () => this.selectCust(c.id),
+        rowStyle: listRowStyle(c.id === s.custSelectedId) + 'grid-template-columns:2fr 1.3fr 1.2fr 1.3fr 1fr;',
+      })),
+      custHasSelected: !!custSel,
+      custSelId: custSel ? custSel.id : '', custSelName: custSel ? custSel.name : '', custSelType: custSel ? custSel.type : '', custSelSales: custSel ? custSel.salesperson : '',
+      custSelInqSummary: custSel ? `${custSel.totalInq} total \u00b7 ${custSel.pending} pending` : '',
+      custTierEditChips: ['Key Account', 'Regular', 'Walk-in'].map(t => ({ label: t, onClick: () => this.setState({ custDraftTier: t }), style: chipStyle(s.custDraftTier === t) })),
+      custSelPayment: s.custDraftPayment, setCustSelPayment: e => this.setState({ custDraftPayment: e.target.value }),
+      custSelMargin: s.custDraftMargin, setCustSelMargin: e => this.setState({ custDraftMargin: e.target.value }),
+      custSelCreditHold: s.custDraftCreditHold, toggleCustCreditHold: () => this.setState(p => ({ custDraftCreditHold: !p.custDraftCreditHold })),
+      custSelBlacklisted: s.custDraftBlacklisted, toggleCustBlacklisted: () => this.setState(p => ({ custDraftBlacklisted: !p.custDraftBlacklisted })),
+      saveCustomer: () => this.saveCustomer(), closeCustPanel: () => this.closeCustPanel(),
+
+      // ---- New Inquiry ----
+      niCustomer: s.niCustomer, setNiCustomer: e => this.setState({ niCustomer: e.target.value }),
+      niContactPerson: s.niContactPerson, setNiContactPerson: e => this.setState({ niContactPerson: e.target.value }),
+      niOrigin: s.niOrigin, setNiOrigin: e => this.setState({ niOrigin: e.target.value }),
+      niSbu: s.niSbu, setNiSbu: e => this.setState({ niSbu: e.target.value }),
+      niSpecialEquip: s.niSpecialEquip, setNiSpecialEquip: e => this.setState({ niSpecialEquip: e.target.value }),
+      niRemark: s.niRemark, setNiRemark: e => this.setState({ niRemark: e.target.value }),
+      niContactDetail: s.niContactDetail, setNiContactDetail: e => this.setState({ niContactDetail: e.target.value }),
+      niContactLabel: s.niChannel === 'Email' ? 'Email address' : s.niChannel === 'WhatsApp' ? 'WhatsApp number' : 'Phone number',
+      niContactPlaceholder: s.niChannel === 'Email' ? 'e.g. john@acme.com' : 'e.g. +94 77 123 4567',
+      niChannelChips: ['Email', 'WhatsApp', 'Phone'].map(v => ({ label: v, onClick: () => this.setState({ niChannel: v }), style: chipStyle(s.niChannel === v) })),
+      niPriorityChips: ['Low', 'Medium', 'High', 'Urgent'].map(v => ({ label: v, onClick: () => this.setState({ niPriority: v }), style: chipStyle(s.niPriority === v) })),
+      niDeliveryChips: [['port-to-port', 'Port to Port'], ['door-to-door', 'Door to Door']].map(([v, label]) => ({ label, onClick: () => this.setState({ niDelivery: v }), style: chipStyle(s.niDelivery === v) })),
+      niLinerDraft: s.niLinerDraft, setNiLinerDraft: e => this.setState({ niLinerDraft: e.target.value }),
+      addNiLiner: () => this.addNiLiner(), hasNiLiners: s.niLiners.length > 0,
+      niLinerChips: s.niLiners.map((name, idx) => ({ name, onRemove: () => this.removeNiLiner(idx) })),
+      addNiContainer: () => this.addNiContainer(),
+      niContainers: s.niContainers.map((c, idx) => ({
+        label: `Container ${idx + 1}`, canRemove: s.niContainers.length > 1, onRemove: () => this.removeNiContainer(idx),
+        commodityType: c.commodityType, onCommodityType: e => this.updateNiContainer(idx, 'commodityType', e.target.value),
+        commodityName: c.commodityName, onCommodityName: e => this.updateNiContainer(idx, 'commodityName', e.target.value),
+        destination: c.destination, onDestination: e => this.updateNiContainer(idx, 'destination', e.target.value),
+        containerType: c.containerType, onContainerType: e => this.updateNiContainer(idx, 'containerType', e.target.value),
+        quantity: c.quantity, onQuantity: e => this.updateNiContainer(idx, 'quantity', e.target.value),
+        weight: c.weight, onWeight: e => this.updateNiContainer(idx, 'weight', e.target.value),
+        zipCode: c.zipCode, onZip: e => this.updateNiContainer(idx, 'zipCode', e.target.value),
+        freeTime: c.freeTime, onFreeTime: e => this.updateNiContainer(idx, 'freeTime', e.target.value),
+        onFcl: () => this.updateNiContainer(idx, 'isFcl', true), onLcl: () => this.updateNiContainer(idx, 'isFcl', false),
+        fclBtnStyle: chipStyle(c.isFcl) + 'padding:6px 12px;', lclBtnStyle: chipStyle(!c.isFcl) + 'padding:6px 12px;',
+        doorAgentDraft: c.doorAgentDraft, onDoorAgentDraft: e => this.updateNiContainer(idx, 'doorAgentDraft', e.target.value),
+        onAddDoorAgent: () => this.addNiDoorAgent(idx), hasDoorAgents: c.doorAgents.length > 0,
+        doorAgentChips: c.doorAgents.map((name, ai) => ({ name, onRemove: () => this.removeNiDoorAgent(idx, ai) })),
+      })),
+      saveNewInquiry: () => this.saveNewInquiry(),
+      saveNiBtnStyle: 'padding:10px 20px;border-radius:9px;background:#0f8fa8;color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer;',
+
+      hasToast: !!s.toast, toastText: s.toast || '',
+    };
+  }
+}
+</script>
+</body>
+</html>

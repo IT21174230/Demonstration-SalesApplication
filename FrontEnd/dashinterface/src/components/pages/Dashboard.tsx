@@ -3,7 +3,7 @@ import { Clock, CheckCircle2, Users as UsersIcon, AlertTriangle, ArrowRight, Shi
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
 import KPICard from '../shared/KPICard'
 import NLQBox from '../shared/NLQBox'
-import { EMPLOYEES, SBUS, isOverdue, type Inquiry, type Task, type Followup, type MissingItem, type KPIItem, type PageId, type SBU, type Quote } from '../../mockData'
+import { EMPLOYEES, SBUS, isOverdue, type Inquiry, type Task, type Followup, type MissingItem, type KPIItem, type PageId, type SBU, type Quote } from '../../types'
 
 interface DashboardProps {
   inquiries: Inquiry[]
@@ -30,7 +30,7 @@ const Tip = ({ active, payload, label }: any) => {
 
 // SBU label colours (used by both the SBU card and the per-SBU list).
 const SBU_COLORS: Record<SBU, string> = {
-  'Ocean Exports': '#4f46e5',
+  'Ocean Exports': '#0f8fa8',
   'Ocean Imports': '#16a34a',
   'Air Freight': '#d97706',
   'Domestic': '#7c3aed',
@@ -112,9 +112,9 @@ export default function Dashboard({ inquiries, tasks, followups, missingItems, q
   const byChannel = useMemo(() => {
     const map = new Map<string, number>()
     for (const inq of inquiries) {
-      map.set(inq.channel, (map.get(inq.channel) ?? 0) + 1)
+      map.set(inq.channel ?? 'Unknown', (map.get(inq.channel ?? 'Unknown') ?? 0) + 1)
     }
-    const colors: Record<string, string> = { WhatsApp: '#16a34a', Email: '#4f46e5', Phone: '#d97706' }
+    const colors: Record<string, string> = { WhatsApp: '#16a34a', Email: '#0f8fa8', Phone: '#d97706' }
     return Array.from(map.entries()).map(([name, value]) => ({ name, value, color: colors[name] ?? '#7c3aed' }))
   }, [inquiries])
 
@@ -155,7 +155,7 @@ export default function Dashboard({ inquiries, tasks, followups, missingItems, q
       {/* Lifetime summary tiles */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 22 }}>
         {[
-          { label: 'Total Inquiries', value: total, color: '#4f46e5' },
+          { label: 'Total Inquiries', value: total, color: '#0f8fa8' },
           { label: 'Completed', value: completedTotal, color: '#16a34a' },
           { label: 'Completion Rate', value: `${completionRate}%`, color: '#d97706' },
         ].map(t => (
@@ -265,7 +265,7 @@ export default function Dashboard({ inquiries, tasks, followups, missingItems, q
               Pending portion
             </span>
             <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              <span style={{ width: 8, height: 8, borderRadius: 2, background: '#4f46e5' }} />
+              <span style={{ width: 8, height: 8, borderRadius: 2, background: '#0f8fa8' }} />
               Completed portion
             </span>
           </div>

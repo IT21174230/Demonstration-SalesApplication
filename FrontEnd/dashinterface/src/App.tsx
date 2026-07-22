@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react'
-import { usePersistentState } from './hooks'
 import './dashboard.css'
 import TopBar from './components/layout/TopBar'
 import Sidebar from './components/layout/Sidebar'
@@ -17,35 +16,117 @@ import NewInquiry from './components/pages/NewInquiry'
 import RecordRate from './components/pages/RecordRate'
 import RateCheck from './components/pages/RateCheck'
 import {
-  SEED_INQUIRIES, SEED_TASKS, SEED_MISSING_ITEMS, SEED_FOLLOWUPS, SEED_CUSTOMERS,
-  SEED_QUOTES, SEED_SHIPMENTS, SEED_BOOKINGS, SEED_ACTIVITY_LOG,
   PAGE_LABELS, nowStamp,
   EMPLOYEES, EMPLOYEE_ROLE_MAP, ROLE_ACTIONS, ROLE_PAGE_ACCESS, ROLE_LABELS,
   WORKFLOW_STAGES,
   type PageId, type Inquiry, type Task, type Followup, type Customer,
   type Quote, type QuoteStatus, type Shipment, type ShipmentStatus, type Booking,
   type MissingItem, type UserRole, type WorkflowStage, type ActivityEntry, type ContainerLine,
-} from './mockData'
+  type ClientRecord, type ContactPersonRecord,
+} from './types'
 import { RoleContext, type RoleContextValue } from './RoleContext'
 import {
-  fetchDashboardInit,
   apiCreateFollowup,
   apiCreateQuote, apiSetQuoteStatus,
   apiCreateTask, apiCompleteTask,
   apiAdvanceShipmentLeg, apiRecordShipmentPOD,
-  apiCreateInquiry,
+  apiCreateInquiry, apiCreateInquiryOldNew, apiCreateInquiryOldOld, apiFetchAllInquiries,
+  apiGetClientsDb, apiGetContactPersons,
+  type InquiryRow,
   apiCreateActivity, apiCreateBooking, apiConfirmBooking, apiReleaseBooking, apiNotifyProcurement,
   apiSetBookingSiCutoff, apiMarkSiRequested,
   apiSetBookingBlCutoff, apiMarkSiSubmitted, apiMarkDraftBlSent, apiSetBlStatus,
   apiRecordMasterBl, apiCreateHouseBl,
-  apiUpdateCustomer, apiAdvanceWorkflow,
+  apiUpdateCustomer, apiAdvanceWorkflow, apiCreateWorkflowEntry,
+  apiPatchInquiry, apiPatchCommodity, apiPatchContainer, apiDeleteInquiry,
+  apiGetClientKycStatus, BE_STAGE_TO_FE,
 } from './api'
 
-export default function App() {
-  const [currentPage, setCurrentPage] = useState<PageId>('chat')
+// Container type codes the backend uses → frontend ContainerType labels
+const BE_CONTAINER_TYPE: Record<string, string> = {
+  '20GP': '20 GP', '40GP': '40 GP', '40HC': '40 HC',
+  '20RF': '20 REEFER', '40RF': '40 REEFER',
+  '20OT': '20 OPEN TOP', '40OT': '40 OPEN TOP',
+  '20FR': '20 FLAT RACK', '40FR': '40 FLAT RACK',
+}
+// Priority codes from backend → frontend InquiryPriority labels
+const BE_PRIORITY: Record<string, Inquiry['priority']> = {
+  LOW: 'Low', MEDIUM: 'Medium', HIGH: 'High', URGENT: 'Urgent',
+}
+// Commodity type name normalisation (backend may use singular form)
+const BE_COM_TYPE: Record<string, string> = {
+  Textile: 'Textiles', Textiles: 'Textiles',
+  General: 'General', Food: 'Food', Hazardous: 'Hazardous',
+  Pharmaceuticals: 'Pharmaceuticals', Electronics: 'Electronics',
+  Chemicals: 'Chemicals', Other: 'Other',
+}
 
-  // ---- IAM simulation ----
-  const [activeEmployeeId, setActiveEmployeeId] = usePersistentState<number>('active-employee', 2) // default: Anjali (CS)
+/**
+ * Converts the flat InquiryRow[] from GET /inquiries/inquiries into Inquiry[]
+ * by grouping rows on inq_id (one row per container in the backend join).
+ */
+function mapInquiryRows(rows: InquiryRow[]): Inquiry[] {
+  const grouped = new Map<number, InquiryRow[]>()
+  for (const r of rows) {
+    if (!grouped.has(r.inq_id)) grouped.set(r.inq_id, [])
+    grouped.get(r.inq_id)!.push(r)
+  }
+
+  const result: Inquiry[] = []
+  for (const [inq_id, group] of grouped) {
+    const h = group[0]
+    const containers: ContainerLine[] = group.map(r => ({
+      containerType: (BE_CONTAINER_TYPE[r.container_type ?? ''] ?? r.container_type ?? '20 GP') as ContainerLine['containerType'],
+      quantity: r.qty ?? 1,
+      weight: r.commodity_weight ?? '',
+      commodityType: (BE_COM_TYPE[r.commodity_type ?? ''] ?? r.commodity_type ?? 'Miscellaneous manufactured articles — furniture, toys') as ContainerLine['commodityType'],
+      commodityName: r.commodity_name ?? '',
+      destination: r.destination,
+      isFcl: r.is_fully_loaded,
+      zipCode: r.zip_code ?? '',
+      doorAgents: [],
+      freeTime: r.free_time ? (parseInt(r.free_time, 10) || '') : '',
+      temperature: r.temperature ?? undefined,
+      address: r.address ?? undefined,
+      hs_code: r.hs_code ?? undefined,
+      com_id: r.com_id,
+      cont_id: r.cont_id,
+    }))
+
+    result.push({
+      id: String(inq_id),
+      inq_id,
+      cli_id: h.cli_id,
+      customer_name: h.name,
+      employee_id: 1, // auth is hardcoded to emp_id=1 in dev; not returned by list endpoint
+      origin: h.origin,
+      destination: group[0]?.destination ?? '',
+      status: 'pending',
+      created_at: h.cargo_ready_date ?? '',
+      sbu: (h.sbu as Inquiry['sbu']) ?? 'Ocean Exports',
+      priority: h.priority ? (BE_PRIORITY[h.priority] ?? undefined) : undefined,
+      delivery_type: h.service_mode === 'DOOR_TO_DOOR' ? 'door-to-door' : 'port-to-port',
+      preferred_liners: h.preferred_liners
+        ? h.preferred_liners.split(',').map(s => s.trim()).filter(Boolean)
+        : undefined,
+      incoterm: h.incoterm ?? undefined,
+      cargo_ready_date: h.cargo_ready_date ?? undefined,
+      preferred_rate: h.preferred_rate ?? undefined,
+      containers,
+      workflow_stage: (h.workflow_stage ? BE_STAGE_TO_FE[h.workflow_stage] ?? 'inquiry-received' : 'inquiry-received') as WorkflowStage,
+    })
+  }
+  return result
+}
+
+export default function App() {
+  const [currentPage, setCurrentPage] = useState<PageId>('workspace')
+  // When navigating to workspace from rate-check, this tells Workspace which step to open on mount.
+  // Cleared by a useEffect once workspace has mounted and captured the value.
+  const [workspaceInitialStep, setWorkspaceInitialStep] = useState<string | null>(null)
+
+  // ---- Role-based access control ----
+  const [activeEmployeeId, setActiveEmployeeId] = useState<number>(2) // default: Anjali (CS)
   const activeEmployee = EMPLOYEES.find(e => e.id === activeEmployeeId) ?? EMPLOYEES[0]
   const activeRole: UserRole = EMPLOYEE_ROLE_MAP[activeEmployeeId] ?? 'CS'
 
@@ -72,79 +153,114 @@ export default function App() {
     }
   }, [activeEmployeeId]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Once workspace mounts and captures initialStep, clear the hint so the next
+  // manual navigation to workspace doesn't jump to the same step again.
+  useEffect(() => {
+    if (currentPage === 'workspace' && workspaceInitialStep) {
+      setWorkspaceInitialStep(null)
+    }
+  }, [currentPage]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const advanceWorkflow = (inquiryId: string, nextStage: WorkflowStage) => {
     setInquiries(prev => prev.map(i =>
       i.id === inquiryId ? { ...i, workflow_stage: nextStage } : i
     ))
-    apiAdvanceWorkflow(inquiryId, nextStage).catch(() => console.warn('API: advance workflow failed'))
+    const inqId = inquiries.find(i => i.id === inquiryId)?.inq_id
+    apiAdvanceWorkflow(inquiryId, nextStage, inqId).catch(() => console.warn('API: advance workflow failed'))
     const stageLabel = WORKFLOW_STAGES.find(s => s.id === nextStage)?.label ?? nextStage
     flash(`${inquiryId} → ${stageLabel}`)
   }
 
-  // All data state persists across refresh via localStorage (demo behaviour).
-  // On mount we fetch from the backend API; localStorage acts as cache.
-  const [inquiries, setInquiries] = usePersistentState<Inquiry[]>('inquiries', SEED_INQUIRIES)
-  const [tasks, setTasks] = usePersistentState<Task[]>('tasks', SEED_TASKS)
-  const [missingItems, setMissingItems] = usePersistentState<MissingItem[]>('missingItems', SEED_MISSING_ITEMS)
-  const [followups, setFollowups] = usePersistentState<Followup[]>('followups', SEED_FOLLOWUPS)
-  const [customers, setCustomers] = usePersistentState<Customer[]>('customers', SEED_CUSTOMERS)
-  const [quotes, setQuotes] = usePersistentState<Quote[]>('quotes', SEED_QUOTES)
-  const [shipments, setShipments] = usePersistentState<Shipment[]>('shipments', SEED_SHIPMENTS)
-  const [bookings, setBookings] = usePersistentState<Booking[]>('bookings', SEED_BOOKINGS)
-  const [activityLog, setActivityLog] = usePersistentState<ActivityEntry[]>('activityLog', SEED_ACTIVITY_LOG)
-  const [backendReady, setBackendReady] = useState(false)
+  const [inquiries, setInquiries] = useState<Inquiry[]>([])
+  const [tasks, setTasks] = useState<Task[]>([])
+  const [missingItems, _setMissingItems] = useState<MissingItem[]>([])
+  const [followups, setFollowups] = useState<Followup[]>([])
+  const [customers, setCustomers] = useState<Customer[]>([])
+  const [quotes, setQuotes] = useState<Quote[]>([])
+  const [shipments, setShipments] = useState<Shipment[]>([])
+  const [bookings, setBookings] = useState<Booking[]>([])
+  const [activityLog, setActivityLog] = useState<ActivityEntry[]>([])
+  // Reference data — fetched once at startup and cached for the session
+  const [clientList, setClientList] = useState<ClientRecord[]>([])
+  const [contactPersonList, setContactPersonList] = useState<ContactPersonRecord[]>([])
+  // cli_id → kyc_completed: true means client is KYC-cleared, skip the KYC workflow stages
+  const [kycStatusMap, setKycStatusMap] = useState<Record<number, boolean>>({})
+  const [initState, setInitState] = useState<'loading' | 'ready' | 'error'>('loading')
   // Lets the chat tell the Quotations page to open its builder pre-filled with a customer.
   const [quotePrefillCustomer, setQuotePrefillCustomer] = useState<string | null>(null)
   const [rateCheckContext, setRateCheckContext] = useState<{ inquiry: Inquiry; container?: ContainerLine; variant: 'procurement' | 'cs-sales' } | null>(null)
   const [toast, setToast] = useState<{ message: string; action?: { label: string; onClick: () => void } } | null>(null)
 
-  // ---- Fetch all data from the backend on mount ----
+  // ---- Initialise app state ----
   useEffect(() => {
-    fetchDashboardInit()
-      .then(data => {
-        setCustomers(data.customers)
-        setInquiries(data.inquiries)
-        setTasks(data.tasks)
-        setMissingItems(data.missing_items)
-        setFollowups(data.followups)
-        setQuotes(data.quotes)
-        setShipments(data.shipments)
-        if (data.bookings) setBookings(data.bookings)
-        if (data.activity_log) setActivityLog(data.activity_log)
-        setBackendReady(true)
+    // Fetch inquiries + reference data in parallel; only the inquiry fetch gates the ready state
+    apiGetClientsDb().then(cl => {
+      setClientList(cl)
+      setCustomers(cl.map(r => ({
+        id:            String(r.cli_id),
+        name:          r.name,
+        location:      r.city ?? '',
+        tier:          'Regular'     as const,
+        payment_terms: 'Pay Upfront' as const,
+        blacklisted:   false,
+        credit_hold:   false,
+        min_margin_pct: 0,
+        kyc_status:    (r.kyc_completed ? 'approved' : 'not_started') as const,
+      })))
+    }).catch(() => console.warn('[startup] Could not load client list'))
+    apiGetContactPersons().then(setContactPersonList).catch(() => console.warn('[startup] Could not load contact persons'))
+    apiFetchAllInquiries()
+      .then(rows => {
+        setInquiries(mapInquiryRows(rows))
+        // Fan-out KYC status fetch for each unique cli_id present on the loaded inquiries
+        const uniqueCliIds = [...new Set(rows.map(r => r.cli_id).filter((id): id is number => id != null))]
+        Promise.all(uniqueCliIds.map(id =>
+          apiGetClientKycStatus(id)
+            .then(completed => ({ id, completed }))
+            .catch(() => ({ id, completed: false }))
+        )).then(results => {
+          const map: Record<number, boolean> = {}
+          results.forEach(r => { map[r.id] = r.completed })
+          setKycStatusMap(map)
+        })
       })
-      .catch(() => {
-        // Backend unreachable — fall back to localStorage / seed data
-        console.warn('Backend unreachable — using cached data')
-        setBackendReady(true)
+      .catch(() => console.warn('[startup] Could not load inquiries from backend'))
+      .finally(() => {
+        setInitState('ready')
+        setToast({ message: `Welcome back, ${activeEmployee.name}` })
+        setTimeout(() => setToast(null), 4000)
       })
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Re-fetch all dashboard data from the backend. Called after AI chat
-  // tool calls that may have mutated mock_data.json directly.
   const refreshData = () => {
-    fetchDashboardInit()
-      .then(data => {
-        // Detect newly added customers → prompt CS to initiate KYC
-        const oldIds = new Set(customers.map(c => c.id))
-        const newCusts = data.customers.filter((c: Customer) => !oldIds.has(c.id))
+    apiFetchAllInquiries()
+      .then(rows => setInquiries(mapInquiryRows(rows)))
+      .catch(() => console.warn('[refreshData] Failed to fetch inquiries'))
+  }
 
-        setCustomers(data.customers)
-        setInquiries(data.inquiries)
-        setTasks(data.tasks)
-        setMissingItems(data.missing_items)
-        setFollowups(data.followups)
-        setQuotes(data.quotes)
-        setShipments(data.shipments)
-        if (data.bookings) setBookings(data.bookings)
-        if (data.activity_log) setActivityLog(data.activity_log)
+  const handlePatchInquiry = (
+    inq_id: number,
+    data: Parameters<typeof apiPatchInquiry>[1],
+    commodityPatches?: Array<{ com_id: number; data: Parameters<typeof apiPatchCommodity>[2] }>,
+    containerPatches?: Array<{ cont_id: number; data: Parameters<typeof apiPatchContainer>[2] }>
+  ) => {
+    const calls: Promise<unknown>[] = [
+      apiPatchInquiry(inq_id, data),
+      ...(commodityPatches ?? []).map(cp => apiPatchCommodity(inq_id, cp.com_id, cp.data)),
+      ...(containerPatches ?? []).map(cp => apiPatchContainer(inq_id, cp.cont_id, cp.data)),
+    ]
+    Promise.all(calls)
+      .then(() => { refreshData(); flash(`Inquiry #${inq_id} updated`) })
+      .catch(e => flash(`Failed to save inquiry: ${(e as Error).message}`))
+  }
 
-        if (newCusts.length > 0) {
-          const names = newCusts.map((c: Customer) => c.name).join(', ')
-          flash(`New customer "${names}" added — initiate KYC process from Workspace`)
-        }
+  const handleDeleteInquiry = (inq_id: number) => {
+    apiDeleteInquiry(inq_id)
+      .then(() => {
+        setInquiries(prev => prev.filter(i => i.inq_id !== inq_id))
+        flash(`Inquiry #${inq_id} deleted`)
       })
-      .catch(() => console.warn('Refresh failed — backend unreachable'))
+      .catch(e => flash(`Failed to delete inquiry: ${(e as Error).message}`))
   }
 
   const flash = (msg: string, action?: { label: string; onClick: () => void }) => {
@@ -164,7 +280,7 @@ export default function App() {
     )
     const stamp = nowStamp()
     const newFup: Followup = {
-      id: `FUP-${405 + followups.length - SEED_FOLLOWUPS.length}`,
+      id: `FUP-${crypto.randomUUID()}`,
       inquiry_id: target?.id,
       customer_name: customerName,
       note: note || (completionFlag ? 'Completed' : 'Follow-up logged'),
@@ -178,8 +294,10 @@ export default function App() {
       customer_name: customerName,
       note: newFup.note,
       completion_flag: completionFlag,
-      employee_id: employeeId,
-    }).catch(() => console.warn('API: create followup failed'))
+      employee_id: 1,
+    }).then(created => {
+      setFollowups(prev => prev.map(f => f.id === newFup.id ? created : f))
+    }).catch(err => console.error('Create followup failed:', err))
 
     if (completionFlag && target) {
       setInquiries(prev =>
@@ -203,22 +321,21 @@ export default function App() {
     addFollowup(target.customer_name, 'Marked complete from list', true, target.employee_id)
   }
 
-  // ---- Phase 5: Quote handlers ----
   // Adds a quote and auto-routes to 'Awaiting Approval' when margin is under
   // the customer's min_margin_pct floor.
   const addQuote = (q: Omit<Quote, 'id' | 'created_at' | 'status' | 'approval_reason'>): Quote => {
     const cust = customers.find(c => c.name.toLowerCase() === q.customer_name.toLowerCase())
     const needsApproval = !!cust && q.margin_pct < cust.min_margin_pct
+    const tempId = `QUO-${crypto.randomUUID()}`
     const newQ: Quote = {
       ...q,
-      id: `QUO-${502 + quotes.length - SEED_QUOTES.length}`,
+      id: tempId,
       created_at: nowStamp(),
       status: needsApproval ? 'Awaiting Approval' : 'Draft',
       approval_reason: needsApproval ? `margin ${q.margin_pct}% < min ${cust!.min_margin_pct}%` : undefined,
     }
     setQuotes(prev => [newQ, ...prev])
-    flash(needsApproval ? `Quote ${newQ.id} pending approval (${cust!.name} floor ${cust!.min_margin_pct}%)` : `Quote ${newQ.id} saved as ${newQ.status}`)
-    // Persist to backend
+    flash(needsApproval ? `Quote pending approval (${cust!.name} floor ${cust!.min_margin_pct}%)` : `Quote saved as ${newQ.status}`)
     apiCreateQuote({
       customer_name: q.customer_name,
       origin: q.origin,
@@ -228,32 +345,40 @@ export default function App() {
       created_by: q.created_by,
       inquiry_id: q.inquiry_id,
       lines: q.lines,
-    }).catch(() => console.warn('API: create quote failed'))
+    }).then(created => {
+      setQuotes(prev => prev.map(x => x.id === tempId ? created : x))
+    }).catch(err => console.error('Create quote failed:', err))
     return newQ
   }
 
   const setQuoteStatus = (id: string, status: QuoteStatus) => {
     setQuotes(prev => prev.map(q => q.id === id ? { ...q, status } : q))
-    // Persist to backend
-    apiSetQuoteStatus(id, status).catch(() => console.warn('API: set quote status failed'))
-    // Phase 7.2 — mock automated email triggers (the meeting's "automated email
-    // notifications as alternative to client login" requirement).
+    apiSetQuoteStatus(id, status).catch(err => console.error('Set quote status failed:', err))
     const q = quotes.find(x => x.id === id)
-    if (status === 'Sent' && q) flash(`Quote ${id} → Sent · Email dispatched to ${q.customer_name}`)
+    if (status === 'Sent' && q) {
+      // Advance the linked inquiry to quotation-sent stage
+      if (q.inquiry_id) {
+        setInquiries(prev => prev.map(i =>
+          i.id === q.inquiry_id ? { ...i, workflow_stage: 'quotation-sent' as WorkflowStage } : i
+        ))
+        const inqId = inquiries.find(i => i.id === q.inquiry_id)?.inq_id
+        apiAdvanceWorkflow(q.inquiry_id, 'quotation-sent', inqId)
+          .catch(() => console.warn('API: advance workflow to quotation-sent failed'))
+      }
+      flash(`Quote ${id} → Sent · Quotation shared with ${q.customer_name}`)
+    }
     else if (status === 'Approved') flash(`Quote ${id} → Approved · ready to send`)
-    else if (status === 'Confirmed' && q) flash(`Quote ${id} → Confirmed · Booking instructions emailed to ${q.customer_name}`)
+    else if (status === 'Confirmed' && q) flash(`Quote ${id} → Confirmed`)
     else flash(`Quote ${id} → ${status}`)
   }
 
-  // ---- Phase 6: Shipment handlers ----
   const recordShipmentPOD = (id: string) => {
     const s = shipments.find(x => x.id === id)
     setShipments(prev => prev.map(x =>
       x.id === id ? { ...x, status: 'Delivered', pod_received: nowStamp() } : x,
     ))
     if (s) flash(`POD recorded for ${id} · Delivery confirmation emailed to ${s.customer_name}`)
-    // Persist to backend
-    apiRecordShipmentPOD(id).catch(() => console.warn('API: record POD failed'))
+    apiRecordShipmentPOD(id).catch(err => console.error('Record POD failed:', err))
   }
 
   const advanceShipmentLeg = (shipmentId: string, legId: string) => {
@@ -275,13 +400,12 @@ export default function App() {
       else status = 'In Transit'
       return { ...s, legs, status }
     }))
-    // Persist to backend
-    apiAdvanceShipmentLeg(shipmentId, legId).catch(() => console.warn('API: advance leg failed'))
+    apiAdvanceShipmentLeg(shipmentId, legId).catch(err => console.error('Advance shipment leg failed:', err))
   }
 
   const addTask = (customerName: string, taskText: string, dueDate: string, employeeId: number) => {
     const newTask: Task = {
-      id: `TSK-${206 + tasks.length - SEED_TASKS.length}`,
+      id: `TSK-${crypto.randomUUID()}`,
       customer_name: customerName,
       task: taskText,
       status: 'pending',
@@ -290,19 +414,19 @@ export default function App() {
     }
     setTasks(prev => [newTask, ...prev])
     flash(`Task added for ${customerName}`)
-    // Persist to backend
     apiCreateTask({
       customer_name: customerName,
       task: taskText,
       due_date: dueDate,
-      employee_id: employeeId,
-    }).catch(() => console.warn('API: create task failed'))
+      employee_id: 1,
+    }).then(created => {
+      setTasks(prev => prev.map(t => t.id === newTask.id ? created : t))
+    }).catch(err => console.error('Create task failed:', err))
   }
 
   const completeTask = (id: string) => {
     setTasks(prev => prev.map(t => (t.id === id ? { ...t, status: 'completed' } : t)))
-    // Persist to backend
-    apiCompleteTask(id).catch(() => console.warn('API: complete task failed'))
+    apiCompleteTask(id).catch(err => console.error('Complete task failed:', err))
   }
 
   // ---- Workspace handlers ----
@@ -315,35 +439,35 @@ export default function App() {
     setActivityLog(prev => [newEntry, ...prev])
     apiCreateActivity({
       actor_role: entry.actor_role,
-      actor_id: entry.actor_id,
+      actor_id: 1,
       action: entry.action,
       ref_type: entry.ref_type,
       ref_id: entry.ref_id,
       customer_name: entry.customer_name,
       pushed_to: entry.pushed_to,
       notes: entry.notes,
-    }).catch(() => console.warn('API: create activity failed'))
+    }).catch(err => console.error('Create activity failed:', err))
   }
 
   const confirmBooking = (bookingId: string, vesselName: string, voyageNumber: string) => {
     setBookings(prev => prev.map(b =>
       b.id === bookingId
-        ? { ...b, status: 'Liner Confirmed' as const, vessel_name: vesselName, voyage_number: voyageNumber, confirmed_by: activeEmployeeId, confirmed_at: nowStamp() }
+        ? { ...b, status: 'Liner Confirmed' as const, vessel_name: vesselName, voyage_number: voyageNumber, confirmed_by: 1, confirmed_at: nowStamp() }
         : b
     ))
-    apiConfirmBooking(bookingId, { vessel_name: vesselName, voyage_number: voyageNumber, confirmed_by: activeEmployeeId })
-      .catch(() => console.warn('API: confirm booking failed'))
+    apiConfirmBooking(bookingId, { vessel_name: vesselName, voyage_number: voyageNumber, confirmed_by: 1 })
+      .catch(err => console.error('Confirm booking failed:', err))
     flash(`${bookingId} → Liner Confirmed`)
   }
 
   const releaseBooking = (bookingId: string, note: string) => {
     setBookings(prev => prev.map(b =>
       b.id === bookingId
-        ? { ...b, status: 'Released' as const, released_by: activeEmployeeId, released_at: nowStamp(), notes: note || b.notes }
+        ? { ...b, status: 'Released' as const, released_by: 1, released_at: nowStamp(), notes: note || b.notes }
         : b
     ))
-    apiReleaseBooking(bookingId, { note, released_by: activeEmployeeId })
-      .catch(() => console.warn('API: release booking failed'))
+    apiReleaseBooking(bookingId, { note, released_by: 1 })
+      .catch(err => console.error('Release booking failed:', err))
     flash(`${bookingId} → Released`)
   }
 
@@ -352,7 +476,7 @@ export default function App() {
       b.id === bookingId ? { ...b, procurement_notified: true } : b
     ))
     apiNotifyProcurement(bookingId)
-      .catch(() => console.warn('API: notify procurement failed'))
+      .catch(err => console.error('Notify procurement failed:', err))
     flash(`${bookingId} → Procurement acknowledged`)
   }
 
@@ -361,7 +485,7 @@ export default function App() {
       b.id === bookingId ? { ...b, si_cutoff_date: date } : b
     ))
     apiSetBookingSiCutoff(bookingId, date)
-      .catch(() => console.warn('API: set SI cutoff failed'))
+      .catch(err => console.error('Set SI cutoff failed:', err))
   }
 
   const markSiRequested = (bookingId: string) => {
@@ -369,7 +493,7 @@ export default function App() {
       b.id === bookingId ? { ...b, si_requested: true } : b
     ))
     apiMarkSiRequested(bookingId)
-      .catch(() => console.warn('API: mark SI requested failed'))
+      .catch(err => console.error('Mark SI requested failed:', err))
   }
 
   const setBookingBlCutoff = (bookingId: string, date: string) => {
@@ -377,7 +501,7 @@ export default function App() {
       b.id === bookingId ? { ...b, bl_cutoff_date: date } : b
     ))
     apiSetBookingBlCutoff(bookingId, date)
-      .catch(() => console.warn('API: set BL cutoff failed'))
+      .catch(err => console.error('Set BL cutoff failed:', err))
   }
 
   const markSiSubmitted = (bookingId: string) => {
@@ -385,7 +509,7 @@ export default function App() {
       b.id === bookingId ? { ...b, si_submitted: true } : b
     ))
     apiMarkSiSubmitted(bookingId)
-      .catch(() => console.warn('API: mark SI submitted failed'))
+      .catch(err => console.error('Mark SI submitted failed:', err))
   }
 
   const markDraftBlSent = (bookingId: string) => {
@@ -393,7 +517,7 @@ export default function App() {
       b.id === bookingId ? { ...b, draft_bl_sent: true } : b
     ))
     apiMarkDraftBlSent(bookingId)
-      .catch(() => console.warn('API: mark draft BL sent failed'))
+      .catch(err => console.error('Mark draft BL sent failed:', err))
   }
 
   const setBlStatus = (bookingId: string, status: 'pending' | 'approved' | 'changes-requested') => {
@@ -401,7 +525,7 @@ export default function App() {
       b.id === bookingId ? { ...b, bl_status: status } : b
     ))
     apiSetBlStatus(bookingId, status)
-      .catch(() => console.warn('API: set BL status failed'))
+      .catch(err => console.error('Set BL status failed:', err))
   }
 
   const recordMasterBl = (bookingId: string, data: { master_bl_number: string; shipper: string; consignee: string }) => {
@@ -409,7 +533,7 @@ export default function App() {
       b.id === bookingId ? { ...b, master_bl_number: data.master_bl_number, master_bl_shipper: data.shipper, master_bl_consignee: data.consignee, master_bl_recorded: true } : b
     ))
     apiRecordMasterBl(bookingId, data)
-      .catch(() => console.warn('API: record master BL failed'))
+      .catch(err => console.error('Record master BL failed:', err))
   }
 
   const createHouseBl = (bookingId: string, data: { house_bl_number: string; shipper: string; consignee: string }) => {
@@ -417,7 +541,7 @@ export default function App() {
       b.id === bookingId ? { ...b, house_bl_number: data.house_bl_number, house_bl_shipper: data.shipper, house_bl_consignee: data.consignee, house_bl_created: true } : b
     ))
     apiCreateHouseBl(bookingId, data)
-      .catch(() => console.warn('API: create house BL failed'))
+      .catch(err => console.error('Create house BL failed:', err))
   }
 
   const createBooking = (payload: {
@@ -425,7 +549,7 @@ export default function App() {
     container_type: string; quantity: number; origin: string; destination: string;
     is_urgent: boolean; booked_by: number; notes: string; delivery_type?: 'port-to-port' | 'door-to-door';
   }) => {
-    const newId = `BKG-${900 + bookings.length + 1}`
+    const newId = `BKG-${crypto.randomUUID()}`
     const stamp = nowStamp()
     const newBooking: Booking = {
       id: newId,
@@ -451,47 +575,105 @@ export default function App() {
       delivery_type: payload.delivery_type,
     }
     setBookings(prev => [newBooking, ...prev])
-    apiCreateBooking(payload).catch(() => console.warn('API: create booking failed'))
-    flash(`${newId} → Booking created for ${payload.customer_name}`)
+    apiCreateBooking(payload).then(created => {
+      setBookings(prev => prev.map(b => b.id === newId ? created : b))
+    }).catch(err => console.error('Create booking failed:', err))
+    flash(`Booking created for ${payload.customer_name}`)
     return newId
   }
 
   const addInquiry = (data: Omit<Inquiry, 'id' | 'created_at' | 'status' | 'completed_at' | 'followup_note' | 'inquiry_text'>): Inquiry => {
+    const tempId = `INQ-${crypto.randomUUID()}`
     const stamp = nowStamp()
-    const newInq: Inquiry = {
+    const tempInq: Inquiry = {
       ...data,
-      id: `INQ-${305 + inquiries.length - SEED_INQUIRIES.length}`,
+      id: tempId,
       inquiry_text: data.request,
       status: 'pending',
       created_at: stamp,
       workflow_stage: 'inquiry-received',
       recorded_by: activeEmployeeId,
     }
-    setInquiries(prev => [newInq, ...prev])
-    apiCreateInquiry({
-      customer_name: data.customer_name,
-      request: data.request,
-      origin: data.origin,
-      destination: data.destination,
-      delivery_type: data.delivery_type,
-      channel: data.channel,
-      sbu: data.sbu,
-      employee_id: data.employee_id,
-      priority: data.priority,
-      commodity_type: data.commodity_type,
-      container_type: data.container_type,
-      container_qty: data.container_qty,
-      special_equipment: data.special_equipment,
-      cargo_weight: data.cargo_weight,
-      is_fcl: data.is_fcl,
-      remark: data.remark,
-      contact_person: data.contact_person,
-      contact_channel_id: data.contact_channel_id,
-      containers: data.containers,
+    setInquiries(prev => [tempInq, ...prev])
+    // Route to the correct create endpoint based on client / contact identity.
+    const sharedFields = {
+      origin:           data.origin,
+      destination:      data.destination,
+      delivery_type:    data.delivery_type,
+      sbu:              data.sbu,
+      priority:         data.priority,
+      incoterm:         data.incoterm,
+      cargo_ready_date: data.cargo_ready_date,
+      preferred_rate:   data.preferred_rate,
+      remark:           data.remark,
       preferred_liners: data.preferred_liners,
-    }).catch(() => console.warn('API: create inquiry failed'))
-    flash(`Inquiry ${newInq.id} created for ${data.customer_name}`)
-    return newInq
+      containers:       data.containers,
+    }
+    const apiCall = (data.cli_id && data.cpid)
+      // Case 3 — existing client + existing contact
+      ? apiCreateInquiryOldOld({ cli_id: data.cli_id, cp_id: data.cpid, ...sharedFields })
+      : data.cli_id
+        // Case 2 — existing client + new contact
+        ? apiCreateInquiryOldNew({
+            cli_id:              data.cli_id,
+            channel:             data.channel,
+            contact_person:      data.contact_person,
+            contact_designation: data.contact_designation,
+            contact_channel_id:  data.contact_channel_id,
+            ...sharedFields,
+          })
+        // Case 1 — new client + new contact (original path)
+        : apiCreateInquiry({
+            customer_name:       data.customer_name,
+            request:             data.request,
+            channel:             data.channel,
+            employee_id:         data.employee_id,
+            commodity_type:      data.commodity_type,
+            container_type:      data.container_type,
+            container_qty:       data.container_qty,
+            cargo_weight:        data.cargo_weight,
+            is_fcl:              data.is_fcl,
+            contact_person:      data.contact_person,
+            contact_designation: data.contact_designation,
+            contact_channel_id:  data.contact_channel_id,
+            ...sharedFields,
+          })
+    apiCall.then(created => {
+      // Replace temp UUID with backend IDs; keep all optimistic fields intact
+      setInquiries(prev => prev.map(i =>
+        i.id === tempId
+          ? {
+              ...i,
+              id:       String(created.inq_id),
+              inq_id:   created.inq_id,
+              cli_id:   created.cli_id,
+              cpid:     created.cpid,
+              com_ids:  created.com_ids,
+              cont_ids: created.cont_ids,
+            }
+          : i
+      ))
+      apiCreateWorkflowEntry(created.inq_id).catch(err => console.error('Create workflow entry failed:', err))
+      // If this was a new client (Case 1), add them to the customers list so KYC tab picks them up
+      if (!data.cli_id && created.cli_id) {
+        setCustomers(prev => {
+          if (prev.some(c => c.name.toLowerCase() === data.customer_name.toLowerCase())) return prev
+          return [...prev, {
+            id:            String(created.cli_id),
+            name:          data.customer_name,
+            location:      '',
+            tier:          'Regular'     as const,
+            payment_terms: 'Pay Upfront' as const,
+            blacklisted:   false,
+            credit_hold:   false,
+            min_margin_pct: 0,
+            kyc_status:    'not_started' as const,
+          }]
+        })
+      }
+    }).catch(err => console.error('Create inquiry failed:', err))
+    flash(`Inquiry created for ${data.customer_name}`)  // optimistic flash
+    return tempInq
   }
 
   const updateCustomer = (customerName: string, patch: Partial<Omit<Customer, 'id'>>) => {
@@ -499,7 +681,7 @@ export default function App() {
       c.name === customerName ? { ...c, ...patch } : c
     ))
     apiUpdateCustomer(customerName, patch)
-      .catch(() => console.warn('API: update customer failed'))
+      .catch(err => console.error('Update customer failed:', err))
   }
 
   const updateCustomerKyc = (customerName: string, kycStatus: 'not_started' | 'pending_customer' | 'approved') => {
@@ -507,7 +689,7 @@ export default function App() {
       c.name === customerName ? { ...c, kyc_status: kycStatus } : c
     ))
     apiUpdateCustomer(customerName, { kyc_status: kycStatus })
-      .catch(() => console.warn('API: update customer KYC failed'))
+      .catch(err => console.error('Update customer KYC failed:', err))
   }
 
   const autoAdvanceForCustomer = (customerName: string, targetStage: WorkflowStage) => {
@@ -516,7 +698,7 @@ export default function App() {
       if (inq.status === 'completed') return inq
       const stuckStages: WorkflowStage[] = ['inquiry-received', 'customer-check', 'kyc-pending', 'kyc-verification']
       if (inq.workflow_stage && stuckStages.includes(inq.workflow_stage)) {
-        apiAdvanceWorkflow(inq.id, targetStage).catch(() => console.warn('API: auto-advance workflow failed'))
+        apiAdvanceWorkflow(inq.id, targetStage, inq.inq_id).catch(err => console.error('Auto-advance workflow failed:', err))
         return { ...inq, workflow_stage: targetStage }
       }
       return inq
@@ -578,6 +760,8 @@ export default function App() {
             onUpdateCustomer={updateCustomer}
             onAddFollowup={addFollowup}
             onFlash={flash}
+            onPatchInquiry={handlePatchInquiry}
+            onDeleteInquiry={handleDeleteInquiry}
           />
         )
       case 'rate-list':
@@ -605,6 +789,8 @@ export default function App() {
             bookings={bookings}
             quotes={quotes}
             customers={customers}
+            clientList={clientList}
+            kycStatusMap={kycStatusMap}
             activityLog={activityLog}
             onGoTo={navigateTo}
             onAdvanceWorkflow={advanceWorkflow}
@@ -626,12 +812,14 @@ export default function App() {
             onLogActivity={logActivity}
             onFlash={flash}
             onStartRateCheck={startRateCheck}
+            initialStep={workspaceInitialStep ?? undefined}
           />
         )
       case 'new-inquiry':
         return (
           <NewInquiry
-            customers={customers}
+            clientList={clientList}
+            contactPersonList={contactPersonList}
             activeEmployee={activeEmployee}
             onCreateInquiry={addInquiry}
             onFlash={flash}
@@ -656,15 +844,40 @@ export default function App() {
             onLogActivity={logActivity}
             onFlash={flash}
             onGoBack={() => { setRateCheckContext(null); navigateTo('workspace') }}
+            onGoToQuotations={() => {
+              const variant = rateCheckContext?.variant
+              setRateCheckContext(null)
+              // After rate-check, always go to Workspace.
+              // For Sales/CS doing their own check, jump straight to the Prepare Quotation step.
+              if (variant !== 'procurement') {
+                setWorkspaceInitialStep('sales-prep-quote')
+              }
+              navigateTo('workspace')
+            }}
           />
         ) : null
     }
   }
 
-  if (!backendReady) {
+  if (initState === 'loading') {
     return (
       <div className="db-app" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' }}>
-        <span style={{ color: '#94a3b8', fontSize: 14 }}>Loading dashboard...</span>
+        <span style={{ color: '#94a3b8', fontSize: 14 }}>Connecting to backend...</span>
+      </div>
+    )
+  }
+
+  if (initState === 'error') {
+    return (
+      <div className="db-app" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', gap: 12 }}>
+        <span style={{ color: '#dc2626', fontSize: 15, fontWeight: 600 }}>Unable to connect to the backend</span>
+        <span style={{ color: '#94a3b8', fontSize: 13 }}>Please ensure the API server is running and refresh the page.</span>
+        <button
+          style={{ marginTop: 8, padding: '8px 20px', borderRadius: 8, background: '#2c2c82', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}
+          onClick={() => setInitState('ready')}
+        >
+          Retry
+        </button>
       </div>
     )
   }
@@ -688,7 +901,7 @@ export default function App() {
 
         <div className="db-body">
           <Sidebar current={currentPage} onNav={navigateTo} activeRole={activeRole} />
-          <main className="db-main" style={{ padding: '24px 28px' }}>
+          <main className={`db-main ${currentPage === 'workspace' ? 'db-main-flush' : ''}`}>
             {renderPage()}
           </main>
         </div>

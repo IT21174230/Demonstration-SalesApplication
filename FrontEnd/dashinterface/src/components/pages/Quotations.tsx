@@ -1,12 +1,11 @@
 import { useMemo, useState } from 'react'
-import { FileText, Plus, ShieldCheck, X, Send, Trash2, CheckCircle2, Loader2, Lock } from 'lucide-react'
+import { FileText, Plus, ShieldCheck, X, Copy, ClipboardCheck, Trash2, CheckCircle2, Lock } from 'lucide-react'
 import {
   EMPLOYEES, findCustomer,
   type Quote, type QuoteLine, type QuoteStatus, type QuoteType, type RateType,
   type Customer, type Inquiry,
-} from '../../mockData'
+} from '../../types'
 import { useRole } from '../../RoleContext'
-import { apiSendQuotation } from '../../api'
 
 interface QuotationsProps {
   quotes: Quote[]
@@ -47,6 +46,8 @@ export default function Quotations({
   const [statusFilter, setStatusFilter] = useState<QuoteStatus | 'all'>('all')
   const [customerFilter, setCustomerFilter] = useState('')
   const [showBuilder, setShowBuilder] = useState(!!preFillCustomer)
+  // Tracks which inquiry triggered the builder (for pre-filling)
+  const [builderInquiry, setBuilderInquiry] = useState<Inquiry | null>(null)
   const [sendTarget, setSendTarget] = useState<Quote | null>(null)
 
   const filtered = useMemo(() => {
@@ -62,6 +63,12 @@ export default function Quotations({
     for (const q of quotes) map[q.status] = (map[q.status] ?? 0) + 1
     return map
   }, [quotes])
+
+  // Inquiries whose rates have been checked and are waiting for a quotation to be drafted
+  const readyToQuote = useMemo(() =>
+    inquiries.filter(i => i.workflow_stage === 'quotation-prep'),
+    [inquiries]
+  )
 
   const empName = (id: number) => EMPLOYEES.find(e => e.id === id)?.name ?? `EMP-${id}`
 
@@ -99,6 +106,67 @@ export default function Quotations({
           </button>
         </div>
       </div>
+
+      {/* Ready to Quote — inquiries at quotation-prep stage */}
+      {readyToQuote.length > 0 && (
+        <div className="db-chart-card" style={{ marginBottom: 18 }}>
+          <div className="db-chart-head">
+            <div>
+              <div className="db-chart-title">Ready to Quote</div>
+              <div className="db-chart-sub">{readyToQuote.length} {readyToQuote.length === 1 ? 'inquiry' : 'inquiries'} awaiting quotation</div>
+            </div>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
+            {readyToQuote.map(inq => {
+              const cust = findCustomer(inq.customer_name, customers)
+              const cont = inq.containers?.[0]
+              return (
+                <div
+                  key={inq.id}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
+                    padding: '12px 14px',
+                    background: 'rgba(15,143,168,0.03)',
+                    border: '1px solid rgba(15,143,168,0.15)',
+                    borderRadius: 8,
+                  }}
+                >
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3, flexWrap: 'wrap' }}>
+                      <span style={{ fontFamily: 'monospace', fontSize: 11, color: 'var(--text-muted)' }}>{inq.id}</span>
+                      <span style={{ fontWeight: 700, fontSize: 13, color: 'var(--text)' }}>{inq.customer_name}</span>
+                      {cust && <span className="db-badge accent">{cust.tier}</span>}
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                      {inq.origin} → {inq.destination}
+                      {cont && <> · {cont.quantity}× {cont.containerType}</>}
+                      {inq.cargo_ready_date && <> · CRD: {inq.cargo_ready_date}</>}
+                    </div>
+                  </div>
+                  <button
+                    className="db-btn primary"
+                    disabled={!canCreate}
+                    onClick={() => {
+                      if (!canCreate) return
+                      setBuilderInquiry(inq)
+                      setShowBuilder(true)
+                    }}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 5, fontSize: 12,
+                      whiteSpace: 'nowrap',
+                      opacity: canCreate ? 1 : 0.4,
+                      cursor: canCreate ? 'pointer' : 'not-allowed',
+                    }}
+                    title={canCreate ? 'Generate quotation for this inquiry' : 'Restricted — requires Sales role'}
+                  >
+                    <FileText size={11} /> Generate Quote
+                  </button>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Filters */}
       <div className="db-chart-card" style={{ marginBottom: 18 }}>
@@ -241,10 +309,10 @@ export default function Quotations({
                       className="db-btn primary"
                       onClick={() => canSendQuote && handleSendClick(q)}
                       disabled={!canSendQuote}
-                      title={canSendQuote ? 'Send quotation to customer' : 'Restricted — requires CS or Sales role'}
+                      title={canSendQuote ? 'Copy quotation text and mark as sent' : 'Restricted — requires CS or Sales role'}
                       style={{ display: 'flex', alignItems: 'center', gap: 4, opacity: canSendQuote ? 1 : 0.4, cursor: canSendQuote ? 'pointer' : 'not-allowed' }}
                     >
-                      {canSendQuote ? <Send size={11} /> : <Lock size={9} />} Send to Customer
+                      {canSendQuote ? <Copy size={11} /> : <Lock size={9} />} Copy & Send
                     </button>
                   )}
                   {q.status === 'Sent' && (
@@ -284,19 +352,22 @@ export default function Quotations({
         <QuoteBuilderModal
           customers={customers}
           inquiries={inquiries}
-          preFillCustomer={preFillCustomer}
-          onCancel={() => { setShowBuilder(false); onPreFillConsumed?.() }}
+          preFillCustomer={builderInquiry?.customer_name ?? preFillCustomer}
+          preFillInquiry={builderInquiry ?? undefined}
+          onCancel={() => { setShowBuilder(false); setBuilderInquiry(null); onPreFillConsumed?.() }}
           onSave={data => {
             onAddQuote(data)
             setShowBuilder(false)
+            setBuilderInquiry(null)
             onPreFillConsumed?.()
           }}
         />
       )}
 
       {sendTarget && (
-        <SendQuotationModal
+        <CopyQuotationModal
           quote={sendTarget}
+          customers={customers}
           onCancel={() => setSendTarget(null)}
           onSent={handleSendComplete}
           onFlash={onFlash}
@@ -306,117 +377,130 @@ export default function Quotations({
   )
 }
 
-// ============= Send Quotation Modal =============
-function SendQuotationModal({
-  quote, onCancel, onSent, onFlash,
+// ============= Copy Quotation Modal =============
+function CopyQuotationModal({
+  quote, customers, onCancel, onSent, onFlash,
 }: {
   quote: Quote
+  customers: Customer[]
   onCancel: () => void
   onSent: (quoteId: string) => void
   onFlash?: (msg: string) => void
 }) {
-  const [recipientEmail, setRecipientEmail] = useState('')
-  const [quotationContent, setQuotationContent] = useState('')
-  const [sending, setSending] = useState(false)
+  const [copied, setCopied] = useState(false)
 
-  const canSend = recipientEmail.trim() && recipientEmail.includes('@') && quotationContent.trim()
+  const cost = quote.lines.reduce((s, l) => s + l.base_rate_usd + l.destination_charges_usd, 0)
+  const sell = Math.round(cost * (1 + quote.margin_pct / 100))
+  const cust = customers.find(c => c.name.toLowerCase() === quote.customer_name.toLowerCase())
+  const today = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
 
-  const handleSend = async () => {
-    if (!canSend || sending) return
-    setSending(true)
-    try {
-      const res = await apiSendQuotation({
-        customer_name: quote.customer_name,
-        recipient_email: recipientEmail.trim(),
-        quote_id: quote.id,
-        quotation_content: quotationContent.trim(),
-      })
-      if (res.success) {
-        onSent(quote.id)
-      } else {
-        onFlash?.(`Failed to send quotation: ${res.message}`)
-      }
-    } catch {
-      onFlash?.('Failed to send quotation — check backend connection')
-    } finally {
-      setSending(false)
-    }
+  const quotationText = [
+    'FREIGHT QUOTATION',
+    '',
+    `Quote No:  ${quote.id}`,
+    `Date:      ${today}`,
+    `To:        ${quote.customer_name}${cust ? ` (${cust.tier})` : ''}`,
+    `Service:   ${quote.quote_type}`,
+    ...(quote.inquiry_id ? [`Reference: ${quote.inquiry_id}`] : []),
+    '',
+    `Route: ${quote.origin} → ${quote.destination}`,
+    '',
+    '─────────────────────────────────────────────',
+    'RATE OPTIONS',
+    '─────────────────────────────────────────────',
+    ...quote.lines.flatMap((l, i) => [
+      '',
+      `Option ${i + 1}  —  ${l.shipping_line}`,
+      `  Rate Type:            ${l.rate_type}`,
+      `  Ocean Freight:        USD ${l.base_rate_usd.toLocaleString()}`,
+      `  Destination Charges:  USD ${l.destination_charges_usd.toLocaleString()}`,
+      `  Transit Time:         ${l.transit_days} days`,
+      `  Free Time:            ${l.free_time_days} days`,
+      `  Routing:              ${l.transshipment_points}`,
+    ]),
+    '',
+    '─────────────────────────────────────────────',
+    `QUOTED TOTAL:  USD ${sell.toLocaleString()}  (incl. ${quote.margin_pct}% margin)`,
+    '─────────────────────────────────────────────',
+    '',
+    'Terms & Conditions:',
+    '  • Rates valid for 5 working days from date of issue.',
+    '  • Subject to space and equipment availability at time of booking.',
+    '  • Subject to carrier surcharges in effect at time of shipment.',
+    '  • All charges in USD unless otherwise stated.',
+    '',
+    'CLSynergy — Commercial Team',
+  ].join('\n')
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(quotationText).then(() => {
+      setCopied(true)
+      onFlash?.('Quotation copied to clipboard')
+      setTimeout(() => setCopied(false), 3000)
+    }).catch(() => onFlash?.('Could not access clipboard — please copy manually'))
   }
 
   return (
     <div className="lt-modal-backdrop" onClick={onCancel}>
       <div
         className="lt-modal"
-        style={{ width: 640, maxWidth: '95%' }}
+        style={{ width: 660, maxWidth: '95%' }}
         onClick={e => e.stopPropagation()}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
           <div>
             <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--text)', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Send size={16} /> Send Quotation
+              <Copy size={16} /> Copy Quotation
             </div>
             <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
-              Send {quote.id} to {quote.customer_name} via email
+              Copy the quotation below, then share it with {quote.customer_name} via your preferred channel
             </div>
           </div>
           <button className="lt-icon-btn" onClick={onCancel}><X size={14} /></button>
         </div>
 
-        {/* Quote summary */}
+        {/* Quote summary pill */}
         <div style={{
-          padding: '10px 14px', marginBottom: 14,
-          background: 'rgba(79,70,229,0.03)', border: '1px solid rgba(79,70,229,0.12)',
+          padding: '8px 12px', marginBottom: 10,
+          background: 'rgba(15,143,168,0.03)', border: '1px solid rgba(15,143,168,0.12)',
           borderRadius: 8, fontSize: 12, color: 'var(--text-secondary)',
         }}>
           <span style={{ fontFamily: 'monospace', fontSize: 11 }}>{quote.id}</span>
           {' · '}{quote.origin} → {quote.destination}
           {' · '}{quote.quote_type}
           {' · '}{quote.lines.length} option{quote.lines.length === 1 ? '' : 's'}
+          {' · '}<strong style={{ color: 'var(--text)' }}>USD {sell.toLocaleString()}</strong>
         </div>
 
-        <div style={{ marginBottom: 12 }}>
-          <label className="lt-label">Recipient Email</label>
-          <input
-            type="email"
-            value={recipientEmail}
-            onChange={e => setRecipientEmail(e.target.value)}
-            placeholder="customer@example.com"
-            className="lt-input"
-            style={{ width: '100%' }}
-          />
-        </div>
-
-        <div style={{ marginBottom: 14 }}>
-          <label className="lt-label">Quotation Content</label>
-          <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 6 }}>
-            Paste the quotation document content below. This will be included in the email body.
-          </div>
-          <textarea
-            value={quotationContent}
-            onChange={e => setQuotationContent(e.target.value)}
-            placeholder="Paste your quotation content here..."
-            className="lt-input"
-            style={{
-              width: '100%', minHeight: 180, resize: 'vertical',
-              fontFamily: 'var(--font)', fontSize: 12, lineHeight: 1.6,
-            }}
-          />
-        </div>
+        {/* Generated quotation text */}
+        <textarea
+          readOnly
+          value={quotationText}
+          style={{
+            width: '100%', minHeight: 280, resize: 'vertical',
+            fontFamily: 'monospace', fontSize: 11, lineHeight: 1.6,
+            padding: '10px 12px', border: '1px solid var(--border)',
+            borderRadius: 8, background: 'rgba(0,0,0,0.02)', color: 'var(--text)',
+            boxSizing: 'border-box', marginBottom: 12,
+          }}
+        />
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
           <button className="db-btn secondary" onClick={onCancel}>Cancel</button>
           <button
-            className="db-btn primary"
-            onClick={handleSend}
-            disabled={!canSend || sending}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 6,
-              opacity: canSend && !sending ? 1 : 0.5,
-              cursor: canSend && !sending ? 'pointer' : 'not-allowed',
-            }}
+            className="db-btn secondary"
+            onClick={handleCopy}
+            style={{ display: 'flex', alignItems: 'center', gap: 6 }}
           >
-            {sending ? <Loader2 size={14} className="spin" /> : <Send size={14} />}
-            {sending ? 'Sending...' : 'Send Quotation'}
+            {copied ? <ClipboardCheck size={14} /> : <Copy size={14} />}
+            {copied ? 'Copied!' : 'Copy to Clipboard'}
+          </button>
+          <button
+            className="db-btn primary"
+            onClick={() => onSent(quote.id)}
+            style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+          >
+            <CheckCircle2 size={14} /> Mark as Sent
           </button>
         </div>
       </div>
@@ -426,29 +510,40 @@ function SendQuotationModal({
 
 // ============= Quote Builder Modal =============
 function QuoteBuilderModal({
-  customers, inquiries, preFillCustomer, onCancel, onSave,
+  customers, inquiries, preFillCustomer, preFillInquiry, onCancel, onSave,
 }: {
   customers: Customer[]
   inquiries: Inquiry[]
   preFillCustomer?: string
+  preFillInquiry?: Inquiry
   onCancel: () => void
   onSave: (q: Omit<Quote, 'id' | 'created_at' | 'status' | 'approval_reason'>) => void
 }) {
-  const [customerName, setCustomerName] = useState(preFillCustomer ?? '')
+  const [customerName, setCustomerName] = useState(preFillInquiry?.customer_name ?? preFillCustomer ?? '')
   const cust = findCustomer(customerName, customers)
-  // Try to pre-fill route from the customer's most recent pending inquiry.
+  // Try to pre-fill route from the customer's most recent pending inquiry (fallback when no direct inquiry is provided).
   const linkedInquiry = useMemo(() => {
+    if (preFillInquiry) return preFillInquiry
     if (!customerName) return undefined
     return inquiries.find(i => i.customer_name.toLowerCase() === customerName.toLowerCase() && i.status === 'pending')
-  }, [customerName, inquiries])
+  }, [customerName, inquiries, preFillInquiry])
 
-  const [origin, setOrigin] = useState(linkedInquiry?.origin ?? cust?.location.split(',')[0].trim() ?? 'Colombo')
-  const [destination, setDestination] = useState(linkedInquiry?.destination ?? '')
+  const [origin, setOrigin] = useState(preFillInquiry?.origin ?? linkedInquiry?.origin ?? cust?.location.split(',')[0].trim() ?? 'Colombo')
+  const [destination, setDestination] = useState(preFillInquiry?.destination ?? linkedInquiry?.destination ?? '')
   const [quoteType, setQuoteType] = useState<QuoteType>('FCA')
   const [margin, setMargin] = useState<number>(cust?.min_margin_pct ?? 7)
   const [createdBy, setCreatedBy] = useState<number>(1)
   const [lines, setLines] = useState<QuoteLine[]>([
-    { id: 'tmp-1', shipping_line: 'Maersk', rate_type: 'Contractual', base_rate_usd: 0, transit_days: 7, free_time_days: 14, transshipment_points: 'Direct', destination_charges_usd: 100 },
+    {
+      id: 'tmp-1',
+      shipping_line: preFillInquiry?.preferred_liners?.[0] ?? 'Maersk',
+      rate_type: 'Contractual',
+      base_rate_usd: preFillInquiry?.preferred_rate ?? 0,
+      transit_days: 7,
+      free_time_days: 14,
+      transshipment_points: 'Direct',
+      destination_charges_usd: 100,
+    },
   ])
 
   const addLine = () => {
@@ -538,7 +633,7 @@ function QuoteBuilderModal({
         </div>
 
         {/* Big Schedule stub hint (Phase 7.1) */}
-        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8, padding: '6px 10px', background: 'rgba(79,70,229,0.03)', border: '1px solid rgba(79,70,229,0.12)', borderRadius: 6 }}>
+        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8, padding: '6px 10px', background: 'rgba(15,143,168,0.03)', border: '1px solid rgba(15,143,168,0.12)', borderRadius: 6 }}>
           📡 Big Schedule lines available for this route: {BIG_SCHEDULE_LINES.join(', ')} (stub data — real integration in Phase 2)
         </div>
 
@@ -615,7 +710,7 @@ function QuoteBuilderModal({
               {EMPLOYEES.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
             </select>
           </div>
-          <div style={{ background: 'rgba(79,70,229,0.03)', border: '1px solid rgba(79,70,229,0.12)', borderRadius: 8, padding: '10px 14px' }}>
+          <div style={{ background: 'rgba(15,143,168,0.03)', border: '1px solid rgba(15,143,168,0.12)', borderRadius: 8, padding: '10px 14px' }}>
             <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Quote total</div>
             <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--text)' }}>${sell.toLocaleString()}</div>
             <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>cost ${cost.toLocaleString()} + {margin}%</div>
@@ -636,7 +731,7 @@ function QuoteBuilderModal({
             onClick={() => {
               if (!canSave) return
               onSave({
-                inquiry_id: linkedInquiry?.id,
+                inquiry_id: preFillInquiry?.id ?? linkedInquiry?.id,
                 customer_name: customerName.trim(),
                 origin: origin.trim(),
                 destination: destination.trim(),

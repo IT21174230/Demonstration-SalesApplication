@@ -3,7 +3,7 @@ import { Ship, MapPin, Anchor, CheckCircle2, ChevronRight, Plane, Package, Clock
 import {
   EMPLOYEES,
   type Shipment, type ShipmentStatus, type ShipmentLeg, type Booking, type BookingStatus,
-} from '../../mockData'
+} from '../../types'
 import { useRole } from '../../RoleContext'
 
 interface ShipmentsProps {
@@ -73,7 +73,7 @@ export default function Shipments({ shipments, bookings, onAdvanceLeg, onRecordP
               Track every confirmed booking from origin to POD · {shipments.length} active · {counts['Delivered'] ?? 0} delivered · {counts['At Transshipment'] ?? 0} at transshipment
             </div>
           </div>
-          <div style={{ fontSize: 11, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', background: 'rgba(79,70,229,0.03)', border: '1px solid rgba(79,70,229,0.12)', borderRadius: 8 }}>
+          <div style={{ fontSize: 11, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', background: 'rgba(15,143,168,0.03)', border: '1px solid rgba(15,143,168,0.12)', borderRadius: 8 }}>
             🛰️ Mock Inttra / Freightify integration · live tracking stubbed
           </div>
         </div>
@@ -179,7 +179,7 @@ export default function Shipments({ shipments, bookings, onAdvanceLeg, onRecordP
                             fontWeight: active ? 700 : 500,
                             color: done ? '#fff' : 'var(--text-muted)',
                             background: done
-                              ? (active ? 'var(--accent)' : 'rgba(79,70,229,0.5)')
+                              ? (active ? 'var(--accent)' : 'rgba(15,143,168,0.5)')
                               : 'rgba(0,0,0,0.04)',
                             textAlign: 'center',
                             whiteSpace: 'nowrap',
