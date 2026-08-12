@@ -7,7 +7,7 @@ import {
   type PortRecord, type LinerRecord, type TradeLaneRecord, type EmployeeRecord,
 } from '../../types'
 import { useRole } from '../../RoleContext'
-import { apiFetchAllRates, apiGetPorts, apiGetLiners, apiGetTradeLanes, apiGetEmployeesDb, apiCreateVesselRate, apiCreateFakRate, apiCreateSpecialRate, apiCreateRateRequest, apiPatchRateRequest } from '../../api'
+import { apiFetchAllRates, apiGetPorts, apiGetLiners, apiGetTradeLanes, apiGetEmployeesDb, apiCreateVesselRate, apiCreateFakRate, apiCreateSpecialRate, apiCreateRateRequest, apiPatchRateRequest, apiAddRateRequestOption } from '../../api'
 
 type ManualRateTab = 'vessel-spot' | 'fak' | 'special'
 const MR_TAB_LABELS: Record<ManualRateTab, string> = { 'vessel-spot': 'Spot Rate', fak: 'FAK', special: 'Special Rate' }
@@ -65,7 +65,7 @@ interface RateCheckProps {
   container?: ContainerLine
   customers: Customer[]
   variant: 'procurement' | 'cs-sales'
-  onAdvanceWorkflow: (inquiryId: string, nextStage: WorkflowStage) => void
+  onAdvanceWorkflow: (inquiryId: string, nextStage: WorkflowStage, skipApi?: boolean) => void
   onLogActivity: (entry: Omit<ActivityEntry, 'id' | 'timestamp'>) => void
   onFlash: (msg: string, action?: { label: string; onClick: () => void }) => void
   onGoBack: () => void
@@ -240,6 +240,7 @@ export default function RateCheck({
   useEffect(() => {
     const remark = `${isProcurement ? 'Procurement' : 'CS/Sales'} rate check initiated for ${inquiry.id}: ${inquiry.origin} → ${dest ?? ''}, ${containerLabel}. Customer: ${inquiry.customer_name}.`
     apiCreateRateRequest({
+      inq_id: inquiry.inq_id,
       emp_id_requested: activeEmployee.id,
       is_given: false,
       remark,
@@ -459,10 +460,28 @@ export default function RateCheck({
       apiPatchRateRequest(rateRequestId, { is_given: true, remark: briefRemark })
         .catch(err => console.error('[RateCheck] rate request patch failed:', err))
     } else {
-      apiCreateRateRequest({ emp_id_requested: activeEmployee.id, is_given: true, remark: briefRemark })
+      apiCreateRateRequest({ inq_id: inquiry.inq_id, emp_id_requested: activeEmployee.id, is_given: true, remark: briefRemark })
         .catch(err => console.error('[RateCheck] rate request create (fallback) failed:', err))
     }
 
+    // Create rate request options for each DB-selected rate.
+    // DB rate IDs follow "type:numericId" (e.g. "vessel:123").
+    // Backend auto-advances workflow to quotation_prep when an option is added.
+    if (rateRequestId && hasDbSelections) {
+      const selectedRates = (isProcurement ? dbRates : visibleRates).filter(r => selectedIds.has(r.id))
+      for (const rate of selectedRates) {
+        const colonIdx = rate.id.indexOf(':')
+        if (colonIdx === -1) continue
+        const rateType = rate.id.slice(0, colonIdx)
+        const rateId = Number(rate.id.slice(colonIdx + 1))
+        if (!isNaN(rateId)) {
+          apiAddRateRequestOption(rateRequestId, { request_id: rateRequestId, rate_type: rateType, rate_id: rateId })
+            .catch(err => console.error('[RateCheck] add rate request option failed:', err))
+        }
+      }
+    }
+
+    // Advance local state (backend may already have auto-advanced via options above — idempotent)
     onAdvanceWorkflow(inquiry.id, 'quotation-prep')
 
     const notesParts = [`Customer: ${inquiry.customer_name} (${custData?.tier ?? 'N/A'})`, `Route: ${inquiry.origin} → ${dest}`]

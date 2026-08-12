@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react'
+import React, { useState, useMemo, useEffect } from 'react'
 import {
   Inbox, ChevronRight, AlertTriangle, Check, Paperclip, ClipboardPaste,
   FileText, Ship, ShieldCheck, X, User, Mail, Loader2,
@@ -13,7 +13,7 @@ import {
   type ContainerLine, type LinerRecord, type ClientRecord,
 } from '../../types'
 import { useRole } from '../../RoleContext'
-import { apiSendQuotation, apiGetLiners, apiCreateKycRequest } from '../../api'
+import { apiSendQuotation, apiGetLiners, apiCreateKycRequest, apiGetClientKycStatus, apiCreateQuotation, apiMarkQuotationSent, apiRecordQuotationResponse, apiUpdateKycStage, type KycPendingClient, type KycRequestRecord } from '../../api'
 
 // ---------------------------------------------------------------------------
 // Props
@@ -25,10 +25,9 @@ interface WorkspaceProps {
   quotes: Quote[]
   customers: Customer[]
   clientList: ClientRecord[]
-  kycStatusMap: Record<number, boolean>
   activityLog: ActivityEntry[]
   onGoTo: (page: import('../../types').PageId) => void
-  onAdvanceWorkflow: (inquiryId: string, nextStage: WorkflowStage) => void
+  onAdvanceWorkflow: (inquiryId: string, nextStage: WorkflowStage, skipApi?: boolean) => void
   onConfirmBooking: (bookingId: string, vesselName: string, voyageNumber: string) => void
   onReleaseBooking: (bookingId: string, note: string) => void
   onAcknowledgeProcurement: (bookingId: string) => void
@@ -51,6 +50,11 @@ interface WorkspaceProps {
   onLogActivity: (entry: Omit<ActivityEntry, 'id' | 'timestamp'>) => void
   onFlash: (msg: string, action?: { label: string; onClick: () => void }) => void
   onStartRateCheck: (inquiry: Inquiry, container?: ContainerLine, variant?: 'procurement' | 'cs-sales') => void
+  kycPendingClients: KycPendingClient[]
+  onSetKycPendingClients: React.Dispatch<React.SetStateAction<KycPendingClient[]>>
+  kycRequests: KycRequestRecord[]
+  onSetKycRequests: React.Dispatch<React.SetStateAction<KycRequestRecord[]>>
+  onRefreshKycRequests: () => void
   initialStep?: string   // When set, Workspace opens directly on this step key (used after rate-check → Prepare Quotation)
 }
 
@@ -74,6 +78,8 @@ interface WorkspaceItem {
   sourceData: any // eslint-disable-line @typescript-eslint/no-explicit-any
   /** Lower = more urgent. Used for cutoff-based sorting (e.g. SI reminders). */
   urgencySortKey?: number
+  /** True when the client's KYC is not yet completed for this inquiry. */
+  kycIncomplete?: boolean
 }
 
 const TYPE_BADGE_CLASS: Record<ItemType, string> = {
@@ -167,13 +173,15 @@ const ROLE_STEP_MAP: Record<string, StepDef[]> = {
 // ---------------------------------------------------------------------------
 
 export default function Workspace({
-  inquiries, bookings, quotes, customers, clientList, kycStatusMap, activityLog,
+  inquiries, bookings, quotes, customers, clientList, activityLog,
   onGoTo, onAdvanceWorkflow, onConfirmBooking, onReleaseBooking,
   onAcknowledgeProcurement, onCreateBooking, onSetBookingSiCutoff, onMarkSiRequested,
   onSetBookingBlCutoff, onMarkSiSubmitted, onMarkDraftBlSent, onSetBlStatus,
   onRecordMasterBl, onCreateHouseBl,
   onSetQuoteStatus, onUpdateCustomerKyc,
   onAutoAdvanceForCustomer, onLogActivity, onFlash, onStartRateCheck,
+  kycPendingClients, onSetKycPendingClients,
+  kycRequests, onSetKycRequests, onRefreshKycRequests,
   initialStep,
 }: WorkspaceProps) {
   const { activeRole, activeEmployee } = useRole()
@@ -185,6 +193,7 @@ export default function Workspace({
   const [formNote, setFormNote] = useState('')
   const [formDecision, setFormDecision] = useState<'approve' | 'reject'>('approve')
   const [kycSending, setKycSending] = useState(false)
+  // kycPendingClients come from props (fetched in App.tsx loadAppData alongside inquiries)
   // KYC document form state (Check Documents modal — CS/Sales fill in and submit to backend)
   const [kycBrNumber, setKycBrNumber] = useState('')
   const [kycParentOrg, setKycParentOrg] = useState('')
@@ -221,6 +230,8 @@ export default function Workspace({
   const [quotationSending, setQuotationSending] = useState(false)
   // Customer response state (accept / reject)
   const [customerDecision, setCustomerDecision] = useState<'accepted' | 'rejected'>('accepted')
+  // Backend quotation ID — set in prepare-quotation, used in customer-response
+  const [lastQuotationId, setLastQuotationId] = useState<number | null>(null)
   // Booking request form state
   const [bkShippingLine, setBkShippingLine] = useState('')
   const [bkContainerType, setBkContainerType] = useState("20'GP")
@@ -280,43 +291,6 @@ export default function Workspace({
     const pending: WorkspaceItem[] = []
     const role = activeRole === 'Admin' ? null : activeRole
 
-    // --- From Customers (by kyc_status) ---
-    // CS sees customers needing KYC initiation (not_started)
-    // Finance sees customers awaiting KYC verification (pending_customer)
-    for (const cust of customers) {
-      if (cust.kyc_status === 'not_started' && (!role || role === 'CS' || role === 'Sales')) {
-        pending.push({
-          type: 'customer',
-          refId: cust.id,
-          customerName: cust.name,
-          title: `Check KYC documents for ${cust.name}`,
-          subtitle: `${cust.tier} · ${cust.location} · KYC not yet initiated`,
-          urgentFlag: false,
-          createdAt: '',
-          previousContext: findContext(cust.id),
-          actionLabel: 'Check Documents',
-          actionKind: 'send-kyc',
-          sourceData: { customer: cust },
-        })
-      }
-
-      if (cust.kyc_status === 'pending_customer' && (!role || role === 'Finance')) {
-        pending.push({
-          type: 'customer',
-          refId: cust.id,
-          customerName: cust.name,
-          title: `Verify KYC for ${cust.name}`,
-          subtitle: `${cust.tier} · ${cust.location} · KYC form sent, awaiting verification`,
-          urgentFlag: false,
-          createdAt: '',
-          previousContext: findContext(cust.id),
-          actionLabel: 'Verify KYC',
-          actionKind: 'verify-kyc',
-          sourceData: { customer: cust },
-        })
-      }
-    }
-
     // --- From Inquiries (by workflow_stage) ---
     // Multi-container inquiries are split: one work item per container.
     for (const inq of inquiries) {
@@ -328,24 +302,11 @@ export default function Workspace({
       if (role && stage.role !== role && !(isCSOrSales && (stage.role === 'CS' || stage.role === 'Sales'))) continue
       if (inq.workflow_stage === 'completed') continue
 
-      // KYC stages are shown as inquiry-level work items (send-kyc / verify-kyc)
-      // so that after clicking "Send to KYC" the item surfaces in the KYC tab
-
-      // Determine the actual next stage (with KYC skip logic)
-      let resolvedNextStage = WORKFLOW_STAGES.find(s => s.step === stage.step + 1)
+      // Determine the next stage (simple step+1 — no KYC routing, all inquiries start at rate-check)
+      const resolvedNextStage = WORKFLOW_STAGES.find(s => s.step === stage.step + 1)
       if (!resolvedNextStage) continue
 
-      const cust      = customers.find(c => c.name.toLowerCase() === inq.customer_name.toLowerCase())
-      // KYC is clear if:
-      //  1. The dedicated /kyc-status endpoint returned kyc_completed=true for this inquiry's client (primary source)
-      //  2. Finance approved KYC in this session (local customers state updated via updateCustomerKyc)
-      const kycClear = (inq.cli_id != null && kycStatusMap[inq.cli_id] === true)
-                    || cust?.kyc_status === 'approved'
-
-      // At inquiry-received or customer-check, skip directly to rate-check for cleared customers
-      if ((inq.workflow_stage === 'inquiry-received' || inq.workflow_stage === 'customer-check') && kycClear) {
-        resolvedNextStage = WORKFLOW_STAGES.find(s => s.id === 'rate-check')!
-      }
+      const cust = customers.find(c => c.name.toLowerCase() === inq.customer_name.toLowerCase())
 
       // Build the list of containers to iterate over.
       // If the inquiry has no containers array, create a single synthetic entry.
@@ -378,40 +339,6 @@ export default function Workspace({
         let actionLabel = `Push to ${ROLE_LABELS[resolvedNextStage.role]}`
 
         switch (inq.workflow_stage) {
-          case 'inquiry-received': {
-            if (kycClear) {
-              title = `Process inquiry from ${inq.customer_name} — existing customer, check rates`
-              actionLabel = 'Process & Check Rates'
-            } else {
-              title = `Process new inquiry from ${inq.customer_name}`
-              actionLabel = 'Process Inquiry'
-            }
-            break
-          }
-          case 'customer-check': {
-            if (kycClear) {
-              title = `Customer ${inq.customer_name} verified — check rates`
-              actionLabel = 'Check Rates'
-            } else {
-              title = `New customer ${inq.customer_name} — initiate KYC before rate check`
-              actionLabel = 'Send to Finance for KYC'
-            }
-            break
-          }
-          case 'kyc-pending': {
-            if (!cust) continue  // can't do KYC without a customer record
-            title = `Check KYC documents for ${inq.customer_name}`
-            actionKind = 'send-kyc'
-            actionLabel = 'Check Documents'
-            break
-          }
-          case 'kyc-verification': {
-            if (!cust) continue  // can't verify without a customer record
-            title = `Verify KYC documents for ${inq.customer_name}`
-            actionKind = 'verify-kyc'
-            actionLabel = 'Verify KYC'
-            break
-          }
           case 'rate-check':
             title = `Rate check: ${routeLabel} · ${containerLabel}`
             actionKind = 'check-rates'
@@ -457,6 +384,7 @@ export default function Workspace({
           actionLabel,
           actionKind,
           sourceData: { inquiry: inq, nextStage: resolvedNextStage.id, container: cont, containerIdx: ci, customer: cust },
+          kycIncomplete: inq.kyc_completed === false,
         })
       }
     }
@@ -708,6 +636,51 @@ export default function Workspace({
       }
     }
 
+    // --- From KYC Pending Queue (GET /kyc/kyc-requests/pending) ---
+    // CS and Sales see clients awaiting KYC initiation regardless of inquiry workflow stage
+    if (!role || role === 'CS' || role === 'Sales') {
+      for (const client of kycPendingClients) {
+        pending.push({
+          type: 'inquiry',
+          refId: `KYC-${client.cli_id}`,
+          customerName: client.name,
+          title: `Initiate KYC for ${client.name}`,
+          subtitle: [client.addr_city, client.addr_country].filter(Boolean).join(', ') || 'No address on file',
+          urgentFlag: false,
+          createdAt: '',
+          previousContext: null,
+          actionLabel: 'Check Documents',
+          actionKind: 'send-kyc',
+          sourceData: { kycClient: client },
+        })
+      }
+    }
+
+    // --- From KYC Requests (GET /kyc/kyc-requests/requests) ---
+    // Finance and Admin see submitted KYC requests awaiting review (kyc_pending stage)
+    if (!role || role === 'Finance' || role === 'Admin') {
+      for (const req of kycRequests) {
+        if (req.kyc_stage !== 'kyc_pending' && req.kyc_stage !== 'documents_submitted') continue
+        const docsSubmitted = req.docs
+          ? Object.values(req.docs).filter(v => v === 'true').length
+          : 0
+        const totalDocs = req.docs ? Object.keys(req.docs).length : 0
+        pending.push({
+          type: 'inquiry',
+          refId: `KYC-REQ-${req.kyc_id}`,
+          customerName: req.name ?? `Client #${req.cli_id}`,
+          title: `Verify KYC for ${req.name ?? `Client #${req.cli_id}`}`,
+          subtitle: `${docsSubmitted}/${totalDocs} documents submitted · ${req.cli_type ?? 'Unknown type'} · ${req.currency ?? ''}`.trim().replace(/\s·\s$/, ''),
+          urgentFlag: false,
+          createdAt: req.document_submission_deadline ?? '',
+          previousContext: null,
+          actionLabel: 'Review KYC',
+          actionKind: 'verify-kyc',
+          sourceData: { kycRequest: req },
+        })
+      }
+    }
+
     // Sort: urgent first, then by urgencySortKey (lower = more urgent), then newest first
     pending.sort((a, b) => {
       if (a.urgentFlag !== b.urgentFlag) return a.urgentFlag ? -1 : 1
@@ -726,7 +699,7 @@ export default function Workspace({
       .slice(0, 10)
 
     return { pendingItems: pending, recentlyPushed: pushed }
-  }, [inquiries, bookings, quotes, customers, activityLog, activeRole]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [inquiries, bookings, quotes, customers, activityLog, activeRole, kycPendingClients, kycRequests]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---------------------------------------------------------------------------
   // Step-based filtering (replaces filter chips)
@@ -760,12 +733,13 @@ export default function Workspace({
   // Action handlers
   // ---------------------------------------------------------------------------
 
-  const handleAction = (item: WorkspaceItem) => {
+  const handleAction = async (item: WorkspaceItem) => {
     switch (item.actionKind) {
       case 'advance-workflow': {
-        const { inquiry, nextStage, container } = item.sourceData
-        onAdvanceWorkflow(inquiry.id, nextStage)
-        const nextStageObj = WORKFLOW_STAGES.find(s => s.id === nextStage)!
+        const { inquiry, container } = item.sourceData
+        const resolvedNext = item.sourceData.nextStage as string
+        onAdvanceWorkflow(inquiry.id, resolvedNext as import('../../types').WorkflowStage)
+        const nextStageObj = WORKFLOW_STAGES.find(s => s.id === resolvedNext)!
         onLogActivity({
           actor_role: activeRole,
           actor_id: activeEmployee.id,
@@ -776,19 +750,18 @@ export default function Workspace({
           pushed_to: nextStageObj.role,
           notes: `${inquiry.request} · ${inquiry.origin} → ${inquiry.destination}`,
         })
-        // KYC-clear existing customer: skip KYC and open Rate Check immediately
-        if (nextStage === 'rate-check') {
+        // All inquiries go directly to Rate Check; open it immediately
+        if (resolvedNext === 'rate-check') {
           onStartRateCheck(inquiry, container, 'cs-sales')
           return
         }
         // Map the destination workflow stage to the step that will handle items there
         const stageActionMap: Record<string, string> = {
-          'kyc-pending': 'send-kyc', 'kyc-verification': 'verify-kyc',
           'rate-check': 'check-rates', 'procurement-request': 'check-inttra-rates',
           'quotation-prep': 'prepare-quotation', 'quotation-sent': 'send-to-customer',
           'customer-response': 'customer-response', 'booking-request': 'booking-request',
         }
-        const destActionKind = stageActionMap[nextStage]
+        const destActionKind = stageActionMap[resolvedNext]
         const destStep = destActionKind ? roleSteps.find(s => s.actionKinds.includes(destActionKind)) : null
         const csOrSales = (r: string) => r === 'CS' || r === 'Sales'
         const crossDept = activeRole !== 'Admin' && nextStageObj.role !== activeRole &&
@@ -1091,10 +1064,15 @@ ABC Logistics (Pvt) Ltd`
     })()
     switch (actionModal.actionKind) {
       case 'send-kyc': {
-        const { customer, inquiry: kycInquiry } = actionModal.sourceData
-        // Resolve backend cli_id: prefer from inquiry, fallback to clientList lookup
-        const kycClient = clientList.find(c => c.name.toLowerCase() === customer.name.toLowerCase())
-        const cli_id = kycInquiry?.cli_id ?? kycClient?.cli_id
+        const { customer, inquiry: kycInquiry, kycClient: pendingKycClient } = actionModal.sourceData
+        // Resolve backend cli_id: new flow uses kycClient directly; legacy uses inquiry/clientList
+        let cli_id: number | undefined
+        if (pendingKycClient) {
+          cli_id = pendingKycClient.cli_id
+        } else {
+          const kycClientRecord = clientList.find(c => c.name.toLowerCase() === customer?.name.toLowerCase())
+          cli_id = kycInquiry?.cli_id ?? kycClientRecord?.cli_id
+        }
         if (cli_id) {
           setKycSending(true)
           try {
@@ -1128,66 +1106,110 @@ ABC Logistics (Pvt) Ltd`
                 form20:           kycDocForm20,
               },
             })
+            if (pendingKycClient) {
+              // Remove from pending queue so the item disappears immediately
+              onSetKycPendingClients(prev => prev.filter(c => c.cli_id !== pendingKycClient.cli_id))
+            }
+            // Refresh Finance's KYC review queue so the submitted request appears without re-login
+            onRefreshKycRequests()
           } catch { /* fire-and-forget — optimistic update proceeds regardless */ }
           setKycSending(false)
         }
-        // Update customer KYC status → pending_customer (Finance sees it for final sign-off)
-        onUpdateCustomerKyc(customer.name, 'pending_customer')
-        // Advance inquiry to kyc-verification so it surfaces in Finance's KYC Review tab
-        if (kycInquiry) {
-          onAdvanceWorkflow(kycInquiry.id, 'kyc-verification')
+        const customerName = pendingKycClient?.name ?? customer?.name ?? actionModal.customerName
+        if (!pendingKycClient) {
+          // Legacy flow: update local customer record and advance inquiry
+          if (customer) onUpdateCustomerKyc(customer.name, 'pending_customer')
+          if (kycInquiry) onAdvanceWorkflow(kycInquiry.id, 'kyc-verification')
         }
         onLogActivity({
           actor_role: activeRole,
           actor_id: activeEmployee.id,
-          action: `KYC documents checked for ${customer.name}. KYC request submitted. Pushed to Finance for final verification.`,
+          action: `KYC documents checked for ${customerName}. KYC request submitted. Pushed to Finance for final verification.`,
           ref_type: 'inquiry',
-          ref_id: kycInquiry?.id ?? customer.id,
-          customer_name: customer.name,
+          ref_id: kycInquiry?.id ?? customer?.id ?? `CLI-${cli_id ?? ''}`,
+          customer_name: customerName,
           pushed_to: 'Finance',
           notes: formNote || `KYC request created — BR: ${kycBrNumber}`,
         })
-        onFlash(`KYC request created for ${customer.name} — pushed to Finance`, nextStepAction)
+        onFlash(`KYC request created for ${customerName} — pushed to Finance`, nextStepAction)
         break
       }
       case 'verify-kyc': {
-        const { customer } = actionModal.sourceData
+        const { kycRequest } = actionModal.sourceData
+        const kycCliId = kycRequest?.cli_id
+        const kycCustomerName = kycRequest?.name ?? actionModal.customerName
         const approved = formDecision === 'approve'
         if (approved) {
-          onUpdateCustomerKyc(customer.name, 'approved')
-          // Auto-advance all stuck inquiries for this customer to rate-check (CS checks Database first)
-          onAutoAdvanceForCustomer(customer.name, 'rate-check')
+          // Mark KYC completed in backend
+          if (kycCliId) {
+            apiUpdateKycStage(kycCliId, 'kyc_completed')
+              .catch(err => console.error('[Workspace] update KYC stage failed:', err))
+          }
+          // Remove from Finance's review queue locally
+          if (kycRequest) {
+            onSetKycRequests(prev => prev.filter(r => r.kyc_id !== kycRequest.kyc_id))
+          }
+          // Update local customer record if present
+          const matchedCustomer = customers.find(c => c.name.toLowerCase() === kycCustomerName.toLowerCase())
+          if (matchedCustomer) onUpdateCustomerKyc(matchedCustomer.name, 'approved')
           onLogActivity({
             actor_role: activeRole,
             actor_id: activeEmployee.id,
-            action: `KYC verified for ${customer.name}. Customer cleared. Inquiries sent to CS for rate check.`,
+            action: `KYC verified for ${kycCustomerName}. Customer cleared for rate check.`,
             ref_type: 'inquiry',
-            ref_id: customer.id,
-            customer_name: customer.name,
+            ref_id: `CLI-${kycCliId ?? ''}`,
+            customer_name: kycCustomerName,
             pushed_to: 'CS',
             notes: formNote || 'KYC documents verified and approved.',
           })
-          onFlash(`KYC verified for ${customer.name} — sent to CS for rate check`, nextStepAction)
+          onFlash(`KYC verified for ${kycCustomerName}`, nextStepAction)
         } else {
-          // Flag — send back to not_started (CS must re-send)
-          onUpdateCustomerKyc(customer.name, 'not_started')
+          // Reject — reset to uninitiated so CS's pending queue picks it up again
+          if (kycCliId) {
+            apiUpdateKycStage(kycCliId, 'kyc_uninitiated')
+              .catch(err => console.error('[Workspace] update KYC stage (reject) failed:', err))
+          }
+          // Remove from Finance's review queue locally
+          if (kycRequest) {
+            onSetKycRequests(prev => prev.filter(r => r.kyc_id !== kycRequest.kyc_id))
+          }
           onLogActivity({
             actor_role: activeRole,
             actor_id: activeEmployee.id,
-            action: `KYC flagged for ${customer.name}. Returned to CS for resubmission.`,
+            action: `KYC flagged for ${kycCustomerName}. Returned to CS for resubmission.`,
             ref_type: 'inquiry',
-            ref_id: customer.id,
-            customer_name: customer.name,
+            ref_id: `CLI-${kycCliId ?? ''}`,
+            customer_name: kycCustomerName,
             pushed_to: 'CS',
             notes: formNote || 'KYC documents need resubmission.',
           })
-          onFlash(`KYC flagged — ${customer.name} returned to CS`, nextStepAction)
+          onFlash(`KYC flagged — ${kycCustomerName} returned to CS`, nextStepAction)
         }
         break
       }
       case 'prepare-quotation': {
         const { inquiry } = actionModal.sourceData
+        // Create structured quotation record in backend and mark as sent
+        if (inquiry.inq_id) {
+          const today = new Date().toISOString().slice(0, 10)
+          apiCreateQuotation({
+            inq_id: inquiry.inq_id,
+            quote_date: today,
+            sent_via: activeRole === 'Sales' ? 'direct' : 'email',
+            options: [],
+          })
+            .then(created => {
+              if (created.quote_id) {
+                setLastQuotationId(created.quote_id)
+                // Mark as sent — backend auto-advances workflow to quotation_sent
+                apiMarkQuotationSent(created.quote_id)
+                  .catch(err => console.error('[Workspace] mark quotation sent failed:', err))
+              }
+            })
+            .catch(err => console.error('[Workspace] create quotation failed:', err))
+        }
         // Sales sends the quotation directly (no system email/WA) — skip quotation-sent and move straight to recording response
+        // Local state advance (backend may also auto-advance via apiMarkQuotationSent — idempotent)
         onAdvanceWorkflow(inquiry.id, activeRole === 'Sales' ? 'customer-response' : 'quotation-sent')
         onLogActivity({
           actor_role: activeRole,
@@ -1243,6 +1265,13 @@ ABC Logistics (Pvt) Ltd`
       }
       case 'customer-response': {
         const { inquiry } = actionModal.sourceData
+        // Record customer response in backend quotation record
+        // Backend auto-advances workflow to customer_response; we then advance further below
+        const quoteId = lastQuotationId ?? inquiry.quotation_id
+        if (quoteId) {
+          apiRecordQuotationResponse(quoteId, customerDecision)
+            .catch(err => console.error('[Workspace] record quotation response failed:', err))
+        }
         if (customerDecision === 'accepted') {
           onAdvanceWorkflow(inquiry.id, 'booking-request')
           onLogActivity({
@@ -1556,6 +1585,7 @@ ABC Logistics (Pvt) Ltd`
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
                     <span style={{ fontSize: 14, fontWeight: 700, color: '#0f172a' }}>{item.customerName}</span>
                     {item.urgentFlag && <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#dc2626', marginLeft: 'auto', flexShrink: 0 }} />}
+                    {item.kycIncomplete && <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#f59e0b', marginLeft: item.urgentFlag ? 0 : 'auto', flexShrink: 0 }} title="KYC pending" />}
                   </div>
                   <div style={{ fontSize: 12, color: '#64748b', marginBottom: 8 }}>{item.subtitle}</div>
                   <span className={TYPE_BADGE_CLASS[item.type]} style={{ fontSize: 10 }}>{item.actionLabel}</span>
@@ -1575,6 +1605,9 @@ ABC Logistics (Pvt) Ltd`
               <span style={{ fontFamily: 'ui-monospace, monospace', fontSize: 12, color: '#94a3b8' }}>{selectedItem.refId}</span>
               {selectedItem.urgentFlag && (
                 <span style={{ padding: '2px 8px', borderRadius: 999, fontSize: 10, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '0.04em', background: 'rgba(220,38,38,0.08)', color: '#dc2626' }}>Urgent</span>
+              )}
+              {selectedItem.kycIncomplete && (
+                <span style={{ padding: '2px 8px', borderRadius: 999, fontSize: 10, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '0.04em', background: 'rgba(245,158,11,0.1)', color: '#b45309' }}>KYC Pending</span>
               )}
               <span className={TYPE_BADGE_CLASS[selectedItem.type]}>{selectedItem.type}</span>
             </div>
@@ -1756,6 +1789,43 @@ ABC Logistics (Pvt) Ltd`
             {actionModal.actionKind === 'send-kyc' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 20, maxHeight: '65vh', overflowY: 'auto', paddingRight: 4 }}>
 
+                {/* ── Pre-fetched client registry data (only for KYC pending queue items) ── */}
+                {actionModal.sourceData.kycClient && (() => {
+                  const c: KycPendingClient = actionModal.sourceData.kycClient
+                  const address = [c.addr_street_ln, c.addr_city, c.addr_country].filter(Boolean).join(', ')
+                  return (
+                    <div style={{ padding: '12px 14px', background: 'rgba(8,145,178,0.04)', border: '1px solid rgba(8,145,178,0.14)', borderLeft: '3px solid #0891b2', borderRadius: 8 }}>
+                      <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '0.07em', color: '#0891b2', marginBottom: 10 }}>From Client Registry</div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '6px 16px' }}>
+                        {c.vat_no && (
+                          <div>
+                            <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 2 }}>VAT No.</div>
+                            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{c.vat_no}</div>
+                          </div>
+                        )}
+                        {c.tin && (
+                          <div>
+                            <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 2 }}>TIN</div>
+                            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{c.tin}</div>
+                          </div>
+                        )}
+                        {c.credit_limit != null && (
+                          <div>
+                            <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 2 }}>Credit Limit</div>
+                            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{c.credit_limit.toLocaleString()}</div>
+                          </div>
+                        )}
+                        {address && (
+                          <div style={{ gridColumn: '1 / -1' }}>
+                            <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 2 }}>Address</div>
+                            <div style={{ fontSize: 13, color: 'var(--text)' }}>{address}</div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })()}
+
                 {/* ── Client Info ── */}
                 <div>
                   <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-muted)', marginBottom: 10 }}>Client Information</div>
@@ -1871,47 +1941,89 @@ ABC Logistics (Pvt) Ltd`
             )}
 
             {/* Verify KYC form (Finance) */}
-            {actionModal.actionKind === 'verify-kyc' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-                {actionModal.previousContext && (
-                  <div className="ws-context-card" style={{ marginTop: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                      <User size={11} style={{ color: 'var(--text-muted)' }} />
-                      <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)' }}>
-                        {empName(actionModal.previousContext.actor_id)} ({ROLE_LABELS[actionModal.previousContext.actor_role]})
-                      </span>
+            {actionModal.actionKind === 'verify-kyc' && (() => {
+              const kycReq: KycRequestRecord | undefined = actionModal.sourceData?.kycRequest
+              const docLabel = (label: string, val?: string) => (
+                <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+                  <span style={{
+                    width: 16, height: 16, borderRadius: 3, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700,
+                    background: val === 'true' ? '#16a34a' : '#dc2626', color: '#fff',
+                  }}>{val === 'true' ? '✓' : '✗'}</span>
+                  <span style={{ color: val === 'true' ? 'var(--text-primary)' : 'var(--text-muted)' }}>{label}</span>
+                </div>
+              )
+              return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                  {/* Client details */}
+                  {kycReq && (
+                    <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 2 }}>Client Information</div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 16px', fontSize: 12 }}>
+                        {kycReq.br_number && <div><span style={{ color: 'var(--text-muted)' }}>BR No: </span>{kycReq.br_number}</div>}
+                        {kycReq.cli_type && <div><span style={{ color: 'var(--text-muted)' }}>Type: </span>{kycReq.cli_type}</div>}
+                        {kycReq.currency && <div><span style={{ color: 'var(--text-muted)' }}>Currency: </span>{kycReq.currency}</div>}
+                        {kycReq.parent_organization && <div><span style={{ color: 'var(--text-muted)' }}>Parent Org: </span>{kycReq.parent_organization}</div>}
+                        {kycReq.website && <div style={{ gridColumn: '1 / -1' }}><span style={{ color: 'var(--text-muted)' }}>Website: </span>{kycReq.website}</div>}
+                        {kycReq.document_submission_deadline && <div style={{ gridColumn: '1 / -1' }}><span style={{ color: 'var(--text-muted)' }}>Doc Deadline: </span>{kycReq.document_submission_deadline}</div>}
+                      </div>
+                      {/* Business scope */}
+                      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginTop: 4 }}>Business Scope</div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 12px' }}>
+                        {[
+                          ['Sea Imports', kycReq.sea_imports],
+                          ['Sea Exports', kycReq.sea_exports],
+                          ['Air Imports', kycReq.air_imports],
+                          ['Air Exports', kycReq.air_exports],
+                          ['Trade Lanes', kycReq.trade_lanes],
+                          ['Forwarding', kycReq.forwarding],
+                          ['Cross Trade', kycReq.cross_trade],
+                          ['General Cargo', kycReq.general_cargo],
+                          ['Dangerous Goods', kycReq.dangerous_goods],
+                          ['Perishables', kycReq.perishable_goods],
+                        ].map(([label, val]) => val ? (
+                          <span key={String(label)} style={{ fontSize: 11, padding: '2px 7px', borderRadius: 10, background: 'rgba(15,143,168,0.12)', color: '#0f8fa8', fontWeight: 600 }}>{String(label)}</span>
+                        ) : null)}
+                      </div>
                     </div>
-                    <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{actionModal.previousContext.action}</div>
-                    {actionModal.previousContext.notes && (
-                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 3, fontStyle: 'italic' }}>{actionModal.previousContext.notes}</div>
-                    )}
+                  )}
+                  {/* Document checklist */}
+                  {kycReq?.docs && (
+                    <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 2 }}>Document Checklist</div>
+                      {docLabel('BR Form', kycReq.docs.br_form)}
+                      {docLabel('VAT Certificate', kycReq.docs.vat_certificate)}
+                      {docLabel('SVAT Certificate', kycReq.docs.svat_certificate)}
+                      {docLabel('TIN Certificate', kycReq.docs.tin_certificate)}
+                      {docLabel('Form 20', kycReq.docs.form20)}
+                    </div>
+                  )}
+                  {/* Decision */}
+                  <div>
+                    <label className="lt-label">Decision</label>
+                    <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                      <button
+                        className={`db-btn ${formDecision === 'approve' ? 'primary' : ''}`}
+                        style={formDecision === 'approve' ? { background: '#16a34a', borderColor: '#16a34a' } : { background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}
+                        onClick={() => setFormDecision('approve')}
+                      >
+                        <ShieldCheck size={13} style={{ marginRight: 4 }} /> Verified
+                      </button>
+                      <button
+                        className={`db-btn ${formDecision === 'reject' ? 'primary' : ''}`}
+                        style={formDecision === 'reject' ? { background: '#dc2626', borderColor: '#dc2626' } : { background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}
+                        onClick={() => setFormDecision('reject')}
+                      >
+                        <AlertTriangle size={13} style={{ marginRight: 4 }} /> Flag Issues
+                      </button>
+                    </div>
                   </div>
-                )}
-                <div>
-                  <label className="lt-label">Decision</label>
-                  <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-                    <button
-                      className={`db-btn ${formDecision === 'approve' ? 'primary' : ''}`}
-                      style={formDecision === 'approve' ? { background: '#16a34a', borderColor: '#16a34a' } : { background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}
-                      onClick={() => setFormDecision('approve')}
-                    >
-                      <ShieldCheck size={13} style={{ marginRight: 4 }} /> Verified
-                    </button>
-                    <button
-                      className={`db-btn ${formDecision === 'reject' ? 'primary' : ''}`}
-                      style={formDecision === 'reject' ? { background: '#dc2626', borderColor: '#dc2626' } : { background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}
-                      onClick={() => setFormDecision('reject')}
-                    >
-                      <AlertTriangle size={13} style={{ marginRight: 4 }} /> Flag Issues
-                    </button>
+                  <div>
+                    <label className="lt-label">{formDecision === 'reject' ? 'Issues Found' : 'Verification Note (optional)'}</label>
+                    <input className="lt-input" style={{ width: '100%' }} value={formNote} onChange={e => setFormNote(e.target.value)} placeholder={formDecision === 'reject' ? 'Describe the issues found...' : 'Optional verification notes...'} />
                   </div>
                 </div>
-                <div>
-                  <label className="lt-label">{formDecision === 'reject' ? 'Issues Found' : 'Verification Note (optional)'}</label>
-                  <input className="lt-input" style={{ width: '100%' }} value={formNote} onChange={e => setFormNote(e.target.value)} placeholder={formDecision === 'reject' ? 'Describe the issues found...' : 'Optional verification notes...'} />
-                </div>
-              </div>
-            )}
+              )
+            })()}
 
             {/* Prepare Quotation (Sales) */}
             {actionModal.actionKind === 'prepare-quotation' && (() => {

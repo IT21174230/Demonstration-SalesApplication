@@ -13,6 +13,7 @@ const TEST_USERS: TestUser[] = [
   { emp_id: 6, name: 'fin-test',    desig: 'exec', dept: 'finance',          password: 'fin-1985' },
   { emp_id: 7, name: 'cs-test',     desig: 'exec', dept: 'customer-service', password: 'cs/sal-15g' },
   { emp_id: 8, name: 'sales-test',  desig: 'exec', dept: 'sales',           password: 'cs/sal-15g' },
+  { emp_id: 9, name: 'IT-AD',       desig: '',     dept: 'IT',              password: 'it-ad-9x' },
 ]
 
 const DEPT_LABELS: Record<string, string> = {
@@ -20,6 +21,7 @@ const DEPT_LABELS: Record<string, string> = {
   finance: 'Finance',
   'customer-service': 'Customer Service',
   sales: 'Sales',
+  IT: 'IT Admin',
 }
 
 interface LoginProps {

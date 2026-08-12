@@ -16,7 +16,7 @@ interface InquiryListProps {
   customers: Customer[]
   quotes: Quote[]
   onCompleteById: (id: string) => void
-  onAdvanceWorkflow: (inquiryId: string, nextStage: WorkflowStage) => void
+  onAdvanceWorkflow: (inquiryId: string, nextStage: WorkflowStage, skipApi?: boolean) => void
   onUpdateCustomer: (customerName: string, patch: Partial<Omit<Customer, 'id'>>) => void
   onAddFollowup: (customerName: string, note: string, completionFlag: boolean, employeeId?: number) => void
   onFlash: (msg: string) => void

@@ -103,6 +103,7 @@ export interface InquiryRow {
   inq_id: number
   cli_id: number        // backend client PK — used for KYC status lookup
   workflow_stage: string | null  // from LEFT JOIN workflow_stats; null for brand-new rows
+  kyc_completed: boolean | null  // joined from kyc_request; true when kyc_stage = 'kyc_completed'
   name: string          // client company name (cl.name)
   sbu: string | null
   origin: string
@@ -466,10 +467,11 @@ export function apiPatchContainer(inq_id: number, cont_id: number, data: {
   return patch<Record<string, unknown>>(`/inquiries/inquiries/${inq_id}/containers/${cont_id}`, data)
 }
 
-// Allowed backend workflow stages (must match the WorkflowStage enum in activity_types.py)
+// Allowed backend workflow stages (must match the WorkflowStage enum in activity_types.py).
+// Note: 'inquiry_received' and 'customer_check_pending' are NOT in the backend enum —
+// the backend creates workflows starting at 'kyc_pending' (new client) or
+// 'rate_check_in_progress' (existing client). These two stages are frontend-only UI states.
 type BackendWorkflowStage =
-  | 'inquiry_received'
-  | 'customer_check_pending'
   | 'kyc_pending'
   | 'kyc_approved'
   | 'kyc_rejected'
@@ -481,10 +483,11 @@ type BackendWorkflowStage =
   | 'booking_request'
   | 'completed'
 
-// Maps frontend kebab-case WorkflowStage → backend snake_case enum value
+// Maps frontend kebab-case WorkflowStage → backend snake_case enum value.
+// 'inquiry-received' and 'customer-check' are intentionally omitted — they are
+// frontend-only UI stages with no backend equivalent. apiAdvanceWorkflow will
+// return { success: false } for them, which is the desired behaviour.
 const STAGE_MAP: Partial<Record<string, BackendWorkflowStage>> = {
-  'inquiry-received':    'inquiry_received',
-  'customer-check':      'customer_check_pending',
   'kyc-pending':         'kyc_pending',
   'kyc-verification':    'kyc_approved',
   'rate-check':          'rate_check_in_progress',
@@ -496,13 +499,9 @@ const STAGE_MAP: Partial<Record<string, BackendWorkflowStage>> = {
   'completed':           'completed',
 }
 
-// Reverse map — used when reading stage back from the DB (InquiryRow.workflow_stage)
+// Reverse map — used when reading stage back from the DB (InquiryRow.workflow_stage).
+// Only contains stages present in the backend WorkflowStage enum.
 export const BE_STAGE_TO_FE: Record<string, string> = {
-  inquiry_received:         'inquiry-received',
-  customer_check_pending:   'customer-check',
-  kyc_pending:              'kyc-pending',
-  kyc_approved:             'kyc-verification',
-  kyc_rejected:             'kyc-pending',          // treat rejected as re-pending KYC
   rate_check_in_progress:   'rate-check',
   escalated_to_procurement: 'procurement-request',
   quotation_prep:           'quotation-prep',
@@ -512,17 +511,27 @@ export const BE_STAGE_TO_FE: Record<string, string> = {
   completed:                'completed',
 }
 
-// Called once when a new inquiry is persisted — creates the initial workflow row
-export function apiCreateWorkflowEntry(inqId: number): Promise<Record<string, unknown>> {
+// Called once when a new inquiry is persisted — creates the initial workflow row.
+// Default stage is kyc_pending (backend does not have 'inquiry_received' in its enum).
+export function apiCreateWorkflowEntry(inqId: number, initialStage: BackendWorkflowStage = 'kyc_pending'): Promise<Record<string, unknown>> {
   return post<Record<string, unknown>>('/inquiries/workflow', {
     inq_id: inqId,
     flow_id: 1,
-    stage: 'inquiry_received',
+    stage: initialStage,
   })
 }
 
-// Called on every stage transition — PATCHes the workflow row to the new stage.
-// If no workflow row exists yet (legacy inquiries), creates it first then retries.
+// Fetch a single inquiry from the backend. Returns the same row structure as GET /inquiries/inquiries.
+// Used to re-read workflow_stage after backend auto-transitions (rate requests, quotation send, etc.)
+export function apiGetInquiry(inqId: number): Promise<InquiryRow[]> {
+  return get<InquiryRow[]>(`/inquiries/inquiries/${inqId}`)
+}
+
+// Manual override — PATCHes the workflow row directly.
+// Only needed for stages without an automatic backend trigger:
+// booking_request and completed (not yet auto-triggered by any backend call).
+// For all other stages the backend advances the workflow automatically as a
+// side effect of the business API call (rate-request, add-option, send-quotation, etc.)
 export async function apiAdvanceWorkflow(_feId: string, stage: string, inqId?: number): Promise<{ success: boolean }> {
   const backendStage = STAGE_MAP[stage]
   if (!backendStage || !inqId) return { success: false }
@@ -530,8 +539,7 @@ export async function apiAdvanceWorkflow(_feId: string, stage: string, inqId?: n
     return await patch<{ success: boolean }>(`/inquiries/workflow/${inqId}`, { stage: backendStage })
   } catch (err: unknown) {
     if (err instanceof Error && err.message.includes('404')) {
-      // Workflow row missing — create it at inquiry_received, then advance to requested stage
-      await post<Record<string, unknown>>('/inquiries/workflow', { inq_id: inqId, flow_id: 1, stage: 'inquiry_received' })
+      await post<Record<string, unknown>>('/inquiries/workflow', { inq_id: inqId, flow_id: 1, stage: 'rate_check_in_progress' })
       return patch<{ success: boolean }>(`/inquiries/workflow/${inqId}`, { stage: backendStage })
     }
     throw err
@@ -674,6 +682,61 @@ export interface KYCRequestPayload {
 
 export function apiCreateKycRequest(cli_id: number, data: KYCRequestPayload): Promise<unknown> {
   return post<unknown>(`/kyc/kyc-requests?cli_id=${cli_id}`, data)
+}
+
+export interface KycPendingClient {
+  cli_id: number
+  name: string
+  vat_no?: string | null
+  tin?: string | null
+  credit_limit?: number | null
+  addr_street_ln?: string | null
+  addr_city?: string | null
+  addr_country?: string | null
+}
+
+export function apiGetKycPendingClients(): Promise<KycPendingClient[]> {
+  return get<KycPendingClient[]>('/kyc/kyc-requests/pending')
+}
+
+/** Full KYC request record returned by GET /kyc/kyc-requests/requests */
+export interface KycRequestRecord {
+  kyc_id: number
+  cli_id: number
+  name?: string                      // client company name (joined from clients table)
+  kyc_stage?: string                 // current stage: kyc_uninitiated | kyc_pending | documents_submitted | kyc_completed
+  br_number?: string
+  parent_organization?: string
+  emp_id_sales?: number
+  emp_id_cs?: number
+  document_submission_deadline?: string
+  cli_type?: string
+  currency?: string
+  website?: string
+  svat_no?: string
+  tax_exemptions?: string
+  sea_imports?: boolean
+  sea_exports?: boolean
+  trade_lanes?: boolean
+  forwarding?: boolean
+  cross_trade?: boolean
+  air_imports?: boolean
+  air_exports?: boolean
+  general_cargo?: boolean
+  dangerous_goods?: boolean
+  perishable_goods?: boolean
+  docs?: {
+    br_form?: string
+    vat_certificate?: string
+    svat_certificate?: string
+    tin_certificate?: string
+    form20?: string
+  }
+}
+
+/** Fetch all KYC requests with full details — used by Finance for their review queue. */
+export function apiGetKycRequests(): Promise<KycRequestRecord[]> {
+  return get<KycRequestRecord[]>('/kyc/kyc-requests/requests')
 }
 
 // ---------------------------------------------------------------------------
@@ -963,34 +1026,11 @@ export function apiGetTradeLanes(): Promise<TradeLaneRecord[]> {
 }
 
 /**
- * Fetch all contact persons across all clients belonging to the current employee.
- *
- * No single all-contacts endpoint exists in the backend; contacts are scoped to a
- * client via GET /clients/clients/{cli_id}/contacts.
- * Strategy: fetch all clients first, then fan-out one request per client in parallel.
- *
- * Backend returns { cpid, name } — we add cli_id and client_name on the frontend,
- * and map cpid → cp_id to match the ContactPersonRecord interface.
+ * Disabled — the fan-out pattern (one GET /clients/clients/{id}/contacts per client)
+ * spams the backend. Returns an empty list until the backend provides a bulk endpoint.
  */
-export async function apiGetContactPersons(): Promise<ContactPersonRecord[]> {
-  const clients = await get<{ cli_id: number; name: string }[]>('/clients/clients')
-  const perClient = await Promise.all(
-    clients.map(async cl => {
-      const contacts = await get<{ cpid: number; name: string | null }[]>(
-        `/clients/clients/${cl.cli_id}/contacts`
-      )
-      return contacts.map(cp => ({
-        cp_id:       cp.cpid,
-        name:        cp.name,
-        email:       null,
-        whatsapp:    null,
-        wechat:      null,
-        cli_id:      cl.cli_id,
-        client_name: cl.name,
-      } satisfies ContactPersonRecord))
-    })
-  )
-  return perClient.flat()
+export function apiGetContactPersons(): Promise<ContactPersonRecord[]> {
+  return Promise.resolve([])
 }
 
 export function apiGetEmployeesDb(): Promise<EmployeeRecord[]> {
@@ -1026,6 +1066,7 @@ export interface RateRequestRecord {
  *  • CS/Sales completes rate check themselves (is_given=true)
  */
 export function apiCreateRateRequest(data: {
+  inq_id?: number
   emp_id_requested: number
   is_given?: boolean
   remark: string
@@ -1046,6 +1087,113 @@ export function apiPatchRateRequest(requestId: number, data: {
   remark?: string
 }): Promise<Record<string, unknown>> {
   return patch<Record<string, unknown>>(`/rate-requests/${requestId}`, data)
+}
+
+/** Delete a rate request. */
+export function apiDeleteRateRequest(requestId: number): Promise<Record<string, unknown>> {
+  return del<Record<string, unknown>>(`/rate-requests/${requestId}`)
+}
+
+// ---------------------------------------------------------------------------
+// Rate Request Options
+// ---------------------------------------------------------------------------
+
+export interface RateRequestOptionRecord {
+  option_id: number
+  request_id: number
+  rate_type: string
+  rate_id: number
+}
+
+/** Add a rate option to a request. Backend auto-advances workflow to quotation_prep. */
+export function apiAddRateRequestOption(requestId: number, data: {
+  request_id: number
+  rate_type: string
+  rate_id: number
+}): Promise<RateRequestOptionRecord> {
+  return post<RateRequestOptionRecord>(`/rate-requests/${requestId}/options`, data)
+}
+
+/** Patch a rate request option. */
+export function apiPatchRateRequestOption(requestId: number, optionId: number, data: {
+  updated_by: number
+  rate_type?: string
+  rate_id?: number
+}): Promise<Record<string, unknown>> {
+  return patch<Record<string, unknown>>(`/rate-requests/${requestId}/options/${optionId}`, data)
+}
+
+/** Delete a rate request option. If last option, backend rolls back workflow to escalated_to_procurement. */
+export function apiDeleteRateRequestOption(requestId: number, optionId: number): Promise<Record<string, unknown>> {
+  return del<Record<string, unknown>>(`/rate-requests/${requestId}/options/${optionId}`)
+}
+
+// ---------------------------------------------------------------------------
+// Quotations (backend /quotations/ resource)
+// ---------------------------------------------------------------------------
+
+export interface QuotationRecord {
+  quote_id: number
+  inq_id: number
+  quote_date: string
+  sent_via: string
+  acceptence_deadline: string | null   // backend typo — must match exactly
+  status: string
+}
+
+export interface QuotationOptionPayload {
+  inq_id: number
+  rate_id: number
+  option_id: number
+  amt: number
+  currency: string
+}
+
+/** Create a structured quotation record in the backend. */
+export function apiCreateQuotation(data: {
+  inq_id: number
+  quote_date: string
+  sent_via: string
+  options?: QuotationOptionPayload[]
+  acceptence_deadline?: string
+}): Promise<QuotationRecord> {
+  return post<QuotationRecord>('/quotations/', data)
+}
+
+/** Mark a quotation as sent. Backend auto-advances workflow to quotation_sent. */
+export function apiMarkQuotationSent(quoteId: number): Promise<Record<string, unknown>> {
+  return patch<Record<string, unknown>>(`/quotations/${quoteId}/send?status=sent`)
+}
+
+/** Record customer acceptance/rejection. Backend auto-advances workflow to customer_response. */
+export function apiRecordQuotationResponse(quoteId: number, status: 'accepted' | 'rejected'): Promise<Record<string, unknown>> {
+  return patch<Record<string, unknown>>(`/quotations/${quoteId}/response?status=${status}`)
+}
+
+/** Update quotation details and/or replace its options. No workflow side effect. */
+export function apiPatchQuotation(quoteId: number, data: {
+  status?: string
+  quote_date?: string
+  is_follow_up?: boolean
+  acceptence_deadline?: string
+  sent_via?: string
+  options?: QuotationOptionPayload[]
+}): Promise<Record<string, unknown>> {
+  return patch<Record<string, unknown>>(`/quotations/${quoteId}`, data)
+}
+
+/** Delete a quotation. */
+export function apiDeleteQuotation(quoteId: number): Promise<Record<string, unknown>> {
+  return del<Record<string, unknown>>(`/quotations/${quoteId}`)
+}
+
+// ---------------------------------------------------------------------------
+// KYC Stage
+// ---------------------------------------------------------------------------
+
+/** Update KYC stage for a client in the kyc_request table. */
+export function apiUpdateKycStage(cliId: number, stage: string): Promise<Record<string, unknown>> {
+  return patch<Record<string, unknown>>(`/kyc/kyc-requests/clients/${cliId}/stage?stage=${encodeURIComponent(stage)}`)
 }
 
 // ---------------------------------------------------------------------------

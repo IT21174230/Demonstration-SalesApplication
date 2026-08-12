@@ -5,6 +5,10 @@
       "Bash(docker push:*)",
       "Read(//d/Neuball/FreightOS/**)",
       "Bash(echo:*)"
+    ],
+    "deny": [
+      "Edit(//d/Neuball/FreightOS/**)",
+      "Write(//d/Neuball/FreightOS/**)"
     ]
   }
 }

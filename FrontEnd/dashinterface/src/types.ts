@@ -135,23 +135,18 @@ export const ROLE_ACTIONS: Record<UserRole, ActionId[]> = {
 }
 
 export const EMPLOYEE_ROLE_MAP: Record<number, UserRole> = {
-  1: 'Sales',
-  2: 'CS',
-  3: 'Sales',
-  4: 'Finance',
   5: 'Procurement',
   6: 'Finance',
   7: 'CS',
   8: 'Sales',
+  9: 'Admin',
 }
 
 // ==================== WORKFLOW STAGES ====================
 
+// Stages match the backend WorkflowStage enum exactly (snake_case → kebab-case via BE_STAGE_TO_FE).
+// inquiry_received / customer_check_pending are NOT backend stages — they were removed.
 export type WorkflowStage =
-  | 'inquiry-received'
-  | 'customer-check'
-  | 'kyc-pending'
-  | 'kyc-verification'
   | 'rate-check'
   | 'procurement-request'
   | 'quotation-prep'
@@ -161,17 +156,13 @@ export type WorkflowStage =
   | 'completed'
 
 export const WORKFLOW_STAGES: { id: WorkflowStage; label: string; role: UserRole; step: number; skippable?: boolean }[] = [
-  { id: 'inquiry-received',    label: 'Inquiry Received',      role: 'CS',          step: 1 },
-  { id: 'customer-check',      label: 'Customer Verification', role: 'CS',          step: 2 },
-  { id: 'kyc-pending',         label: 'KYC Initialization',    role: 'CS',          step: 3 },
-  { id: 'kyc-verification',    label: 'KYC Clearance',         role: 'Finance',     step: 4 },
-  { id: 'rate-check',          label: 'Multi-Source Rate Check', role: 'CS',        step: 5 },
-  { id: 'procurement-request', label: 'Procurement Escalation', role: 'Procurement', step: 6, skippable: true },
-  { id: 'quotation-prep',      label: 'Quotation Prep',        role: 'Sales',       step: 7 },
-  { id: 'quotation-sent',      label: 'Quote Sent',            role: 'CS',          step: 8 },
-  { id: 'customer-response',   label: 'Customer Response',     role: 'CS',          step: 9 },
-  { id: 'booking-request',     label: 'Booking Request',       role: 'CS',          step: 10 },
-  { id: 'completed',           label: 'Completed',             role: 'CS',          step: 11 },
+  { id: 'rate-check',          label: 'Rate Check',            role: 'CS',          step: 1 },
+  { id: 'procurement-request', label: 'Procurement Escalation', role: 'Procurement', step: 2, skippable: true },
+  { id: 'quotation-prep',      label: 'Quotation Prep',        role: 'Sales',       step: 3 },
+  { id: 'quotation-sent',      label: 'Quote Sent',            role: 'CS',          step: 4 },
+  { id: 'customer-response',   label: 'Customer Response',     role: 'CS',          step: 5 },
+  { id: 'booking-request',     label: 'Booking Request',       role: 'CS',          step: 6 },
+  { id: 'completed',           label: 'Completed',             role: 'CS',          step: 7 },
 ]
 
 // Heuristic for "this inquiry is time-critical" — used by Operations page urgency
@@ -315,6 +306,8 @@ export interface Inquiry {
   cpid?: number            // backend contact-person ID
   com_ids?: number[]       // backend commodity row IDs
   cont_ids?: number[]      // backend container row IDs
+  quotation_id?: number    // backend quotation PK — set when quotation is created in prepare-quotation
+  kyc_completed?: boolean  // true when the client's KYC stage is 'kyc_completed' (from inquiry list response)
   incoterm?: string        // trade term: FOB / CIF / EXW / DDP …
   cargo_ready_date?: string // ISO date when cargo is ready to ship
   preferred_rate?: number  // client's target buy rate (USD)
@@ -371,14 +364,11 @@ export interface Employee {
 }
 
 export const EMPLOYEES: Employee[] = [
-  { id: 1, name: 'Nimal Perera',       role: 'Sales Executive' },
-  { id: 2, name: 'Anjali Silva',       role: 'Customer Service' },
-  { id: 3, name: 'Rohan Fernando',     role: 'Sales Executive' },
-  { id: 4, name: 'Priya Jayawardena',  role: 'Finance' },
   { id: 5, name: 'procu-test',         role: 'Procurement' },
   { id: 6, name: 'fin-test',           role: 'Finance' },
   { id: 7, name: 'cs-test',            role: 'Customer Service' },
   { id: 8, name: 'sales-test',         role: 'Sales Executive' },
+  { id: 9, name: 'IT-AD',              role: 'Admin (All Access)' },
 ]
 
 // ==================== TASKS ====================

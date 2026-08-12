@@ -33,17 +33,27 @@ import {
   apiCreateTask, apiCompleteTask,
   apiAdvanceShipmentLeg, apiRecordShipmentPOD,
   apiCreateInquiry, apiCreateInquiryOldNew, apiCreateInquiryOldOld, apiFetchAllInquiries,
-  apiGetClientsDb, apiGetContactPersons,
+  apiGetClientsDb, apiGetKycPendingClients, type KycPendingClient,
+  apiGetKycRequests, type KycRequestRecord,
   type InquiryRow,
   apiCreateActivity, apiCreateBooking, apiConfirmBooking, apiReleaseBooking, apiNotifyProcurement,
   apiSetBookingSiCutoff, apiMarkSiRequested,
   apiSetBookingBlCutoff, apiMarkSiSubmitted, apiMarkDraftBlSent, apiSetBlStatus,
   apiRecordMasterBl, apiCreateHouseBl,
-  apiUpdateCustomer, apiAdvanceWorkflow, apiCreateWorkflowEntry,
+  apiUpdateCustomer, apiAdvanceWorkflow, apiGetInquiry,
   apiPatchInquiry, apiPatchCommodity, apiPatchContainer, apiDeleteInquiry,
   apiGetClientKycStatus, BE_STAGE_TO_FE,
   apiSwitchUser,
 } from './api'
+
+// crypto.randomUUID() requires HTTPS (secure context). Fall back for plain HTTP deployments.
+const uuid = (): string =>
+  typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+        const r = (Math.random() * 16) | 0
+        return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16)
+      })
 
 // Container type codes the backend uses → frontend ContainerType labels
 const BE_CONTAINER_TYPE: Record<string, string> = {
@@ -101,7 +111,7 @@ function mapInquiryRows(rows: InquiryRow[]): Inquiry[] {
       inq_id,
       cli_id: h.cli_id,
       customer_name: h.name,
-      employee_id: 1, // auth is hardcoded to emp_id=1 in dev; not returned by list endpoint
+      employee_id: 0, // not returned by list endpoint; overwritten when activeEmployeeId is known
       origin: h.origin,
       destination: group[0]?.destination ?? '',
       status: 'pending',
@@ -116,25 +126,66 @@ function mapInquiryRows(rows: InquiryRow[]): Inquiry[] {
       cargo_ready_date: h.cargo_ready_date ?? undefined,
       preferred_rate: h.preferred_rate ?? undefined,
       containers,
-      workflow_stage: (h.workflow_stage ? BE_STAGE_TO_FE[h.workflow_stage] ?? 'inquiry-received' : 'inquiry-received') as WorkflowStage,
+      workflow_stage: (h.workflow_stage ? BE_STAGE_TO_FE[h.workflow_stage] ?? 'rate-check' : 'rate-check') as WorkflowStage,
+      kyc_completed: h.kyc_completed ?? undefined,
     })
   }
   return result
 }
 
 export default function App() {
+  // Valid employee IDs the backend accepts — stale sessionStorage values must be rejected
+  const validEmpIds = EMPLOYEES.map(e => e.id)
+
   const [loggedInEmployeeId, setLoggedInEmployeeId] = useState<number | null>(
     () => {
       const stored = sessionStorage.getItem('loggedInEmployeeId')
-      return stored ? Number(stored) : null
+      if (!stored) return null
+      const id = Number(stored)
+      if (!validEmpIds.includes(id)) {
+        // Stale session from old employee IDs — clear and force re-login
+        sessionStorage.removeItem('loggedInEmployeeId')
+        return null
+      }
+      return id
     }
   )
+
+  const loadAppData = () => {
+    apiGetClientsDb().then(cl => {
+      setClientList(cl)
+      setCustomers(cl.map(r => ({
+        id:            String(r.cli_id),
+        name:          r.name,
+        location:      r.city ?? '',
+        tier:          'Regular'     as const,
+        payment_terms: 'Pay Upfront' as const,
+        blacklisted:   false,
+        credit_hold:   false,
+        min_margin_pct: 0,
+        kyc_status:    r.kyc_completed ? 'approved' as const : 'not_started' as const,
+      })))
+    }).catch(() => console.warn('[loadAppData] Could not load client list'))
+    apiGetKycPendingClients()
+      .then(setKycPendingClients)
+      .catch(() => console.warn('[loadAppData] Could not load KYC pending clients'))
+    apiGetKycRequests()
+      .then(setKycRequests)
+      .catch(() => console.warn('[loadAppData] Could not load KYC requests'))
+    apiFetchAllInquiries()
+      .then(rows => setInquiries(mapInquiryRows(rows)))
+      .catch(() => console.warn('[loadAppData] Could not load inquiries from backend'))
+      .finally(() => setInitState('ready'))
+  }
 
   const handleLogin = (empId: number) => {
     sessionStorage.setItem('loggedInEmployeeId', String(empId))
     setLoggedInEmployeeId(empId)
     setActiveEmployeeId(empId)
-    apiSwitchUser(empId).catch(err => console.error('Failed to switch user on backend:', err))
+    // Switch backend user context, then re-fetch all employee-scoped data
+    apiSwitchUser(empId)
+      .then(() => loadAppData())
+      .catch(err => console.error('Failed to switch user on backend:', err))
   }
 
   const handleLogout = () => {
@@ -150,7 +201,8 @@ export default function App() {
   // ---- Role-based access control ----
   const [activeEmployeeId, setActiveEmployeeId] = useState<number>(() => {
     const stored = sessionStorage.getItem('loggedInEmployeeId')
-    return stored ? Number(stored) : 2
+    if (stored && validEmpIds.includes(Number(stored))) return Number(stored)
+    return EMPLOYEES[0].id
   })
   const activeEmployee = EMPLOYEES.find(e => e.id === activeEmployeeId) ?? EMPLOYEES[0]
   const activeRole: UserRole = EMPLOYEE_ROLE_MAP[activeEmployeeId] ?? 'CS'
@@ -186,12 +238,31 @@ export default function App() {
     }
   }, [currentPage]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const advanceWorkflow = (inquiryId: string, nextStage: WorkflowStage) => {
+  // skipApi: set to true when the backend already auto-advanced the workflow
+  // as a side effect of another API call (e.g. POST /rate-requests, POST .../options,
+  // PATCH /quotations/.../send, PATCH .../response). In that case we only update
+  // local React state — no redundant PATCH to the workflow endpoint.
+  // Either way, we re-fetch the inquiry from the backend after the update so the
+  // displayed stage always reflects the backend's actual state.
+  const advanceWorkflow = (inquiryId: string, nextStage: WorkflowStage, skipApi = false) => {
     setInquiries(prev => prev.map(i =>
       i.id === inquiryId ? { ...i, workflow_stage: nextStage } : i
     ))
     const inqId = inquiries.find(i => i.id === inquiryId)?.inq_id
-    apiAdvanceWorkflow(inquiryId, nextStage, inqId).catch(() => console.warn('API: advance workflow failed'))
+    if (!skipApi && inqId) {
+      apiAdvanceWorkflow(inquiryId, nextStage, inqId).catch(() => console.warn('API: advance workflow failed'))
+    }
+    // Re-fetch from backend so local state matches the server's actual stage
+    // (backend may have auto-advanced further, e.g. after adding a rate option)
+    if (inqId) {
+      apiGetInquiry(inqId).then(rows => {
+        if (rows.length === 0) return
+        const beStage = (BE_STAGE_TO_FE[rows[0].workflow_stage ?? ''] ?? 'rate-check') as WorkflowStage
+        setInquiries(prev => prev.map(i =>
+          i.id === inquiryId ? { ...i, workflow_stage: beStage } : i
+        ))
+      }).catch(() => {/* silent — local optimistic state is acceptable fallback */})
+    }
     const stageLabel = WORKFLOW_STAGES.find(s => s.id === nextStage)?.label ?? nextStage
     flash(`${inquiryId} → ${stageLabel}`)
   }
@@ -207,9 +278,9 @@ export default function App() {
   const [activityLog, setActivityLog] = useState<ActivityEntry[]>([])
   // Reference data — fetched once at startup and cached for the session
   const [clientList, setClientList] = useState<ClientRecord[]>([])
-  const [contactPersonList, setContactPersonList] = useState<ContactPersonRecord[]>([])
-  // cli_id → kyc_completed: true means client is KYC-cleared, skip the KYC workflow stages
-  const [kycStatusMap, setKycStatusMap] = useState<Record<number, boolean>>({})
+  const contactPersonList: ContactPersonRecord[] = []  // disabled until backend provides bulk endpoint
+  const [kycPendingClients, setKycPendingClients] = useState<KycPendingClient[]>([])
+  const [kycRequests, setKycRequests] = useState<KycRequestRecord[]>([])
   const [initState, setInitState] = useState<'loading' | 'ready' | 'error'>('loading')
   // Lets the chat tell the Quotations page to open its builder pre-filled with a customer.
   const [quotePrefillCustomer, setQuotePrefillCustomer] = useState<string | null>(null)
@@ -218,43 +289,15 @@ export default function App() {
 
   // ---- Initialise app state ----
   useEffect(() => {
-    // Fetch inquiries + reference data in parallel; only the inquiry fetch gates the ready state
-    apiGetClientsDb().then(cl => {
-      setClientList(cl)
-      setCustomers(cl.map(r => ({
-        id:            String(r.cli_id),
-        name:          r.name,
-        location:      r.city ?? '',
-        tier:          'Regular'     as const,
-        payment_terms: 'Pay Upfront' as const,
-        blacklisted:   false,
-        credit_hold:   false,
-        min_margin_pct: 0,
-        kyc_status:    r.kyc_completed ? 'approved' as const : 'not_started' as const,
-      })))
-    }).catch(() => console.warn('[startup] Could not load client list'))
-    apiGetContactPersons().then(setContactPersonList).catch(() => console.warn('[startup] Could not load contact persons'))
-    apiFetchAllInquiries()
-      .then(rows => {
-        setInquiries(mapInquiryRows(rows))
-        // Fan-out KYC status fetch for each unique cli_id present on the loaded inquiries
-        const uniqueCliIds = [...new Set(rows.map(r => r.cli_id).filter((id): id is number => id != null))]
-        Promise.all(uniqueCliIds.map(id =>
-          apiGetClientKycStatus(id)
-            .then(completed => ({ id, completed }))
-            .catch(() => ({ id, completed: false }))
-        )).then(results => {
-          const map: Record<number, boolean> = {}
-          results.forEach(r => { map[r.id] = r.completed })
-          setKycStatusMap(map)
-        })
-      })
-      .catch(() => console.warn('[startup] Could not load inquiries from backend'))
-      .finally(() => {
-        setInitState('ready')
-        setToast({ message: `Welcome back, ${activeEmployee.name}` })
-        setTimeout(() => setToast(null), 4000)
-      })
+    // Only load data on startup if user is already logged in (valid session).
+    // If not logged in, Login screen is shown and handleLogin will call loadAppData after switch-user.
+    if (!loggedInEmployeeId) {
+      setInitState('ready')
+      return
+    }
+    apiSwitchUser(loggedInEmployeeId)
+      .catch(() => console.warn('[startup] switch-user failed'))
+      .then(() => loadAppData())
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const refreshData = () => {
@@ -305,7 +348,7 @@ export default function App() {
     )
     const stamp = nowStamp()
     const newFup: Followup = {
-      id: `FUP-${crypto.randomUUID()}`,
+      id: `FUP-${uuid()}`,
       inquiry_id: target?.id,
       customer_name: customerName,
       note: note || (completionFlag ? 'Completed' : 'Follow-up logged'),
@@ -319,7 +362,7 @@ export default function App() {
       customer_name: customerName,
       note: newFup.note,
       completion_flag: completionFlag,
-      employee_id: 1,
+      employee_id: activeEmployeeId,
     }).then(created => {
       setFollowups(prev => prev.map(f => f.id === newFup.id ? created : f))
     }).catch(err => console.error('Create followup failed:', err))
@@ -351,7 +394,7 @@ export default function App() {
   const addQuote = (q: Omit<Quote, 'id' | 'created_at' | 'status' | 'approval_reason'>): Quote => {
     const cust = customers.find(c => c.name.toLowerCase() === q.customer_name.toLowerCase())
     const needsApproval = !!cust && q.margin_pct < cust.min_margin_pct
-    const tempId = `QUO-${crypto.randomUUID()}`
+    const tempId = `QUO-${uuid()}`
     const newQ: Quote = {
       ...q,
       id: tempId,
@@ -430,7 +473,7 @@ export default function App() {
 
   const addTask = (customerName: string, taskText: string, dueDate: string, employeeId: number) => {
     const newTask: Task = {
-      id: `TSK-${crypto.randomUUID()}`,
+      id: `TSK-${uuid()}`,
       customer_name: customerName,
       task: taskText,
       status: 'pending',
@@ -443,7 +486,7 @@ export default function App() {
       customer_name: customerName,
       task: taskText,
       due_date: dueDate,
-      employee_id: 1,
+      employee_id: activeEmployeeId,
     }).then(created => {
       setTasks(prev => prev.map(t => t.id === newTask.id ? created : t))
     }).catch(err => console.error('Create task failed:', err))
@@ -574,7 +617,7 @@ export default function App() {
     container_type: string; quantity: number; origin: string; destination: string;
     is_urgent: boolean; booked_by: number; notes: string; delivery_type?: 'port-to-port' | 'door-to-door';
   }) => {
-    const newId = `BKG-${crypto.randomUUID()}`
+    const newId = `BKG-${uuid()}`
     const stamp = nowStamp()
     const newBooking: Booking = {
       id: newId,
@@ -608,7 +651,7 @@ export default function App() {
   }
 
   const addInquiry = (data: Omit<Inquiry, 'id' | 'created_at' | 'status' | 'completed_at' | 'followup_note' | 'inquiry_text'>): Inquiry => {
-    const tempId = `INQ-${crypto.randomUUID()}`
+    const tempId = `INQ-${uuid()}`
     const stamp = nowStamp()
     const tempInq: Inquiry = {
       ...data,
@@ -616,7 +659,7 @@ export default function App() {
       inquiry_text: data.request,
       status: 'pending',
       created_at: stamp,
-      workflow_stage: 'inquiry-received',
+      workflow_stage: 'rate-check',   // backend auto-creates workflow at rate_check_in_progress
       recorded_by: activeEmployeeId,
     }
     setInquiries(prev => [tempInq, ...prev])
@@ -678,8 +721,9 @@ export default function App() {
             }
           : i
       ))
-      apiCreateWorkflowEntry(created.inq_id).catch(err => console.error('Create workflow entry failed:', err))
-      // If this was a new client (Case 1), add them to the customers list so KYC tab picks them up
+      // Workflow is auto-created at rate_check_in_progress by the backend inquiry endpoint.
+      // No manual apiCreateWorkflowEntry call needed.
+      // If this was a new client (Case 1), add them to the customers list and KYC pending queue immediately
       if (!data.cli_id && created.cli_id) {
         setCustomers(prev => {
           if (prev.some(c => c.name.toLowerCase() === data.customer_name.toLowerCase())) return prev
@@ -694,6 +738,11 @@ export default function App() {
             min_margin_pct: 0,
             kyc_status:    'not_started' as const,
           }]
+        })
+        // Also add to KYC pending queue so CS's KYC tab shows this client without re-login
+        setKycPendingClients(prev => {
+          if (prev.some(c => c.cli_id === created.cli_id)) return prev
+          return [...prev, { cli_id: created.cli_id, name: data.customer_name }]
         })
       }
     }).catch(err => console.error('Create inquiry failed:', err))
@@ -721,8 +770,9 @@ export default function App() {
     setInquiries(prev => prev.map(inq => {
       if (inq.customer_name.toLowerCase() !== customerName.toLowerCase()) return inq
       if (inq.status === 'completed') return inq
-      const stuckStages: WorkflowStage[] = ['inquiry-received', 'customer-check', 'kyc-pending', 'kyc-verification']
-      if (inq.workflow_stage && stuckStages.includes(inq.workflow_stage)) {
+      // Only advance inquiries that are actually in KYC stages
+      const kycStages: WorkflowStage[] = ['kyc-pending', 'kyc-verification']
+      if (inq.workflow_stage && kycStages.includes(inq.workflow_stage)) {
         apiAdvanceWorkflow(inq.id, targetStage, inq.inq_id).catch(err => console.error('Auto-advance workflow failed:', err))
         return { ...inq, workflow_stage: targetStage }
       }
@@ -815,7 +865,6 @@ export default function App() {
             quotes={quotes}
             customers={customers}
             clientList={clientList}
-            kycStatusMap={kycStatusMap}
             activityLog={activityLog}
             onGoTo={navigateTo}
             onAdvanceWorkflow={advanceWorkflow}
@@ -837,6 +886,13 @@ export default function App() {
             onLogActivity={logActivity}
             onFlash={flash}
             onStartRateCheck={startRateCheck}
+            kycPendingClients={kycPendingClients}
+            onSetKycPendingClients={setKycPendingClients}
+            kycRequests={kycRequests}
+            onSetKycRequests={setKycRequests}
+            onRefreshKycRequests={() =>
+              apiGetKycRequests().then(setKycRequests).catch(() => {})
+            }
             initialStep={workspaceInitialStep ?? undefined}
           />
         )

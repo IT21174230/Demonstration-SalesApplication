@@ -22,7 +22,7 @@ interface NewInquiryProps {
   onGoBack: () => void
 }
 
-export default function NewInquiry({ clientList, contactPersonList, onCreateInquiry, onFlash, onGoBack }: NewInquiryProps) {
+export default function NewInquiry({ clientList, contactPersonList, activeEmployee, onCreateInquiry, onFlash, onGoBack }: NewInquiryProps) {
   // Inquiry-level state
   const [niCustomer, setNiCustomer] = useState('')
   const [niOrigin, setNiOrigin] = useState('')
@@ -113,8 +113,8 @@ export default function NewInquiry({ clientList, contactPersonList, onCreateInqu
       destination: firstContainer?.destination.trim() || 'TBD',
       delivery_type: niDelivery,
       sbu: niSbu,
-      employee_id: 1,
-      workflow_stage: 'inquiry-received',
+      employee_id: activeEmployee.id,
+      workflow_stage: 'rate-check',
       priority: niPriority,
       incoterm: niIncoterm.trim() || undefined,
       cargo_ready_date: niCargoReadyDate || undefined,
@@ -153,7 +153,7 @@ export default function NewInquiry({ clientList, contactPersonList, onCreateInqu
             <Plus size={18} /> New Inquiry
           </div>
           <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
-            Log a new shipping inquiry — it will enter the workflow at Step 1. Save to submit and add another.
+            Log a new shipping inquiry — it enters the workflow at Rate Check immediately. Save to submit and add another.
           </div>
         </div>
       </div>
