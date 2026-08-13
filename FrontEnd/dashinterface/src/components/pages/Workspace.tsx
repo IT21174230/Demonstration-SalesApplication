@@ -13,7 +13,7 @@ import {
   type ContainerLine, type LinerRecord, type ClientRecord,
 } from '../../types'
 import { useRole } from '../../RoleContext'
-import { apiSendQuotation, apiGetLiners, apiCreateKycRequest, apiGetClientKycStatus, apiCreateQuotation, apiPatchQuotation, apiMarkQuotationSent, apiRecordQuotationResponse, apiUpdateKycStage, type KycPendingClient, type KycRequestRecord } from '../../api'
+import { apiGetLiners, apiCreateKycRequest, apiCreateQuotation, apiPatchQuotation, apiMarkQuotationSent, apiRecordQuotationResponse, apiUpdateKycStage, type KycPendingClient, type KycRequestRecord } from '../../api'
 
 // ---------------------------------------------------------------------------
 // Props
@@ -181,7 +181,7 @@ export default function Workspace({
   onSetBookingBlCutoff, onMarkSiSubmitted, onMarkDraftBlSent, onSetBlStatus,
   onRecordMasterBl, onCreateHouseBl,
   onSetQuoteStatus, onUpdateCustomerKyc,
-  onAutoAdvanceForCustomer, onLogActivity, onFlash, onStartRateCheck,
+  onLogActivity, onFlash, onStartRateCheck,
   kycPendingClients, onSetKycPendingClients,
   kycRequests, onSetKycRequests, onRefreshKycRequests,
   initialStep,
@@ -660,7 +660,7 @@ export default function Workspace({
 
     // --- From KYC Requests (GET /kyc/kyc-requests/requests) ---
     // Finance and Admin see submitted KYC requests awaiting review (kyc_pending stage)
-    if (!role || role === 'Finance' || role === 'Admin') {
+    if (!role || role === 'Finance') {
       for (const req of kycRequests) {
         if (req.kyc_stage !== 'kyc_pending' && req.kyc_stage !== 'documents_submitted') continue
         const docsSubmitted = req.docs
@@ -1121,7 +1121,7 @@ ABC Logistics (Pvt) Ltd`
         if (!pendingKycClient) {
           // Legacy flow: update local customer record and advance inquiry
           if (customer) onUpdateCustomerKyc(customer.name, 'pending_customer')
-          if (kycInquiry) onAdvanceWorkflow(kycInquiry.id, 'kyc-verification')
+          if (kycInquiry) onAdvanceWorkflow(kycInquiry.id, 'kyc-verification' as WorkflowStage)
         }
         onLogActivity({
           actor_role: activeRole,
@@ -1229,10 +1229,6 @@ ABC Logistics (Pvt) Ltd`
       }
       case 'send-to-customer': {
         const { inquiry } = actionModal.sourceData
-        // Extract quotation content from previous activity log
-        const prevCtx = actionModal.previousContext
-        const quotationText = prevCtx?.notes?.match(/Quotation:\n([\s\S]+)/)?.[1] ?? ''
-
         // Update sent_via on the quotation record, then mark as sent.
         // PATCH must happen before marking sent (backend blocks PATCH once status = 'sent').
         const sendQuoteId = lastQuotationId ?? inquiry.quotation_id

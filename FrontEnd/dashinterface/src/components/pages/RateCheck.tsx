@@ -91,7 +91,7 @@ export default function RateCheck({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
 
   // Skip procurement flag (cs-sales only)
-  const [skipProcurement, setSkipProcurement] = useState(false)
+  const [skipProcurement] = useState(false)
 
   // ID of the rate request created on mount — used to PATCH it on submit
   const [rateRequestId, setRateRequestId] = useState<number | null>(null)

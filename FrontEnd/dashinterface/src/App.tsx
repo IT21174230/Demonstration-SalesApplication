@@ -42,7 +42,7 @@ import {
   apiRecordMasterBl, apiCreateHouseBl,
   apiUpdateCustomer, apiAdvanceWorkflow, apiGetInquiry,
   apiPatchInquiry, apiPatchCommodity, apiPatchContainer, apiDeleteInquiry,
-  apiGetClientKycStatus, BE_STAGE_TO_FE,
+  BE_STAGE_TO_FE,
   apiSwitchUser,
 } from './api'
 
@@ -777,7 +777,7 @@ export default function App() {
       if (inq.customer_name.toLowerCase() !== customerName.toLowerCase()) return inq
       if (inq.status === 'completed') return inq
       // Only advance inquiries that are actually in KYC stages
-      const kycStages: WorkflowStage[] = ['kyc-pending', 'kyc-verification']
+      const kycStages = ['kyc-pending', 'kyc-verification']
       if (inq.workflow_stage && kycStages.includes(inq.workflow_stage)) {
         apiAdvanceWorkflow(inq.id, targetStage, inq.inq_id).catch(err => console.error('Auto-advance workflow failed:', err))
         return { ...inq, workflow_stage: targetStage }
