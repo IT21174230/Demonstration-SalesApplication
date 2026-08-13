@@ -158,7 +158,7 @@ export type WorkflowStage =
 export const WORKFLOW_STAGES: { id: WorkflowStage; label: string; role: UserRole; step: number; skippable?: boolean }[] = [
   { id: 'rate-check',          label: 'Rate Check',            role: 'CS',          step: 1 },
   { id: 'procurement-request', label: 'Procurement Escalation', role: 'Procurement', step: 2, skippable: true },
-  { id: 'quotation-prep',      label: 'Quotation Prep',        role: 'Sales',       step: 3 },
+  { id: 'quotation-prep',      label: 'Quotation Prep',        role: 'CS',          step: 3 },
   { id: 'quotation-sent',      label: 'Quote Sent',            role: 'CS',          step: 4 },
   { id: 'customer-response',   label: 'Customer Response',     role: 'CS',          step: 5 },
   { id: 'booking-request',     label: 'Booking Request',       role: 'CS',          step: 6 },
@@ -179,7 +179,7 @@ export type InquiryStatus = 'pending' | 'completed'
 export type SBU = 'Ocean Imports' | 'Ocean Exports' | 'Air Freight' | 'Domestic'
 export const SBUS: SBU[] = ['Ocean Imports', 'Ocean Exports', 'Air Freight', 'Domestic']
 
-export type DeliveryType = 'port-to-port' | 'door-to-door'
+export type DeliveryType = 'port-to-port' | 'door-to-door' | 'port-to-door' | 'door-to-port'
 
 // Priority levels — can be set at creation and changed mid-workflow by Sales or CS.
 export type InquiryPriority = 'Low' | 'Medium' | 'High' | 'Urgent'

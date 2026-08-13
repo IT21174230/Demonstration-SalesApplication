@@ -22,7 +22,7 @@ interface InquiryListProps {
   onFlash: (msg: string) => void
   onPatchInquiry: (
     inq_id: number,
-    data: { sbu?: string; origin?: string; incoterm?: string; cargo_ready_date?: string; priority?: string; preferred_liners?: string; preferred_rate?: number; service_mode?: 'DOOR_TO_DOOR' | 'PORT_TO_PORT' },
+    data: { sbu?: string; origin?: string; incoterm?: string; cargo_ready_date?: string; priority?: string; preferred_liners?: string; preferred_rate?: number; service_mode?: 'DOOR_TO_DOOR' | 'PORT_TO_PORT' | 'PORT_TO_DOOR' | 'DOOR_TO_PORT' },
     commodityPatches?: Array<{ com_id: number; data: { com_type?: string; hs_code?: string; weight?: number } }>,
     containerPatches?: Array<{ cont_id: number; data: { container_type?: string; temperature?: number; qty?: number; destination?: string; address?: string; zip_code?: string; is_fully_loaded?: boolean; free_time?: string } }>
   ) => void
@@ -90,7 +90,7 @@ type EditDraft = {
   origin: string
   sbu: string
   priority: string
-  delivery_type: 'door-to-door' | 'port-to-port'
+  delivery_type: 'door-to-door' | 'port-to-port' | 'port-to-door' | 'door-to-port'
   incoterm: string
   cargo_ready_date: string
   preferred_rate: string
@@ -251,7 +251,10 @@ export default function InquiryList({ inquiries, followups, customers, quotes, o
         origin:           editDraft.origin           || undefined,
         sbu:              editDraft.sbu              || undefined,
         priority:         editDraft.priority         ? (BE_PRIORITY_REV[editDraft.priority] ?? editDraft.priority) : undefined,
-        service_mode:     editDraft.delivery_type === 'door-to-door' ? 'DOOR_TO_DOOR' : 'PORT_TO_PORT',
+        service_mode:     editDraft.delivery_type === 'door-to-door' ? 'DOOR_TO_DOOR'
+          : editDraft.delivery_type === 'port-to-door' ? 'PORT_TO_DOOR'
+          : editDraft.delivery_type === 'door-to-port' ? 'DOOR_TO_PORT'
+          : 'PORT_TO_PORT',
         incoterm:         editDraft.incoterm         || undefined,
         cargo_ready_date: editDraft.cargo_ready_date || undefined,
         preferred_rate:   editDraft.preferred_rate   ? (parseFloat(editDraft.preferred_rate) || undefined) : undefined,
@@ -645,7 +648,7 @@ export default function InquiryList({ inquiries, followups, customers, quotes, o
                 ['SBU', viewing.sbu],
                 ['Status', viewing.status],
                 ['Priority', viewing.priority ?? 'Not set'],
-                ['Delivery Type', viewing.delivery_type === 'door-to-door' ? 'Door to Door' : 'Port to Port'],
+                ['Delivery Type', viewing.delivery_type === 'door-to-door' ? 'Door to Door' : viewing.delivery_type === 'port-to-door' ? 'Port to Door' : viewing.delivery_type === 'door-to-port' ? 'Door to Port' : 'Port to Port'],
                 ['Incoterm', viewing.incoterm ?? 'Not set'],
                 ['Cargo Ready Date', viewing.cargo_ready_date ?? viewing.created_at ?? 'Not set'],
                 ['Preferred Rate', viewing.preferred_rate != null ? `USD ${viewing.preferred_rate.toLocaleString()}` : 'Not set'],
@@ -907,10 +910,12 @@ export default function InquiryList({ inquiries, followups, customers, quotes, o
                   className="lt-select"
                   style={{ width: '100%', padding: '10px 12px', fontSize: 13, borderRadius: 8 }}
                   value={editDraft.delivery_type}
-                  onChange={e => setEditDraft(d => d && ({ ...d, delivery_type: e.target.value as 'door-to-door' | 'port-to-port' }))}
+                  onChange={e => setEditDraft(d => d && ({ ...d, delivery_type: e.target.value as 'door-to-door' | 'port-to-port' | 'port-to-door' | 'door-to-port' }))}
                 >
                   <option value="port-to-port">Port to Port</option>
                   <option value="door-to-door">Door to Door</option>
+                  <option value="port-to-door">Port to Door</option>
+                  <option value="door-to-port">Door to Port</option>
                 </select>
               </div>
               <div>

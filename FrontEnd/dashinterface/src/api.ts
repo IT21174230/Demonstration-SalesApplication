@@ -34,7 +34,12 @@ async function post<T>(path: string, body: unknown): Promise<T> {
   if (!res.ok) {
     const detail = await res.json().catch(() => null)
     console.error(`POST ${path} failed ${res.status}:`, detail)
-    throw new Error(`POST ${path} failed: ${res.status}`)
+    // Surface FastAPI validation detail in the error message
+    let msg = `POST ${path} failed: ${res.status}`
+    if (detail) {
+      msg += ' — ' + JSON.stringify(detail)
+    }
+    throw new Error(msg)
   }
   return res.json()
 }
@@ -109,7 +114,7 @@ export interface InquiryRow {
   origin: string
   incoterm: string | null
   priority: string | null
-  service_mode: 'DOOR_TO_DOOR' | 'PORT_TO_PORT' | null
+  service_mode: 'DOOR_TO_DOOR' | 'PORT_TO_PORT' | 'PORT_TO_DOOR' | 'DOOR_TO_PORT' | null
   cargo_ready_date: string | null
   preferred_liners: string | null
   preferred_rate: number | null
@@ -195,7 +200,10 @@ export function apiCreateInquiry(data: {
   const contactPhone    = channel === 'Phone'    ? (data.contact_channel_id ?? undefined) : undefined
   const contactWechat   = channel === 'WeChat'   ? (data.contact_channel_id ?? undefined) : undefined
 
-  const serviceMode = data.delivery_type === 'door-to-door' ? 'DOOR_TO_DOOR' : 'PORT_TO_PORT'
+  const serviceMode = data.delivery_type === 'door-to-door' ? 'DOOR_TO_DOOR'
+    : data.delivery_type === 'port-to-door' ? 'PORT_TO_DOOR'
+    : data.delivery_type === 'door-to-port' ? 'DOOR_TO_PORT'
+    : 'PORT_TO_PORT'
 
   const frontendContainers = data.containers ?? []
 
@@ -287,7 +295,10 @@ function buildInquiryAndContainers(data: {
   preferred_liners?: string[]
   containers?: ContainerLine[]
 }): { inquiry: object; commodities: object[]; beContainers: object[] } {
-  const serviceMode = data.delivery_type === 'door-to-door' ? 'DOOR_TO_DOOR' : 'PORT_TO_PORT'
+  const serviceMode = data.delivery_type === 'door-to-door' ? 'DOOR_TO_DOOR'
+    : data.delivery_type === 'port-to-door' ? 'PORT_TO_DOOR'
+    : data.delivery_type === 'door-to-port' ? 'DOOR_TO_PORT'
+    : 'PORT_TO_PORT'
   const lines = data.containers ?? []
   return {
     inquiry: {
@@ -437,7 +448,7 @@ export function apiPatchInquiry(inq_id: number, data: {
   priority?: string
   preferred_liners?: string
   preferred_rate?: number
-  service_mode?: 'DOOR_TO_DOOR' | 'PORT_TO_PORT'
+  service_mode?: 'DOOR_TO_DOOR' | 'PORT_TO_PORT' | 'PORT_TO_DOOR' | 'DOOR_TO_PORT'
 }): Promise<Record<string, unknown>> {
   return patch<Record<string, unknown>>(`/inquiries/inquiries/${inq_id}`, data)
 }

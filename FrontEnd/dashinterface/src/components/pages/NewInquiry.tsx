@@ -242,6 +242,8 @@ export default function NewInquiry({ clientList, contactPersonList, activeEmploy
             <select className="lt-select" style={selectStyle} value={niDelivery} onChange={e => setNiDelivery(e.target.value as DeliveryType)}>
               <option value="port-to-port">Port to Port</option>
               <option value="door-to-door">Door to Door</option>
+              <option value="port-to-door">Port to Door</option>
+              <option value="door-to-port">Door to Port</option>
             </select>
           </div>
           <div>

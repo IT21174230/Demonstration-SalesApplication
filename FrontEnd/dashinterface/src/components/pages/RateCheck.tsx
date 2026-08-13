@@ -169,7 +169,10 @@ export default function RateCheck({
   const dest = container?.destination || inquiry.destination
   const contType = container?.containerType || inquiry.container_type
   const custData = customers.find(c => c.name.toLowerCase() === inquiry.customer_name.toLowerCase())
-  const canAddEntry = isProcurement && !!(mrLiner.trim() && mrContainers.some(c => c.rate.trim()))
+  const vesselFieldsReady = mrTab !== 'vessel-spot' || !!(mrVesselName.trim() && mrVoyage.trim() && mrVesselEta && mrVesselEtd && mrFclOpenDate && mrFclCutDate)
+  const fakFieldsReady = mrTab !== 'fak' || !!(mrValidFrom && mrValidTo && linerList.some(l => l.name === mrLiner))
+  const specialFieldsReady = mrTab !== 'special' || !!(mrValidFrom && mrValidTo && linerList.some(l => l.name === mrLiner) && inquiry.com_ids?.length)
+  const canAddEntry = isProcurement && !!(mrLiner.trim() && mrContainers.some(c => c.rate.trim()) && vesselFieldsReady && fakFieldsReady && specialFieldsReady)
   const hasManualEntries = manualEntries.length > 0
   const hasDbSelections = selectedIds.size > 0
   const containerLabel = container
@@ -277,18 +280,24 @@ export default function RateCheck({
     const inqId  = inquiry.inq_id
     const filledContainers = mrContainers.filter(c => c.rate.trim())
 
+    // Map frontend surcharges to backend SurchargeNew format.
+    // rate_id is a placeholder — backend overrides it with the newly created rate's ID.
+    const surchargePayload = mrSurcharges
+      .filter(s => s.type && s.amount)
+      .map(s => ({ rate_id: 0, type: s.type, amt: Number(s.amount), currency: s.currency }))
+
     if (mrTab === 'vessel-spot') {
       filledContainers.forEach(c => {
         apiCreateVesselRate({
           inq_id: inqId,
-          voyage: mrVoyage || undefined,
-          vessel_name: mrVesselName || undefined,
-          eta: mrVesselEta || undefined,
-          etd: mrVesselEtd || undefined,
+          voyage: mrVoyage,
+          vessel_name: mrVesselName,
+          eta: mrVesselEta,
+          etd: mrVesselEtd,
           rate: Number(c.rate),
           currency: c.currency,
-          fcl_opening: mrFclOpenDate ? `${mrFclOpenDate}T${mrFclOpenTime || '00:00'}:00` : undefined,
-          fcl_cutoff:  mrFclCutDate  ? `${mrFclCutDate}T${mrFclCutTime || '00:00'}:00`   : undefined,
+          fcl_opening: `${mrFclOpenDate}T${mrFclOpenTime || '00:00'}:00`,
+          fcl_cutoff:  `${mrFclCutDate}T${mrFclCutTime || '00:00'}:00`,
           origin: mrOrigin,
           destination: mrDestination,
           tr_ln_id: trLnId,
@@ -302,16 +311,17 @@ export default function RateCheck({
           iscancelled: mrIsCancelled || undefined,
           cancellationreason: mrCancelReason || undefined,
           cancellationfee: mrCancelCharge ? Number(mrCancelCharge) : undefined,
-        }).catch(err => console.error('[RateCheck] vessel-spot POST failed:', err))
+          surcharges: surchargePayload.length > 0 ? surchargePayload : undefined,
+        }).catch(err => { console.error('[RateCheck] vessel-spot POST failed:', err); onFlash(`ERROR saving vessel rate: ${(err as Error).message}`) })
       })
     } else if (mrTab === 'fak') {
       filledContainers.forEach(c => {
         apiCreateFakRate({
-          lin_id: linId,
+          lin_id: linId!,
           tr_ln_id: trLnId,
           inq_id: inqId,
-          valid_from: mrValidFrom || undefined,
-          valid_to: mrValidTo || undefined,
+          valid_from: `${mrValidFrom}T00:00:00`,
+          valid_to: `${mrValidTo}T00:00:00`,
           volume: c.tus.trim() ? (parseInt(c.tus) || 1) : 1,
           container_type: c.containerType,
           origin: mrOrigin,
@@ -323,19 +333,20 @@ export default function RateCheck({
           note: mrNote || undefined,
           special_remark: mrSpecialRemark || undefined,
           issold: mrIsSold || undefined,
-        }).catch(err => console.error('[RateCheck] fak POST failed:', err))
+          surcharges: surchargePayload.length > 0 ? surchargePayload : undefined,
+        }).catch(err => { console.error('[RateCheck] fak POST failed:', err); onFlash(`ERROR saving FAK rate: ${(err as Error).message}`) })
       })
     } else {
       // special
-      const comId = inquiry.com_ids?.[0]
+      const comId = inquiry.com_ids?.[0] ?? 0
       filledContainers.forEach(c => {
         apiCreateSpecialRate({
-          lin_id: linId,
+          lin_id: linId!,
           tr_ln_id: trLnId,
           inq_id: inqId,
           com_id: comId,
-          valid_from: mrValidFrom || undefined,
-          valid_to: mrValidTo || undefined,
+          valid_from: `${mrValidFrom}T00:00:00`,
+          valid_to: `${mrValidTo}T00:00:00`,
           rate: Number(c.rate),
           origin: mrOrigin,
           destination: mrDestination,
@@ -347,7 +358,8 @@ export default function RateCheck({
           note: mrNote || undefined,
           special_remark: mrSpecialRemark || undefined,
           issold: mrIsSold || undefined,
-        }).catch(err => console.error('[RateCheck] special POST failed:', err))
+          surcharges: surchargePayload.length > 0 ? surchargePayload : undefined,
+        }).catch(err => { console.error('[RateCheck] special POST failed:', err); onFlash(`ERROR saving special rate: ${(err as Error).message}`) })
       })
     }
 
@@ -367,13 +379,16 @@ export default function RateCheck({
 
   // Summarise a single manual entry for activity log
   const summariseEntry = (e: ManualRateEntry) => {
+    const surTotal = totalSurcharge(e)
+    const surNames = surchargeTypeNames(e)
     const p: string[] = [
       `type=${MR_TAB_LABELS[e.tab]}`,
       `liner=${e.liner || '?'}`,
       `route=${e.origin || '?'} → ${e.destination || '?'}`,
     ]
-    const cSummary = e.containers.map(c => `${c.containerType || '?'}: ${c.rate || '0'} ${c.currency}`).join('; ')
+    const cSummary = e.containers.map(c => `${c.containerType || '?'}: ${(Number(c.rate || 0) + surTotal).toLocaleString()} ${c.currency}`).join('; ')
     if (cSummary) p.push(`containers=[${cSummary}]`)
+    if (surNames.length > 0) p.push(`inclusive of ${surNames.join(', ')}`)
     if (e.tradeLane) p.push(`tradeLane=${e.tradeLane}`)
     if (e.freeTime) p.push(`freeDays=${e.freeTime}`)
     if (e.validFrom || e.validTo) p.push(`valid=${e.validFrom || '?'} → ${e.validTo || '?'}`)
@@ -533,10 +548,20 @@ export default function RateCheck({
   // Resolve which rates list to display
   const displayRates = isProcurement ? dbRates : visibleRates
 
+  // Helper: compute total surcharge amount for an entry (sum all surcharges)
+  const totalSurcharge = (e: ManualRateEntry) =>
+    e.surcharges.filter(s => s.type && s.amount).reduce((sum, s) => sum + Number(s.amount), 0)
+
+  // Helper: list surcharge type names for "inclusive of ..." label
+  const surchargeTypeNames = (e: ManualRateEntry) =>
+    e.surcharges.filter(s => s.type && s.amount).map(s => s.type)
+
   // ── Render a single manual entry card in the rate brief ──
   const renderManualEntryBrief = (e: ManualRateEntry) => {
     const typeLabel = MR_TAB_LABELS[e.tab]
     const accent = ({ 'vessel-spot': RATE_SOURCE_COLORS['Spot'], fak: RATE_SOURCE_COLORS['FAK'], special: RATE_SOURCE_COLORS['Special'] } as Record<ManualRateTab, string>)[e.tab] || '#d97706'
+    const surTotal = totalSurcharge(e)
+    const surNames = surchargeTypeNames(e)
     return (
       <div key={e.id} style={{ padding: '6px 0', borderBottom: '1px dashed var(--border)' }}>
         <div style={{ fontWeight: 700, fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -544,13 +569,21 @@ export default function RateCheck({
           {e.liner}
           {e.tab === 'vessel-spot' && e.vesselName && <span style={{ fontWeight: 400, color: 'var(--text-muted)', fontSize: 11 }}>{e.vesselName}{e.voyage ? ` / ${e.voyage}` : ''}</span>}
         </div>
-        {e.containers.map((c, ci) => (
-          <div key={ci} style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: ci > 0 ? 1 : 0 }}>
-            ${Number(c.rate).toLocaleString()} {c.currency} / {c.containerType}
-            {c.tus ? ` · TUs: ${c.tus}` : ''}
-            {c.maxWeight ? ` · Wt: ${c.maxWeight}` : ''}
+        {e.containers.map((c, ci) => {
+          const allIn = Number(c.rate) + surTotal
+          return (
+            <div key={ci} style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: ci > 0 ? 1 : 0 }}>
+              ${allIn.toLocaleString()} {c.currency} / {c.containerType}
+              {c.tus ? ` · TUs: ${c.tus}` : ''}
+              {c.maxWeight ? ` · Wt: ${c.maxWeight}` : ''}
+            </div>
+          )
+        })}
+        {surNames.length > 0 && (
+          <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2, fontStyle: 'italic' }}>
+            Inclusive of {surNames.join(', ')}
           </div>
-        ))}
+        )}
         <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 1 }}>
           {e.origin || '?'} → {e.destination || '?'}
           {e.tradeLane ? ` · ${e.tradeLane}` : ''}
@@ -576,11 +609,6 @@ export default function RateCheck({
         {e.tab === 'special' && (e.commodityType || e.commodityName) && (
           <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>
             Commodity: {e.commodityType || '?'}{e.commodityName ? ` — ${e.commodityName}` : ''}
-          </div>
-        )}
-        {e.surcharges.filter(s => s.type && s.amount).length > 0 && (
-          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>
-            Surcharges: {e.surcharges.filter(s => s.type && s.amount).map(s => `${s.type}: ${s.amount} ${s.currency}`).join(', ')}
           </div>
         )}
         <div style={{ fontSize: 11, marginTop: 2, display: 'flex', gap: 6 }}>
@@ -849,19 +877,12 @@ export default function RateCheck({
                   </div>
                 ) : (
                   <div style={{ padding: 16, background: 'rgba(220,38,38,0.04)', border: '1px solid rgba(220,38,38,0.15)', borderRadius: 8 }}>
-                    <div style={{ textAlign: 'center', marginBottom: 10 }}>
+                    <div style={{ textAlign: 'center' }}>
                       <div style={{ fontSize: 14, fontWeight: 700, color: '#dc2626', marginBottom: 4 }}>No rates found</div>
                       <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-                        No matching rates across AMS, spot, or INTTRA for this route.
+                        No matching rates in the database for this route. This inquiry will be escalated to Procurement for rate sourcing.
                       </div>
                     </div>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', background: 'rgba(15,143,168,0.04)', border: '1px solid rgba(15,143,168,0.15)', borderRadius: 6, cursor: 'pointer', fontSize: 12 }}>
-                      <input type="checkbox" checked={skipProcurement} onChange={e => setSkipProcurement(e.target.checked)} />
-                      <div>
-                        <div style={{ fontWeight: 600, color: 'var(--text)' }}>Skip Procurement Escalation</div>
-                        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>Proceed directly to Sales for quotation without procurement sourcing</div>
-                      </div>
-                    </label>
                   </div>
                 )
               )}
@@ -1312,28 +1333,28 @@ export default function RateCheck({
                       <div style={sectionTitle}>Vessel</div>
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px 16px', marginBottom: 14 }}>
                         <div>
-                          <label className="lt-label">Vessel Name</label>
+                          <label className="lt-label">Vessel Name <span style={{ color: '#dc2626' }}>*</span></label>
                           <input className="lt-input" style={{ width: '100%' }} value={mrVesselName} onChange={e => setMrVesselName(e.target.value)} placeholder="e.g. Maersk Sealand" />
                         </div>
                         <div>
-                          <label className="lt-label">Voyage</label>
+                          <label className="lt-label">Voyage <span style={{ color: '#dc2626' }}>*</span></label>
                           <input className="lt-input" style={{ width: '100%' }} value={mrVoyage} onChange={e => setMrVoyage(e.target.value)} placeholder="e.g. 2607E" />
                         </div>
                         <div>
-                          <label className="lt-label">Vessel ETD</label>
+                          <label className="lt-label">Vessel ETD <span style={{ color: '#dc2626' }}>*</span></label>
                           <input className="lt-input" style={{ width: '100%' }} type="date" value={mrVesselEtd} onChange={e => setMrVesselEtd(e.target.value)} />
                         </div>
                         <div>
-                          <label className="lt-label">Vessel ETA</label>
+                          <label className="lt-label">Vessel ETA <span style={{ color: '#dc2626' }}>*</span></label>
                           <input className="lt-input" style={{ width: '100%' }} type="date" value={mrVesselEta} onChange={e => setMrVesselEta(e.target.value)} />
                         </div>
                       </div>
-                      <label className="lt-label">FCL Opening</label>
+                      <label className="lt-label">FCL Opening <span style={{ color: '#dc2626' }}>*</span></label>
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px 16px', marginBottom: 14 }}>
                         <input className="lt-input" type="date" value={mrFclOpenDate} onChange={e => setMrFclOpenDate(e.target.value)} />
                         <input className="lt-input" type="time" value={mrFclOpenTime} onChange={e => setMrFclOpenTime(e.target.value)} />
                       </div>
-                      <label className="lt-label">FCL Cutoff</label>
+                      <label className="lt-label">FCL Cutoff <span style={{ color: '#dc2626' }}>*</span></label>
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px 16px' }}>
                         <input className="lt-input" type="date" value={mrFclCutDate} onChange={e => setMrFclCutDate(e.target.value)} />
                         <input className="lt-input" type="time" value={mrFclCutTime} onChange={e => setMrFclCutTime(e.target.value)} />
@@ -1409,11 +1430,11 @@ export default function RateCheck({
                     <div style={sectionTitle}>Validity</div>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px 16px' }}>
                       <div>
-                        <label className="lt-label">Valid From <span style={{ color: '#dc2626' }}>*</span></label>
+                        <label className="lt-label">Valid From {mrTab !== 'vessel-spot' && <span style={{ color: '#dc2626' }}>*</span>}</label>
                         <input className="lt-input" style={{ width: '100%' }} type="date" value={mrValidFrom} onChange={e => setMrValidFrom(e.target.value)} />
                       </div>
                       <div>
-                        <label className="lt-label">Valid To <span style={{ color: '#dc2626' }}>*</span></label>
+                        <label className="lt-label">Valid To {mrTab !== 'vessel-spot' && <span style={{ color: '#dc2626' }}>*</span>}</label>
                         <input className="lt-input" style={{ width: '100%' }} type="date" value={mrValidTo} onChange={e => setMrValidTo(e.target.value)} />
                       </div>
                     </div>
@@ -1569,6 +1590,8 @@ export default function RateCheck({
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                         {manualEntries.map((entry, idx) => {
                           const accent = ({ 'vessel-spot': RATE_SOURCE_COLORS['Spot'], fak: RATE_SOURCE_COLORS['FAK'], special: RATE_SOURCE_COLORS['Special'] } as Record<ManualRateTab, string>)[entry.tab] || '#d97706'
+                          const entrySurTotal = totalSurcharge(entry)
+                          const entrySurNames = surchargeTypeNames(entry)
                           return (
                             <div key={entry.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 8px', border: '1px solid var(--border)', borderRadius: 6, background: 'var(--card)' }}>
                               <div style={{ flex: 1, minWidth: 0 }}>
@@ -1577,10 +1600,15 @@ export default function RateCheck({
                                   {entry.liner}
                                 </div>
                                 <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>
-                                  {entry.containers.map(c => `${c.containerType}: $${Number(c.rate).toLocaleString()} ${c.currency}`).join(', ')}
+                                  {entry.containers.map(c => `${c.containerType}: $${(Number(c.rate) + entrySurTotal).toLocaleString()} ${c.currency}`).join(', ')}
                                   {' · '}{entry.origin || '?'} → {entry.destination || '?'}
                                   {entry.isCancelled && <span style={{ color: '#dc2626', fontWeight: 600, marginLeft: 4 }}>CANCELLED</span>}
                                 </div>
+                                {entrySurNames.length > 0 && (
+                                  <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 1, fontStyle: 'italic' }}>
+                                    Inclusive of {entrySurNames.join(', ')}
+                                  </div>
+                                )}
                               </div>
                               <button className="lt-icon-btn" style={{ padding: 3, flexShrink: 0 }} onClick={() => removeEntry(idx)} title="Remove">
                                 <X size={12} />

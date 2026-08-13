@@ -13,7 +13,7 @@ import {
   type ContainerLine, type LinerRecord, type ClientRecord,
 } from '../../types'
 import { useRole } from '../../RoleContext'
-import { apiSendQuotation, apiGetLiners, apiCreateKycRequest, apiGetClientKycStatus, apiCreateQuotation, apiMarkQuotationSent, apiRecordQuotationResponse, apiUpdateKycStage, type KycPendingClient, type KycRequestRecord } from '../../api'
+import { apiSendQuotation, apiGetLiners, apiCreateKycRequest, apiGetClientKycStatus, apiCreateQuotation, apiPatchQuotation, apiMarkQuotationSent, apiRecordQuotationResponse, apiUpdateKycStage, type KycPendingClient, type KycRequestRecord } from '../../api'
 
 // ---------------------------------------------------------------------------
 // Props
@@ -104,8 +104,9 @@ const CS_STEPS: StepDef[] = [
   { key: 'cs-inquiry',    label: 'Inquiry',     actionKinds: ['advance-workflow'],   stepNumber: 1 },
   { key: 'cs-kyc',        label: 'KYC',         actionKinds: ['send-kyc'],           stepNumber: 2 },
   { key: 'cs-rates',      label: 'Rates',       actionKinds: ['check-rates'],        stepNumber: 3 },
-  { key: 'cs-send-quote', label: 'Send Quote',  actionKinds: ['send-to-customer'],   stepNumber: 4 },
-  { key: 'cs-response',   label: 'Response',    actionKinds: ['customer-response'],  stepNumber: 5 },
+  { key: 'cs-prep-quote', label: 'Prepare Quotation', actionKinds: ['prepare-quotation'], stepNumber: 4 },
+  { key: 'cs-send-quote', label: 'Send Quote',  actionKinds: ['send-to-customer'],   stepNumber: 5 },
+  { key: 'cs-response',   label: 'Response',    actionKinds: ['customer-response'],  stepNumber: 6 },
   // Steps 6–14 hidden from CS step bar (comment back in to re-enable)
   // { key: 'cs-booking',    label: 'Booking',     actionKinds: ['booking-request'],    stepNumber: 6 },
   // { key: 'cs-release',    label: 'Release',     actionKinds: ['release-booking'],    stepNumber: 7 },
@@ -134,7 +135,8 @@ const SALES_STEPS: StepDef[] = [
   { key: 'sales-kyc',        label: 'KYC',               actionKinds: ['send-kyc'],            stepNumber: 2 },
   { key: 'sales-rates',      label: 'Rates',             actionKinds: ['check-rates'],         stepNumber: 3 },
   { key: 'sales-prep-quote', label: 'Prepare Quotation', actionKinds: ['prepare-quotation'],   stepNumber: 4 },
-  { key: 'sales-response',   label: 'Response',          actionKinds: ['customer-response'],   stepNumber: 5 },
+  { key: 'sales-send-quote', label: 'Send Quote',        actionKinds: ['send-to-customer'],    stepNumber: 5 },
+  { key: 'sales-response',   label: 'Response',          actionKinds: ['customer-response'],   stepNumber: 6 },
 ]
 
 const ADMIN_STEPS: StepDef[] = [
@@ -1189,32 +1191,31 @@ ABC Logistics (Pvt) Ltd`
       }
       case 'prepare-quotation': {
         const { inquiry } = actionModal.sourceData
-        // Create structured quotation record in backend and mark as sent
+        // Create quotation record in backend (status = in_prep).
+        // Do NOT mark as sent here — that happens in the send-to-customer step.
         if (inquiry.inq_id) {
           const today = new Date().toISOString().slice(0, 10)
+          const deadline = new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10)
           apiCreateQuotation({
             inq_id: inquiry.inq_id,
             quote_date: today,
-            sent_via: activeRole === 'Sales' ? 'direct' : 'email',
+            sent_via: 'email',           // placeholder — updated to actual method in send step
             options: [],
+            acceptence_deadline: deadline,
           })
             .then(created => {
               if (created.quote_id) {
                 setLastQuotationId(created.quote_id)
-                // Mark as sent — backend auto-advances workflow to quotation_sent
-                apiMarkQuotationSent(created.quote_id)
-                  .catch(err => console.error('[Workspace] mark quotation sent failed:', err))
               }
             })
             .catch(err => console.error('[Workspace] create quotation failed:', err))
         }
-        // Sales sends the quotation directly (no system email/WA) — skip quotation-sent and move straight to recording response
-        // Local state advance (backend may also auto-advance via apiMarkQuotationSent — idempotent)
-        onAdvanceWorkflow(inquiry.id, activeRole === 'Sales' ? 'customer-response' : 'quotation-sent')
+        // Advance to quotation-sent — both CS and Sales go through the same Send Quote step
+        onAdvanceWorkflow(inquiry.id, 'quotation-sent')
         onLogActivity({
           actor_role: activeRole,
           actor_id: activeEmployee.id,
-          action: `Quotation prepared and shared with ${inquiry.customer_name}.`,
+          action: `Quotation prepared for ${inquiry.customer_name}. Ready to send.`,
           ref_type: 'inquiry',
           ref_id: inquiry.id,
           customer_name: inquiry.customer_name,
@@ -1223,7 +1224,7 @@ ABC Logistics (Pvt) Ltd`
             ? `${formNote} | Quotation:\n${quotationContent}`
             : `Quotation:\n${quotationContent}`,
         })
-        onFlash(`${inquiry.id} → Quotation marked as sent to customer`, nextStepAction)
+        onFlash(`${inquiry.id} → Quotation prepared — ready to send`, nextStepAction)
         break
       }
       case 'send-to-customer': {
@@ -1232,18 +1233,18 @@ ABC Logistics (Pvt) Ltd`
         const prevCtx = actionModal.previousContext
         const quotationText = prevCtx?.notes?.match(/Quotation:\n([\s\S]+)/)?.[1] ?? ''
 
-        if (sendMethod === 'email' && customerContactEmail.trim()) {
-          setQuotationSending(true)
-          try {
-            await apiSendQuotation({
-              customer_name: inquiry.customer_name,
-              recipient_email: customerContactEmail.trim(),
-              quote_id: inquiry.id,
-              quotation_content: quotationText,
-            })
-          } catch { /* fire-and-forget */ }
-          setQuotationSending(false)
+        // Update sent_via on the quotation record, then mark as sent.
+        // PATCH must happen before marking sent (backend blocks PATCH once status = 'sent').
+        const sendQuoteId = lastQuotationId ?? inquiry.quotation_id
+        if (sendQuoteId) {
+          const actualSentVia = sendMethod === 'email' ? 'email' : 'whatsapp'
+          apiPatchQuotation(sendQuoteId, { sent_via: actualSentVia })
+            .then(() => apiMarkQuotationSent(sendQuoteId))
+            .catch(err => console.error('[Workspace] update/send quotation failed:', err))
         }
+
+        // Email delivery endpoint not yet implemented on backend — skip apiSendQuotation call.
+        // The quotation record is already marked as sent via apiMarkQuotationSent above.
 
         onAdvanceWorkflow(inquiry.id, 'customer-response')
         onLogActivity({
@@ -2032,7 +2033,7 @@ ABC Logistics (Pvt) Ltd`
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
                   <div style={{ padding: '10px 14px', background: 'rgba(15,143,168,0.06)', border: '1px solid rgba(15,143,168,0.18)', borderRadius: 8, fontSize: 12, color: '#0f8fa8', display: 'flex', alignItems: 'center', gap: 8 }}>
                     <Edit3 size={14} />
-                    Review and edit the quotation below. Copy it and share directly with the customer, then click <strong>Mark as Sent</strong>.
+                    Review and edit the quotation below, then click <strong>Save Quotation</strong>. The quotation will appear in the Send Quote step for delivery.
                   </div>
 
                   {ctx && (
@@ -3413,7 +3414,7 @@ ABC Logistics (Pvt) Ltd`
                  actionModal.actionKind === 'send-kyc' ? <><ShieldCheck size={12} /> Submit KYC Request</> :
                  actionModal.actionKind === 'verify-kyc' && formDecision === 'reject' ? 'Flag & Return to CS' :
                  actionModal.actionKind === 'verify-kyc' ? <><ShieldCheck size={12} /> Verify &amp; Push</> :
-                 actionModal.actionKind === 'prepare-quotation' ? <><ClipboardCheck size={12} /> Mark as Sent to Customer</> :
+                 actionModal.actionKind === 'prepare-quotation' ? <><ClipboardCheck size={12} /> Save Quotation</> :
                  actionModal.actionKind === 'send-to-customer' && sendMethod === 'email' ? <><Mail size={12} /> Send via Email</> :
                  actionModal.actionKind === 'send-to-customer' && sendMethod === 'whatsapp' ? <><MessageCircle size={12} /> Confirm WhatsApp Sent</> :
                  actionModal.actionKind === 'customer-response' && customerDecision === 'accepted' ? <><Check size={12} /> Customer Accepted — Proceed to Booking</> :

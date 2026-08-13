@@ -118,7 +118,10 @@ function mapInquiryRows(rows: InquiryRow[]): Inquiry[] {
       created_at: h.cargo_ready_date ?? '',
       sbu: (h.sbu as Inquiry['sbu']) ?? 'Ocean Exports',
       priority: h.priority ? (BE_PRIORITY[h.priority] ?? undefined) : undefined,
-      delivery_type: h.service_mode === 'DOOR_TO_DOOR' ? 'door-to-door' : 'port-to-port',
+      delivery_type: h.service_mode === 'DOOR_TO_DOOR' ? 'door-to-door'
+        : h.service_mode === 'PORT_TO_DOOR' ? 'port-to-door'
+        : h.service_mode === 'DOOR_TO_PORT' ? 'door-to-port'
+        : 'port-to-port',
       preferred_liners: h.preferred_liners
         ? h.preferred_liners.split(',').map(s => s.trim()).filter(Boolean)
         : undefined,
@@ -745,7 +748,10 @@ export default function App() {
           return [...prev, { cli_id: created.cli_id, name: data.customer_name }]
         })
       }
-    }).catch(err => console.error('Create inquiry failed:', err))
+    }).catch(err => {
+      console.error('Create inquiry failed:', err)
+      flash(`ERROR saving inquiry: ${(err as Error).message}`)
+    })
     flash(`Inquiry created for ${data.customer_name}`)  // optimistic flash
     return tempInq
   }
