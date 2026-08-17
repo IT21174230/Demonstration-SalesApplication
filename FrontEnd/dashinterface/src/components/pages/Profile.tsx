@@ -1,4 +1,4 @@
-import { LogOut, User, Briefcase, Building2, Hash } from 'lucide-react'
+import { LogOut, User, Briefcase, Building2, Hash, Mail } from 'lucide-react'
 import { useRole } from '../../RoleContext'
 import { ROLE_LABELS } from '../../types'
 
@@ -29,6 +29,13 @@ export default function Profile({ onLogout }: ProfileProps) {
             <span className="profile-row-label">Name</span>
             <span className="profile-row-value">{activeEmployee.name}</span>
           </div>
+          {activeEmployee.email && (
+            <div className="profile-row">
+              <Mail size={14} className="profile-row-icon" />
+              <span className="profile-row-label">Email</span>
+              <span className="profile-row-value">{activeEmployee.email}</span>
+            </div>
+          )}
           <div className="profile-row">
             <Briefcase size={14} className="profile-row-icon" />
             <span className="profile-row-label">Designation</span>

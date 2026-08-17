@@ -19,12 +19,12 @@ import Login from './components/pages/Login'
 import Profile from './components/pages/Profile'
 import {
   PAGE_LABELS, nowStamp,
-  EMPLOYEES, EMPLOYEE_ROLE_MAP, ROLE_ACTIONS, ROLE_PAGE_ACCESS, ROLE_LABELS,
+  ROLE_ACTIONS, ROLE_PAGE_ACCESS, ROLE_LABELS,
   WORKFLOW_STAGES,
   type PageId, type Inquiry, type Task, type Followup, type Customer,
   type Quote, type QuoteStatus, type Shipment, type ShipmentStatus, type Booking,
   type MissingItem, type UserRole, type WorkflowStage, type ActivityEntry, type ContainerLine,
-  type ClientRecord, type ContactPersonRecord,
+  type ClientRecord, type ContactPersonRecord, type Employee,
 } from './types'
 import { RoleContext, type RoleContextValue } from './RoleContext'
 import {
@@ -39,8 +39,12 @@ import {
   apiUpdateCustomer, apiAdvanceWorkflow, apiGetInquiry,
   apiPatchInquiry, apiPatchCommodity, apiPatchContainer, apiDeleteInquiry,
   BE_STAGE_TO_FE,
-  apiSwitchUser,
+  apiLogout, apiRefreshToken,
 } from './api'
+import {
+  getAccessToken, getRefreshToken, setTokens, clearTokens,
+  decodeJwt, isTokenExpired, deptToRole, scheduleTokenRefresh,
+} from './auth'
 
 // crypto.randomUUID() requires HTTPS (secure context). Fall back for plain HTTP deployments.
 const uuid = (): string =>
@@ -107,7 +111,7 @@ function mapInquiryRows(rows: InquiryRow[]): Inquiry[] {
       inq_id,
       cli_id: h.cli_id,
       customer_name: h.name,
-      employee_id: 0, // not returned by list endpoint; overwritten when activeEmployeeId is known
+      employee_id: 0, // not returned by list endpoint; overwritten when activeEmployee.id is known
       origin: h.origin,
       destination: group[0]?.destination ?? '',
       status: 'pending',
@@ -133,22 +137,8 @@ function mapInquiryRows(rows: InquiryRow[]): Inquiry[] {
 }
 
 export default function App() {
-  // Valid employee IDs the backend accepts — stale sessionStorage values must be rejected
-  const validEmpIds = EMPLOYEES.map(e => e.id)
-
-  const [loggedInEmployeeId, setLoggedInEmployeeId] = useState<number | null>(
-    () => {
-      const stored = sessionStorage.getItem('loggedInEmployeeId')
-      if (!stored) return null
-      const id = Number(stored)
-      if (!validEmpIds.includes(id)) {
-        // Stale session from old employee IDs — clear and force re-login
-        sessionStorage.removeItem('loggedInEmployeeId')
-        return null
-      }
-      return id
-    }
-  )
+  // SSO user — populated from JWT claims on callback or from localStorage on mount
+  const [ssoUser, setSsoUser] = useState<Employee | null>(null)
 
   const loadAppData = () => {
     apiGetClientsDb().then(cl => {
@@ -177,19 +167,30 @@ export default function App() {
       .finally(() => setInitState('ready'))
   }
 
-  const handleLogin = (empId: number) => {
-    sessionStorage.setItem('loggedInEmployeeId', String(empId))
-    setLoggedInEmployeeId(empId)
-    setActiveEmployeeId(empId)
-    // Switch backend user context, then re-fetch all employee-scoped data
-    apiSwitchUser(empId)
-      .then(() => loadAppData())
-      .catch(err => console.error('Failed to switch user on backend:', err))
+  /** Build an Employee object from JWT claims */
+  const employeeFromToken = (token: string): Employee => {
+    const claims = decodeJwt(token)
+    const role = deptToRole(claims.dept)
+    const roleLabel: Record<UserRole, string> = {
+      Procurement: 'Procurement',
+      Finance: 'Finance',
+      CS: 'Customer Service',
+      Sales: 'Sales Executive',
+      Admin: 'Admin (All Access)',
+    }
+    return {
+      id: Number(claims.sub),
+      name: claims.name,
+      role: roleLabel[role] ?? claims.dept,
+      dept: claims.dept,
+      email: claims.mail_id,
+    }
   }
 
-  const handleLogout = () => {
-    sessionStorage.removeItem('loggedInEmployeeId')
-    setLoggedInEmployeeId(null)
+  const handleLogout = async () => {
+    await apiLogout(getRefreshToken()).catch(() => {})
+    clearTokens()
+    setSsoUser(null)
   }
 
   const [currentPage, setCurrentPage] = useState<PageId>('workspace')
@@ -197,14 +198,9 @@ export default function App() {
   // Cleared by a useEffect once workspace has mounted and captured the value.
   const [workspaceInitialStep, setWorkspaceInitialStep] = useState<string | null>(null)
 
-  // ---- Role-based access control ----
-  const [activeEmployeeId, setActiveEmployeeId] = useState<number>(() => {
-    const stored = sessionStorage.getItem('loggedInEmployeeId')
-    if (stored && validEmpIds.includes(Number(stored))) return Number(stored)
-    return EMPLOYEES[0].id
-  })
-  const activeEmployee = EMPLOYEES.find(e => e.id === activeEmployeeId) ?? EMPLOYEES[0]
-  const activeRole: UserRole = EMPLOYEE_ROLE_MAP[activeEmployeeId] ?? 'CS'
+  // ---- Role-based access control (derived from SSO) ----
+  const activeEmployee: Employee = ssoUser ?? { id: 0, name: '', role: '' }
+  const activeRole: UserRole = ssoUser ? deptToRole(ssoUser.dept) : 'CS'
 
   const canAccessPage = (page: PageId) => ROLE_PAGE_ACCESS[activeRole].includes(page)
 
@@ -227,7 +223,7 @@ export default function App() {
     if (!canAccessPage(currentPage)) {
       setCurrentPage('dashboard')
     }
-  }, [activeEmployeeId]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activeEmployee.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Once workspace mounts and captures initialStep, clear the hint so the next
   // manual navigation to workspace doesn't jump to the same step again.
@@ -286,18 +282,70 @@ export default function App() {
   const [rateCheckContext, setRateCheckContext] = useState<{ inquiry: Inquiry; container?: ContainerLine; variant: 'procurement' | 'cs-sales' } | null>(null)
   const [toast, setToast] = useState<{ message: string; action?: { label: string; onClick: () => void } } | null>(null)
 
-  // ---- Initialise app state ----
+  // ---- SSO: handle callback and bootstrap from tokens ----
   useEffect(() => {
-    // Only load data on startup if user is already logged in (valid session).
-    // If not logged in, Login screen is shown and handleLogin will call loadAppData after switch-user.
-    if (!loggedInEmployeeId) {
-      setInitState('ready')
-      return
+    const bootstrap = async () => {
+      // 1. Check for SSO callback tokens in URL
+      const params = new URLSearchParams(window.location.search)
+      const urlAccess = params.get('access_token')
+      const urlRefresh = params.get('refresh_token')
+      if (urlAccess && urlRefresh) {
+        setTokens(urlAccess, urlRefresh)
+        window.history.replaceState(null, '', '/')
+      }
+
+      // 2. Try to restore session from localStorage tokens
+      let token = getAccessToken()
+      if (!token) {
+        setInitState('ready')
+        return
+      }
+
+      // 3. If access token expired, try refresh
+      if (isTokenExpired(token)) {
+        const rt = getRefreshToken()
+        if (rt) {
+          try {
+            const result = await apiRefreshToken(rt)
+            setTokens(result.access_token, result.refresh_token)
+            token = result.access_token
+          } catch {
+            clearTokens()
+            setInitState('ready')
+            return
+          }
+        } else {
+          clearTokens()
+          setInitState('ready')
+          return
+        }
+      }
+
+      // 4. Create Employee from JWT and load app data
+      const emp = employeeFromToken(token)
+      setSsoUser(emp)
+      loadAppData()
     }
-    apiSwitchUser(loggedInEmployeeId)
-      .catch(() => console.warn('[startup] switch-user failed'))
-      .then(() => loadAppData())
+    bootstrap()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Schedule proactive token refresh
+  useEffect(() => {
+    if (!ssoUser) return
+    const doRefresh = async () => {
+      const rt = getRefreshToken()
+      if (!rt) return
+      try {
+        const result = await apiRefreshToken(rt)
+        setTokens(result.access_token, result.refresh_token)
+        setSsoUser(employeeFromToken(result.access_token))
+      } catch {
+        clearTokens()
+        setSsoUser(null)
+      }
+    }
+    return scheduleTokenRefresh(doRefresh)
+  }, [ssoUser]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const refreshData = () => {
     apiFetchAllInquiries()
@@ -361,7 +409,7 @@ export default function App() {
       customer_name: customerName,
       note: newFup.note,
       completion_flag: completionFlag,
-      employee_id: activeEmployeeId,
+      employee_id: activeEmployee.id,
     }).then(created => {
       setFollowups(prev => prev.map(f => f.id === newFup.id ? created : f))
     }).catch(err => console.error('Create followup failed:', err))
@@ -483,7 +531,7 @@ export default function App() {
       customer_name: customerName,
       task: taskText,
       due_date: dueDate,
-      employee_id: activeEmployeeId,
+      employee_id: activeEmployee.id,
     }).then(created => {
       setTasks(prev => prev.map(t => t.id === newTask.id ? created : t))
     }).catch(err => console.error('Create task failed:', err))
@@ -632,7 +680,7 @@ export default function App() {
       status: 'pending',
       created_at: stamp,
       workflow_stage: 'rate-check',   // backend auto-creates workflow at rate_check_in_progress
-      recorded_by: activeEmployeeId,
+      recorded_by: activeEmployee.id,
     }
     setInquiries(prev => [tempInq, ...prev])
     // Route to the correct create endpoint based on client / contact identity.
@@ -947,8 +995,8 @@ export default function App() {
     canAccessPage,
   }
 
-  if (!loggedInEmployeeId) {
-    return <Login onLogin={handleLogin} />
+  if (!ssoUser) {
+    return <Login />
   }
 
   return (
