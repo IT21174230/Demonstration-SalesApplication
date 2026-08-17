@@ -648,13 +648,6 @@ export function apiCompleteTask(feId: string): Promise<{ success: boolean }> {
 // Shipments
 // ---------------------------------------------------------------------------
 
-export function apiAdvanceShipmentLeg(shipmentId: string, legId: string): Promise<Shipment> {
-  return patch<Shipment>(`/shipments/${encodeURIComponent(shipmentId)}/legs/${encodeURIComponent(legId)}`)
-}
-
-export function apiRecordShipmentPOD(shipmentId: string): Promise<{ success: boolean }> {
-  return patch<{ success: boolean }>(`/shipments/${encodeURIComponent(shipmentId)}/pod`)
-}
 
 // ---------------------------------------------------------------------------
 // KYC
@@ -768,81 +761,6 @@ export function apiSendQuotation(data: {
   quotation_content: string
 }): Promise<{ success: boolean; message: string }> {
   return post<{ success: boolean; message: string }>('/send-quotation', data)
-}
-
-// ---------------------------------------------------------------------------
-// Bookings
-// ---------------------------------------------------------------------------
-
-export function apiCreateBooking(data: {
-  customer_name: string
-  quote_id: string
-  shipping_line?: string
-  container_type?: string
-  quantity?: number
-  is_urgent?: boolean
-  booked_by?: number
-}): Promise<Booking> {
-  return post<Booking>('/bookings', data)
-}
-
-export function apiConfirmBooking(bookingId: string, data: {
-  vessel_name?: string
-  voyage_number?: string
-  confirmed_by?: number
-}): Promise<Booking> {
-  return patch<Booking>(`/bookings/${encodeURIComponent(bookingId)}/confirm`, data)
-}
-
-export function apiReleaseBooking(bookingId: string, data: {
-  note?: string
-  released_by?: number
-}): Promise<Booking> {
-  return patch<Booking>(`/bookings/${encodeURIComponent(bookingId)}/release`, data)
-}
-
-export function apiNotifyProcurement(bookingId: string): Promise<{ success: boolean }> {
-  return patch<{ success: boolean }>(`/bookings/${encodeURIComponent(bookingId)}/notify`)
-}
-
-export function apiSetBookingSiCutoff(bookingId: string, siCutoffDate: string): Promise<{ success: boolean }> {
-  return patch<{ success: boolean }>(`/bookings/${encodeURIComponent(bookingId)}/si-cutoff`, { si_cutoff_date: siCutoffDate })
-}
-
-export function apiMarkSiRequested(bookingId: string): Promise<{ success: boolean }> {
-  return patch<{ success: boolean }>(`/bookings/${encodeURIComponent(bookingId)}/si-requested`)
-}
-
-export function apiSetBookingBlCutoff(bookingId: string, blCutoffDate: string): Promise<{ success: boolean }> {
-  return patch<{ success: boolean }>(`/bookings/${encodeURIComponent(bookingId)}/bl-cutoff`, { bl_cutoff_date: blCutoffDate })
-}
-
-export function apiMarkSiSubmitted(bookingId: string): Promise<{ success: boolean }> {
-  return patch<{ success: boolean }>(`/bookings/${encodeURIComponent(bookingId)}/si-submitted`)
-}
-
-export function apiMarkDraftBlSent(bookingId: string): Promise<{ success: boolean }> {
-  return patch<{ success: boolean }>(`/bookings/${encodeURIComponent(bookingId)}/draft-bl-sent`)
-}
-
-export function apiSetBlStatus(bookingId: string, status: string): Promise<{ success: boolean }> {
-  return patch<{ success: boolean }>(`/bookings/${encodeURIComponent(bookingId)}/bl-status`, { status })
-}
-
-export function apiRecordMasterBl(bookingId: string, data: {
-  master_bl_number: string
-  shipper: string
-  consignee: string
-}): Promise<{ success: boolean }> {
-  return patch<{ success: boolean }>(`/bookings/${encodeURIComponent(bookingId)}/master-bl`, data)
-}
-
-export function apiCreateHouseBl(bookingId: string, data: {
-  house_bl_number: string
-  shipper: string
-  consignee: string
-}): Promise<{ success: boolean }> {
-  return patch<{ success: boolean }>(`/bookings/${encodeURIComponent(bookingId)}/house-bl`, data)
 }
 
 // ---------------------------------------------------------------------------
@@ -1077,7 +995,7 @@ export interface RateRequestRecord {
  *  • CS/Sales completes rate check themselves (is_given=true)
  */
 export function apiCreateRateRequest(data: {
-  inq_id?: number
+  inq_id: number              // required in backend RateRequestNew
   emp_id_requested: number
   is_given?: boolean
   remark: string
@@ -1095,7 +1013,7 @@ export function apiPatchRateRequest(requestId: number, data: {
   emp_id_requester?: number
   emp_id_requested?: number
   is_given?: boolean
-  remark?: string
+  remark: string              // required in backend RateRequestPatch — no default
 }): Promise<Record<string, unknown>> {
   return patch<Record<string, unknown>>(`/rate-requests/${requestId}`, data)
 }
@@ -1166,7 +1084,7 @@ export function apiCreateQuotation(data: {
   quote_date: string
   sent_via: string
   options?: QuotationOptionPayload[]
-  acceptence_deadline?: string
+  acceptance_deadline?: string        // QuotationNew uses correct spelling; DB column is acceptance_deadline
 }): Promise<QuotationRecord> {
   return post<QuotationRecord>('/quotations/', data)
 }
@@ -1176,9 +1094,14 @@ export function apiMarkQuotationSent(quoteId: number): Promise<Record<string, un
   return patch<Record<string, unknown>>(`/quotations/${quoteId}/send?status=sent`)
 }
 
-/** Record customer acceptance/rejection. Backend auto-advances workflow to customer_response. */
-export function apiRecordQuotationResponse(quoteId: number, status: 'accepted' | 'rejected'): Promise<Record<string, unknown>> {
-  return patch<Record<string, unknown>>(`/quotations/${quoteId}/response?status=${status}`)
+/**
+ * Record customer acceptance/rejection. Backend auto-advances workflow to customer_response.
+ * Backend router expects a JSON body matching QuotationAcceptence: { status, option }.
+ * NOTE: Backend QuotationAcceptence.status is typed as QuotationStatus.accepted (literal),
+ *       so rejections will 422 at validation — backend fix needed for rejection support.
+ */
+export function apiRecordQuotationResponse(quoteId: number, status: 'accepted' | 'rejected', option: number): Promise<Record<string, unknown>> {
+  return patch<Record<string, unknown>>(`/quotations/${quoteId}/response`, { status, option })
 }
 
 /** Update quotation details and/or replace its options. No workflow side effect. */

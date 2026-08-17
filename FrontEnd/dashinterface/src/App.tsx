@@ -31,15 +31,11 @@ import {
   apiCreateFollowup,
   apiCreateQuote, apiSetQuoteStatus,
   apiCreateTask, apiCompleteTask,
-  apiAdvanceShipmentLeg, apiRecordShipmentPOD,
   apiCreateInquiry, apiCreateInquiryOldNew, apiCreateInquiryOldOld, apiFetchAllInquiries,
   apiGetClientsDb, apiGetKycPendingClients, type KycPendingClient,
   apiGetKycRequests, type KycRequestRecord,
   type InquiryRow,
-  apiCreateActivity, apiCreateBooking, apiConfirmBooking, apiReleaseBooking, apiNotifyProcurement,
-  apiSetBookingSiCutoff, apiMarkSiRequested,
-  apiSetBookingBlCutoff, apiMarkSiSubmitted, apiMarkDraftBlSent, apiSetBlStatus,
-  apiRecordMasterBl, apiCreateHouseBl,
+  apiCreateActivity,
   apiUpdateCustomer, apiAdvanceWorkflow, apiGetInquiry,
   apiPatchInquiry, apiPatchCommodity, apiPatchContainer, apiDeleteInquiry,
   BE_STAGE_TO_FE,
@@ -449,7 +445,6 @@ export default function App() {
       x.id === id ? { ...x, status: 'Delivered', pod_received: nowStamp() } : x,
     ))
     if (s) flash(`POD recorded for ${id} · Delivery confirmation emailed to ${s.customer_name}`)
-    apiRecordShipmentPOD(id).catch(err => console.error('Record POD failed:', err))
   }
 
   const advanceShipmentLeg = (shipmentId: string, legId: string) => {
@@ -471,7 +466,6 @@ export default function App() {
       else status = 'In Transit'
       return { ...s, legs, status }
     }))
-    apiAdvanceShipmentLeg(shipmentId, legId).catch(err => console.error('Advance shipment leg failed:', err))
   }
 
   const addTask = (customerName: string, taskText: string, dueDate: string, employeeId: number) => {
@@ -526,8 +520,6 @@ export default function App() {
         ? { ...b, status: 'Liner Confirmed' as const, vessel_name: vesselName, voyage_number: voyageNumber, confirmed_by: 1, confirmed_at: nowStamp() }
         : b
     ))
-    apiConfirmBooking(bookingId, { vessel_name: vesselName, voyage_number: voyageNumber, confirmed_by: 1 })
-      .catch(err => console.error('Confirm booking failed:', err))
     flash(`${bookingId} → Liner Confirmed`)
   }
 
@@ -537,8 +529,6 @@ export default function App() {
         ? { ...b, status: 'Released' as const, released_by: 1, released_at: nowStamp(), notes: note || b.notes }
         : b
     ))
-    apiReleaseBooking(bookingId, { note, released_by: 1 })
-      .catch(err => console.error('Release booking failed:', err))
     flash(`${bookingId} → Released`)
   }
 
@@ -546,8 +536,6 @@ export default function App() {
     setBookings(prev => prev.map(b =>
       b.id === bookingId ? { ...b, procurement_notified: true } : b
     ))
-    apiNotifyProcurement(bookingId)
-      .catch(err => console.error('Notify procurement failed:', err))
     flash(`${bookingId} → Procurement acknowledged`)
   }
 
@@ -555,64 +543,48 @@ export default function App() {
     setBookings(prev => prev.map(b =>
       b.id === bookingId ? { ...b, si_cutoff_date: date } : b
     ))
-    apiSetBookingSiCutoff(bookingId, date)
-      .catch(err => console.error('Set SI cutoff failed:', err))
   }
 
   const markSiRequested = (bookingId: string) => {
     setBookings(prev => prev.map(b =>
       b.id === bookingId ? { ...b, si_requested: true } : b
     ))
-    apiMarkSiRequested(bookingId)
-      .catch(err => console.error('Mark SI requested failed:', err))
   }
 
   const setBookingBlCutoff = (bookingId: string, date: string) => {
     setBookings(prev => prev.map(b =>
       b.id === bookingId ? { ...b, bl_cutoff_date: date } : b
     ))
-    apiSetBookingBlCutoff(bookingId, date)
-      .catch(err => console.error('Set BL cutoff failed:', err))
   }
 
   const markSiSubmitted = (bookingId: string) => {
     setBookings(prev => prev.map(b =>
       b.id === bookingId ? { ...b, si_submitted: true } : b
     ))
-    apiMarkSiSubmitted(bookingId)
-      .catch(err => console.error('Mark SI submitted failed:', err))
   }
 
   const markDraftBlSent = (bookingId: string) => {
     setBookings(prev => prev.map(b =>
       b.id === bookingId ? { ...b, draft_bl_sent: true } : b
     ))
-    apiMarkDraftBlSent(bookingId)
-      .catch(err => console.error('Mark draft BL sent failed:', err))
   }
 
   const setBlStatus = (bookingId: string, status: 'pending' | 'approved' | 'changes-requested') => {
     setBookings(prev => prev.map(b =>
       b.id === bookingId ? { ...b, bl_status: status } : b
     ))
-    apiSetBlStatus(bookingId, status)
-      .catch(err => console.error('Set BL status failed:', err))
   }
 
   const recordMasterBl = (bookingId: string, data: { master_bl_number: string; shipper: string; consignee: string }) => {
     setBookings(prev => prev.map(b =>
       b.id === bookingId ? { ...b, master_bl_number: data.master_bl_number, master_bl_shipper: data.shipper, master_bl_consignee: data.consignee, master_bl_recorded: true } : b
     ))
-    apiRecordMasterBl(bookingId, data)
-      .catch(err => console.error('Record master BL failed:', err))
   }
 
   const createHouseBl = (bookingId: string, data: { house_bl_number: string; shipper: string; consignee: string }) => {
     setBookings(prev => prev.map(b =>
       b.id === bookingId ? { ...b, house_bl_number: data.house_bl_number, house_bl_shipper: data.shipper, house_bl_consignee: data.consignee, house_bl_created: true } : b
     ))
-    apiCreateHouseBl(bookingId, data)
-      .catch(err => console.error('Create house BL failed:', err))
   }
 
   const createBooking = (payload: {
@@ -646,9 +618,6 @@ export default function App() {
       delivery_type: payload.delivery_type,
     }
     setBookings(prev => [newBooking, ...prev])
-    apiCreateBooking(payload).then(created => {
-      setBookings(prev => prev.map(b => b.id === newId ? created : b))
-    }).catch(err => console.error('Create booking failed:', err))
     flash(`Booking created for ${payload.customer_name}`)
     return newId
   }

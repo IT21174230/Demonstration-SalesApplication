@@ -1201,7 +1201,7 @@ ABC Logistics (Pvt) Ltd`
             quote_date: today,
             sent_via: 'email',           // placeholder — updated to actual method in send step
             options: [],
-            acceptence_deadline: deadline,
+            acceptance_deadline: deadline,
           })
             .then(created => {
               if (created.quote_id) {
@@ -1265,8 +1265,10 @@ ABC Logistics (Pvt) Ltd`
         // Record customer response in backend quotation record
         // Backend auto-advances workflow to customer_response; we then advance further below
         const quoteId = lastQuotationId ?? inquiry.quotation_id
-        if (quoteId) {
-          apiRecordQuotationResponse(quoteId, customerDecision)
+        if (quoteId && customerDecision === 'accepted') {
+          // option = rate_id of the accepted quotation option (backend validates it exists).
+          // TODO: Add UI to select the accepted rate option; 0 is a placeholder.
+          apiRecordQuotationResponse(quoteId, 'accepted', 0)
             .catch(err => console.error('[Workspace] record quotation response failed:', err))
         }
         if (customerDecision === 'accepted') {
