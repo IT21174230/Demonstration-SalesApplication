@@ -240,9 +240,22 @@ export default function Workspace({
   const [selectedOptionRateId, setSelectedOptionRateId] = useState<number | null>(null)
   const [quotationOptionsLoading, setQuotationOptionsLoading] = useState(false)
   // Booking request form state
-  const [bkShippingLine, setBkShippingLine] = useState('')
+  const [bkShippingLine, setBkShippingLine] = useState('')       // Carrier
   const [bkContainerType, setBkContainerType] = useState("20'GP")
   const [bkQuantity, setBkQuantity] = useState(1)
+  const [bkCommodity, setBkCommodity] = useState('')
+  const [bkCargoReadyDate, setBkCargoReadyDate] = useState('')
+  const [bkVesselEtd, setBkVesselEtd] = useState('')            // Vessel/voyage + ETD (if already known)
+  const [bkPod, setBkPod] = useState('')                        // Port of Discharge
+  const [bkContractNo, setBkContractNo] = useState('')
+  const [bkAgreedRate, setBkAgreedRate] = useState('')
+  const [bkDeliveryTerm, setBkDeliveryTerm] = useState('')
+  const [bkHsCode, setBkHsCode] = useState('')
+  const [bkBlType, setBkBlType] = useState<'OBL' | 'Seaway Bill' | ''>('')
+  const [bkBookingType, setBkBookingType] = useState<'Spot' | 'FAK' | ''>('')
+  const [bkReeferTemp, setBkReeferTemp] = useState('')
+  const [bkDeliveryAgent, setBkDeliveryAgent] = useState('')
+  const [bkSpecificRouting, setBkSpecificRouting] = useState('')
   const [bkIsUrgent, setBkIsUrgent] = useState(false)
   const [bkAttachmentName, setBkAttachmentName] = useState('')
   const [_bkAttachmentData, setBkAttachmentData] = useState('')
@@ -936,6 +949,19 @@ ABC Logistics (Pvt) Ltd`
         setBkShippingLine(liner)
         setBkContainerType(container || "20'GP")
         setBkQuantity(parseInt(qty, 10) || 1)
+        setBkCommodity('')
+        setBkCargoReadyDate('')
+        setBkVesselEtd('')
+        setBkPod(brInq.destination ?? '')
+        setBkContractNo('')
+        setBkAgreedRate('')
+        setBkDeliveryTerm('')
+        setBkHsCode('')
+        setBkBlType('')
+        setBkBookingType('')
+        setBkReeferTemp('')
+        setBkDeliveryAgent('')
+        setBkSpecificRouting('')
         setBkIsUrgent(false)
         setActionModal(item)
         break
@@ -1335,23 +1361,53 @@ ABC Logistics (Pvt) Ltd`
           container_type: bkContainerType,
           quantity: bkQuantity,
           origin: inquiry.origin,
-          destination: inquiry.destination,
+          destination: bkPod || inquiry.destination,
           is_urgent: bkIsUrgent,
-          booked_by: 1,
-          notes: formNote || `Booking for ${inquiry.customer_name}: ${inquiry.request}`,
+          booked_by: activeEmployee.id,
+          notes: [
+            bkCommodity && `Commodity: ${bkCommodity}`,
+            bkContractNo && `Contract: ${bkContractNo}`,
+            bkAgreedRate && `Agreed Rate: ${bkAgreedRate}`,
+            bkDeliveryTerm && `Delivery Term: ${bkDeliveryTerm}`,
+            bkHsCode && `HS Code: ${bkHsCode}`,
+            bkBlType && `BL Type: ${bkBlType}`,
+            bkBookingType && `Booking Type: ${bkBookingType}`,
+            bkSpecificRouting && `Routing: ${bkSpecificRouting}`,
+            bkReeferTemp && `Reefer/PTI: ${bkReeferTemp}`,
+            bkDeliveryAgent && `Delivery Agent: ${bkDeliveryAgent}`,
+            bkCargoReadyDate && `Cargo Ready: ${bkCargoReadyDate}`,
+            bkVesselEtd && `Vessel/ETD: ${bkVesselEtd}`,
+          ].filter(Boolean).join(' | ') || `Booking for ${inquiry.customer_name}: ${inquiry.request}`,
           delivery_type: inquiry.delivery_type,
         })
         onAdvanceWorkflow(inquiry.id, 'completed')
-        const attachInfo = bkAttachmentName ? ` | Attachment: ${bkAttachmentName}` : ''
+        const noteParts = [
+          `${bkQuantity}x ${bkContainerType}`,
+          bkShippingLine || 'Any carrier',
+          `${inquiry.origin} → ${bkPod || inquiry.destination}`,
+          bkCommodity && `Commodity: ${bkCommodity}`,
+          bkContractNo && `Contract: ${bkContractNo}`,
+          bkAgreedRate && `Rate: ${bkAgreedRate}`,
+          bkDeliveryTerm && `Term: ${bkDeliveryTerm}`,
+          bkHsCode && `HS: ${bkHsCode}`,
+          bkBlType && `BL: ${bkBlType}`,
+          bkBookingType && `${bkBookingType} Booking`,
+          bkReeferTemp && `Reefer/PTI: ${bkReeferTemp}`,
+          bkDeliveryAgent && `Agent: ${bkDeliveryAgent}`,
+          bkCargoReadyDate && `Cargo Ready: ${bkCargoReadyDate}`,
+          bkVesselEtd && `Vessel: ${bkVesselEtd}`,
+          bkIsUrgent && 'URGENT',
+          bkAttachmentName && `Attachment: ${bkAttachmentName}`,
+        ].filter(Boolean).join(' | ')
         onLogActivity({
           actor_role: activeRole,
           actor_id: activeEmployee.id,
-          action: `Booking request ${bookingId} created and sent to Procurement.${bkAttachmentName ? ` Excel attached: ${bkAttachmentName}` : ''}`,
+          action: `Booking request ${bookingId} created and sent to Procurement.${bkAttachmentName ? ` Attachment: ${bkAttachmentName}` : ''}`,
           ref_type: 'inquiry',
           ref_id: inquiry.id,
           customer_name: inquiry.customer_name,
           pushed_to: 'Procurement',
-          notes: `Booking: ${bkQuantity}x ${bkContainerType} | ${bkShippingLine || 'Any liner'} | ${inquiry.origin} → ${inquiry.destination}${bkIsUrgent ? ' | URGENT' : ''}${attachInfo}${formNote ? ` | ${formNote}` : ''}`,
+          notes: noteParts,
         })
         onFlash(`${inquiry.id} → Booking request sent to Procurement`, nextStepAction)
         break
@@ -2313,83 +2369,201 @@ ABC Logistics (Pvt) Ltd`
 
             {/* Booking request form */}
             {actionModal.actionKind === 'booking-request' && (() => {
-              const ctx = actionModal.previousContext
               const { inquiry: brInq } = actionModal.sourceData
+              const isReefer = bkContainerType.includes('RF')
               return (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-                  {ctx && (
-                    <div className="ws-context-card" style={{ marginTop: 0 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                        <User size={11} style={{ color: 'var(--text-muted)' }} />
-                        <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)' }}>
-                          {empName(ctx.actor_id)} ({ROLE_LABELS[ctx.actor_role]})
-                        </span>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+
+                  {/* Form header */}
+                  <div style={{ padding: '8px 14px', background: 'var(--accent)', borderRadius: '8px 8px 0 0', marginBottom: 1 }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: '#fff', letterSpacing: 0.5 }}>BOOKING FORMAT REQUEST</span>
+                  </div>
+
+                  {/* Main fields table */}
+                  <div style={{ border: '1px solid var(--border)', borderRadius: '0 0 8px 8px', overflow: 'hidden' }}>
+                    {/* Carrier */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '130px 1fr', borderBottom: '1px solid var(--border)' }}>
+                      <div style={{ padding: '8px 12px', background: 'var(--bg-card)', borderRight: '1px solid var(--border)', fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center' }}>Carrier</div>
+                      <div style={{ padding: '4px 8px' }}>
+                        <input list="ws-bk-liners" className="lt-input" style={{ width: '100%', border: 'none', background: 'transparent', padding: '4px 0' }}
+                          value={bkShippingLine} onChange={e => setBkShippingLine(e.target.value)} placeholder="e.g. MSC, Maersk, Hapag-Lloyd" />
+                        <datalist id="ws-bk-liners">{linerList.map(l => <option key={l.lin_id} value={l.name} />)}</datalist>
                       </div>
-                      <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{ctx.action}</div>
                     </div>
-                  )}
 
-                  {/* Route summary */}
-                  <div style={{ padding: '10px 14px', background: 'rgba(15,143,168,0.06)', border: '1px solid rgba(15,143,168,0.15)', borderRadius: 8, fontSize: 12 }}>
-                    <strong>{brInq.customer_name}</strong> — {brInq.origin} → {brInq.destination}
-                    <div style={{ color: 'var(--text-muted)', marginTop: 2 }}>{brInq.request} · {brInq.delivery_type === 'door-to-door' ? 'Door-to-Door' : 'Port-to-Port'}</div>
+                    {/* Unit (Qty × Container Type) */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '130px 1fr', borderBottom: '1px solid var(--border)' }}>
+                      <div style={{ padding: '8px 12px', background: 'var(--bg-card)', borderRight: '1px solid var(--border)', fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center' }}>Unit</div>
+                      <div style={{ padding: '4px 8px', display: 'flex', gap: 8, alignItems: 'center' }}>
+                        <input className="lt-input" style={{ width: 64, border: 'none', background: 'transparent', padding: '4px 0' }}
+                          type="number" min={1} value={bkQuantity}
+                          onChange={e => setBkQuantity(Math.max(1, parseInt(e.target.value) || 1))} />
+                        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>×</span>
+                        <select className="lt-input" style={{ flex: 1, border: 'none', background: 'transparent', padding: '4px 0' }}
+                          value={bkContainerType} onChange={e => setBkContainerType(e.target.value)}>
+                          <option value="20'GP">20' GP</option>
+                          <option value="40'GP">40' GP</option>
+                          <option value="40'HC">40' HC</option>
+                          <option value="20'RF">20' RF (Reefer)</option>
+                          <option value="40'RF">40' RF (Reefer)</option>
+                          <option value="20'OT">20' OT (Open Top)</option>
+                          <option value="40'OT">40' OT (Open Top)</option>
+                          <option value="20'FR">20' FR (Flat Rack)</option>
+                          <option value="40'FR">40' FR (Flat Rack)</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Commodity */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '130px 1fr', borderBottom: '1px solid var(--border)' }}>
+                      <div style={{ padding: '8px 12px', background: 'var(--bg-card)', borderRight: '1px solid var(--border)', fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center' }}>Commodity</div>
+                      <div style={{ padding: '4px 8px' }}>
+                        <input className="lt-input" style={{ width: '100%', border: 'none', background: 'transparent', padding: '4px 0' }}
+                          value={bkCommodity} onChange={e => setBkCommodity(e.target.value)} placeholder="e.g. Coconut Milk, Garments, Electronics" />
+                      </div>
+                    </div>
+
+                    {/* Cargo Ready Date OR Vessel/ETD */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '130px 1fr', borderBottom: '1px solid var(--border)' }}>
+                      <div style={{ padding: '8px 12px', background: 'var(--bg-card)', borderRight: '1px solid var(--border)', fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'flex-start', paddingTop: 10 }}>
+                        Cargo Ready Date<br />
+                        <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>or Vessel / ETD</span>
+                      </div>
+                      <div style={{ padding: '4px 8px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        <input className="lt-input" type="date" style={{ width: '100%', border: 'none', background: 'transparent', padding: '4px 0' }}
+                          value={bkCargoReadyDate} onChange={e => setBkCargoReadyDate(e.target.value)} />
+                        <input className="lt-input" style={{ width: '100%', border: 'none', background: 'transparent', padding: '4px 0', fontSize: 11 }}
+                          value={bkVesselEtd} onChange={e => setBkVesselEtd(e.target.value)}
+                          placeholder="Vessel / Voyage, ETD (if already confirmed)" />
+                      </div>
+                    </div>
+
+                    {/* POD */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '130px 1fr', borderBottom: '1px solid var(--border)' }}>
+                      <div style={{ padding: '8px 12px', background: 'var(--bg-card)', borderRight: '1px solid var(--border)', fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center' }}>POD</div>
+                      <div style={{ padding: '4px 8px' }}>
+                        <input className="lt-input" style={{ width: '100%', border: 'none', background: 'transparent', padding: '4px 0' }}
+                          value={bkPod} onChange={e => setBkPod(e.target.value)} placeholder="Port of Discharge" />
+                      </div>
+                    </div>
+
+                    {/* Customer + Contract No */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '130px 1fr 110px 1fr', borderBottom: '1px solid var(--border)' }}>
+                      <div style={{ padding: '8px 12px', background: 'var(--bg-card)', borderRight: '1px solid var(--border)', fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center' }}>Customer</div>
+                      <div style={{ padding: '8px 10px', fontSize: 12, fontWeight: 600, color: 'var(--text)', borderRight: '1px solid var(--border)', display: 'flex', alignItems: 'center' }}>{brInq.customer_name}</div>
+                      <div style={{ padding: '8px 12px', background: 'rgba(234,179,8,0.1)', borderRight: '1px solid var(--border)', fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center' }}>Contract No</div>
+                      <div style={{ padding: '4px 8px' }}>
+                        <input className="lt-input" style={{ width: '100%', border: 'none', background: 'transparent', padding: '4px 0', fontWeight: 600 }}
+                          value={bkContractNo} onChange={e => setBkContractNo(e.target.value)} placeholder="e.g. 26-751GAC" />
+                      </div>
+                    </div>
+
+                    {/* Agreed Rate + Delivery Term */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '130px 1fr 110px 1fr', borderBottom: '1px solid var(--border)' }}>
+                      <div style={{ padding: '8px 12px', background: 'var(--bg-card)', borderRight: '1px solid var(--border)', fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center' }}>Agreed Rate</div>
+                      <div style={{ padding: '4px 8px', borderRight: '1px solid var(--border)' }}>
+                        <input className="lt-input" style={{ width: '100%', border: 'none', background: 'transparent', padding: '4px 0' }}
+                          value={bkAgreedRate} onChange={e => setBkAgreedRate(e.target.value)} placeholder="e.g. COLLECT, $1,200" />
+                      </div>
+                      <div style={{ padding: '8px 12px', background: 'var(--bg-card)', borderRight: '1px solid var(--border)', fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center' }}>Delivery Term</div>
+                      <div style={{ padding: '4px 8px' }}>
+                        <input className="lt-input" style={{ width: '100%', border: 'none', background: 'transparent', padding: '4px 0' }}
+                          value={bkDeliveryTerm} onChange={e => setBkDeliveryTerm(e.target.value)} placeholder="e.g. CY/CY, CY/CFS" />
+                      </div>
+                    </div>
+
+                    {/* HS Code */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '130px 1fr', borderBottom: '1px solid var(--border)' }}>
+                      <div style={{ padding: '8px 12px', background: 'var(--bg-card)', borderRight: '1px solid var(--border)', fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center' }}>HS Code</div>
+                      <div style={{ padding: '4px 8px' }}>
+                        <input className="lt-input" style={{ width: '100%', border: 'none', background: 'transparent', padding: '4px 0' }}
+                          value={bkHsCode} onChange={e => setBkHsCode(e.target.value)} placeholder="Harmonized System code (optional)" />
+                      </div>
+                    </div>
+
+                    {/* Special Instructions header */}
+                    <div style={{ padding: '7px 12px', background: 'rgba(15,143,168,0.12)', borderBottom: '1px solid var(--border)' }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)', letterSpacing: 0.4 }}>SPECIAL INSTRUCTIONS</span>
+                    </div>
+
+                    {/* Contract # if apply */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', borderBottom: '1px solid var(--border)' }}>
+                      <div style={{ padding: '8px 12px', background: 'var(--bg-card)', borderRight: '1px solid var(--border)', fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center' }}>Contract # if Apply</div>
+                      <div style={{ padding: '4px 8px' }}>
+                        <input className="lt-input" style={{ width: '100%', border: 'none', background: 'transparent', padding: '4px 0' }}
+                          value={bkContractNo} onChange={e => setBkContractNo(e.target.value)} placeholder="Contract number if applicable" />
+                      </div>
+                    </div>
+
+                    {/* Specific Routing */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', borderBottom: '1px solid var(--border)' }}>
+                      <div style={{ padding: '8px 12px', background: 'var(--bg-card)', borderRight: '1px solid var(--border)', fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center' }}>Specific Routing if Any</div>
+                      <div style={{ padding: '4px 8px' }}>
+                        <input className="lt-input" style={{ width: '100%', border: 'none', background: 'transparent', padding: '4px 0' }}
+                          value={bkSpecificRouting} onChange={e => setBkSpecificRouting(e.target.value)} placeholder="e.g. via Singapore, avoid Suez" />
+                      </div>
+                    </div>
+
+                    {/* BL Type */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', borderBottom: '1px solid var(--border)' }}>
+                      <div style={{ padding: '8px 12px', background: 'var(--bg-card)', borderRight: '1px solid var(--border)', fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center' }}>BL Type (OBL / Seaway)</div>
+                      <div style={{ padding: '6px 10px', display: 'flex', gap: 16, alignItems: 'center' }}>
+                        {(['OBL', 'Seaway Bill'] as const).map(t => (
+                          <label key={t} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 12, color: 'var(--text-secondary)' }}>
+                            <input type="radio" name="bk-bl-type" checked={bkBlType === t} onChange={() => setBkBlType(t)} />
+                            {t}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Booking Type (Spot / FAK) */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', borderBottom: '1px solid var(--border)' }}>
+                      <div style={{ padding: '8px 12px', background: 'var(--bg-card)', borderRight: '1px solid var(--border)', fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', lineHeight: 1.3 }}>If MKL / SAF<br /><span style={{ fontWeight: 400 }}>(Spot / FAK Booking)</span></div>
+                      <div style={{ padding: '6px 10px', display: 'flex', gap: 16, alignItems: 'center' }}>
+                        {(['Spot', 'FAK'] as const).map(t => (
+                          <label key={t} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 12, color: 'var(--text-secondary)' }}>
+                            <input type="radio" name="bk-booking-type" checked={bkBookingType === t} onChange={() => setBkBookingType(t)} />
+                            {t} Booking
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Reefer temp / PTI */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', borderBottom: '1px solid var(--border)' }}>
+                      <div style={{ padding: '8px 12px', background: isReefer ? 'rgba(14,165,233,0.08)' : 'var(--bg-card)', borderRight: '1px solid var(--border)', fontSize: 11, fontWeight: 600, color: isReefer ? '#0ea5e9' : 'var(--text-muted)', display: 'flex', alignItems: 'center', lineHeight: 1.3 }}>If Reefer Temp / PTI</div>
+                      <div style={{ padding: '4px 8px' }}>
+                        <input className="lt-input" style={{ width: '100%', border: 'none', background: 'transparent', padding: '4px 0' }}
+                          value={bkReeferTemp} onChange={e => setBkReeferTemp(e.target.value)}
+                          placeholder={isReefer ? 'e.g. -18°C, PTI required' : 'N/A (not a reefer container)'} />
+                      </div>
+                    </div>
+
+                    {/* Delivery Agent */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr' }}>
+                      <div style={{ padding: '8px 12px', background: 'var(--bg-card)', borderRight: '1px solid var(--border)', fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center' }}>Delivery Agent</div>
+                      <div style={{ padding: '4px 8px' }}>
+                        <input className="lt-input" style={{ width: '100%', border: 'none', background: 'transparent', padding: '4px 0' }}
+                          value={bkDeliveryAgent} onChange={e => setBkDeliveryAgent(e.target.value)} placeholder="Will advise / agent name" />
+                      </div>
+                    </div>
                   </div>
 
-                  <div>
-                    <label className="lt-label">Preferred Shipping Line</label>
-                    <input list="ws-bk-liners" className="lt-input" style={{ width: '100%' }} value={bkShippingLine}
-                      onChange={e => setBkShippingLine(e.target.value)}
-                      placeholder="e.g. Maersk, MSC, Hapag-Lloyd (or leave blank for any)" />
-                    <datalist id="ws-bk-liners">
-                      {linerList.map(l => <option key={l.lin_id} value={l.name} />)}
-                    </datalist>
-                  </div>
-
-                  <div style={{ display: 'flex', gap: 12 }}>
-                    <div style={{ flex: 1 }}>
-                      <label className="lt-label">Container Type</label>
-                      <select className="lt-input" style={{ width: '100%' }} value={bkContainerType}
-                        onChange={e => setBkContainerType(e.target.value)}>
-                        <option value="20'GP">20&apos; GP</option>
-                        <option value="40'GP">40&apos; GP</option>
-                        <option value="40'HC">40&apos; HC</option>
-                        <option value="20'RF">20&apos; RF</option>
-                        <option value="40'RF">40&apos; RF</option>
-                        <option value="20'OT">20&apos; OT</option>
-                        <option value="40'OT">40&apos; OT</option>
-                        <option value="20'FR">20&apos; FR</option>
-                        <option value="40'FR">40&apos; FR</option>
-                      </select>
-                    </div>
-                    <div style={{ flex: 1 }}>
-                      <label className="lt-label">Quantity</label>
-                      <input className="lt-input" style={{ width: '100%' }} type="number" min={1}
-                        value={bkQuantity} onChange={e => setBkQuantity(Math.max(1, parseInt(e.target.value) || 1))} />
-                    </div>
-                  </div>
-
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 12, color: 'var(--text-secondary)' }}>
+                  {/* Urgent flag */}
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 12, color: 'var(--text-secondary)', marginTop: 14 }}>
                     <input type="checkbox" checked={bkIsUrgent} onChange={e => setBkIsUrgent(e.target.checked)} />
-                    <span>
-                      Mark as urgent
-                      <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 4 }}>(Procurement will be notified immediately)</span>
-                    </span>
+                    <span>Mark as urgent <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 4 }}>(Procurement will be notified immediately)</span></span>
                   </label>
 
                   {/* Excel attachment */}
-                  <div>
-                    <label className="lt-label">Attach Booking Request (Excel)</label>
+                  <div style={{ marginTop: 4 }}>
+                    <label className="lt-label">Attach File (optional)</label>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
-                      <label
-                        className="db-btn"
-                        style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, cursor: 'pointer', background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}
-                      >
+                      <label className="db-btn" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, cursor: 'pointer', background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}>
                         <Paperclip size={13} />
                         {bkAttachmentName ? 'Replace file' : 'Choose file'}
-                        <input
-                          type="file"
-                          accept=".xlsx,.xls,.csv"
-                          style={{ display: 'none' }}
+                        <input type="file" accept=".xlsx,.xls,.csv,.pdf" style={{ display: 'none' }}
                           onChange={e => {
                             const file = e.target.files?.[0]
                             if (!file) return
@@ -2405,26 +2579,13 @@ ABC Logistics (Pvt) Ltd`
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text)' }}>
                           <FileText size={13} style={{ color: '#16a34a' }} />
                           <span style={{ fontWeight: 600 }}>{bkAttachmentName}</span>
-                          <button
-                            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, color: 'var(--text-muted)' }}
-                            onClick={() => { setBkAttachmentName(''); setBkAttachmentData('') }}
-                            title="Remove attachment"
-                          >
+                          <button style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, color: 'var(--text-muted)' }}
+                            onClick={() => { setBkAttachmentName(''); setBkAttachmentData('') }}>
                             <X size={12} />
                           </button>
                         </div>
                       )}
                     </div>
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
-                      .xlsx, .xls, or .csv — optional booking request form prepared by CS
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="lt-label">Notes (optional)</label>
-                    <input className="lt-input" style={{ width: '100%' }} value={formNote}
-                      onChange={e => setFormNote(e.target.value)}
-                      placeholder="Special requirements, stacking, hazmat, etc." />
                   </div>
                 </div>
               )
