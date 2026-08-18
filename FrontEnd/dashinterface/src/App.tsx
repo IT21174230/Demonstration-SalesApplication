@@ -248,19 +248,21 @@ export default function App() {
       i.id === inquiryId ? { ...i, workflow_stage: nextStage } : i
     ))
     const inqId = inquiries.find(i => i.id === inquiryId)?.inq_id
-    if (!skipApi && inqId) {
-      apiAdvanceWorkflow(inquiryId, nextStage, inqId).catch(() => console.warn('API: advance workflow failed'))
-    }
-    // Re-fetch from backend so local state matches the server's actual stage
-    // (backend may have auto-advanced further, e.g. after adding a rate option)
+    // Advance on backend, then re-fetch to confirm actual stage.
+    // Chained sequentially to avoid race condition (re-fetch reading old stage before PATCH completes).
+    const advancePromise = (!skipApi && inqId)
+      ? apiAdvanceWorkflow(inquiryId, nextStage, inqId).catch(() => console.warn('API: advance workflow failed'))
+      : Promise.resolve()
     if (inqId) {
-      apiGetInquiry(inqId).then(rows => {
-        if (rows.length === 0) return
-        const beStage = (BE_STAGE_TO_FE[rows[0].workflow_stage ?? ''] ?? 'rate-check') as WorkflowStage
-        setInquiries(prev => prev.map(i =>
-          i.id === inquiryId ? { ...i, workflow_stage: beStage } : i
-        ))
-      }).catch(() => {/* silent — local optimistic state is acceptable fallback */})
+      advancePromise.then(() =>
+        apiGetInquiry(inqId).then(rows => {
+          if (rows.length === 0) return
+          const beStage = (BE_STAGE_TO_FE[rows[0].workflow_stage ?? ''] ?? 'rate-check') as WorkflowStage
+          setInquiries(prev => prev.map(i =>
+            i.id === inquiryId ? { ...i, workflow_stage: beStage } : i
+          ))
+        }).catch(() => {/* silent — local optimistic state is acceptable fallback */})
+      )
     }
     const stageLabel = WORKFLOW_STAGES.find(s => s.id === nextStage)?.label ?? nextStage
     flash(`${inquiryId} → ${stageLabel}`)

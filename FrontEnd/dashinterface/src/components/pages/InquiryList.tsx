@@ -1,7 +1,7 @@
 import { useMemo, useState, useRef, useEffect } from 'react'
 import { Eye, CheckCircle2, MessageSquarePlus, X, Edit3, Send, Trash2, Check } from 'lucide-react'
 import {
-  EMPLOYEES, SBUS, INQUIRY_PRIORITIES, COMMODITY_TYPES, CONTAINER_TYPES, WORKFLOW_STAGES, ROLE_LABELS, ROLE_COLORS, findCustomer,
+  EMPLOYEES, SBUS, INQUIRY_PRIORITIES, COMMODITY_TYPES, CONTAINER_TYPES, WORKFLOW_STAGES, ROLE_LABELS, ROLE_COLORS, stageRoleLabel, stageRoleColor, findCustomer,
   type Inquiry, type InquiryStatus, type Followup, type Customer, type SBU, type CustomerTier,
   type Quote, type QuoteStatus, type WorkflowStage, type InquiryPriority, type ContainerLine,
   type LinerRecord,
@@ -713,7 +713,7 @@ export default function InquiryList({ inquiries, followups, customers, quotes, o
               const currentIdx = stages.findIndex(s => s.id === viewing.workflow_stage)
               const current = stages[currentIdx]
               if (!current) return null
-              const roleColor = ROLE_COLORS[current.role]
+              const roleColor = stageRoleColor(current)
               const isCompleted = viewing.workflow_stage === 'completed'
               return (
                 <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
@@ -726,11 +726,11 @@ export default function InquiryList({ inquiries, followups, customers, quotes, o
                     {stages.map((s, idx) => {
                       const done = idx < currentIdx
                       const active = idx === currentIdx
-                      const color = ROLE_COLORS[s.role]
+                      const color = stageRoleColor(s)
                       return (
                         <div
                           key={s.id}
-                          title={`${s.label} — ${ROLE_LABELS[s.role]}`}
+                          title={`${s.label} — ${stageRoleLabel(s)}`}
                           style={{
                             flex: 1,
                             height: 5,
@@ -763,7 +763,7 @@ export default function InquiryList({ inquiries, followups, customers, quotes, o
                       {current.label}
                     </span>
                     <span style={{ fontSize: 11, color: roleColor, marginLeft: 'auto', fontWeight: 600, whiteSpace: 'nowrap' }}>
-                      {isCompleted ? '✓ Complete' : `Handled by ${ROLE_LABELS[current.role]}`}
+                      {isCompleted ? '✓ Complete' : `Handled by ${stageRoleLabel(current)}`}
                     </span>
                   </div>
 
@@ -771,8 +771,8 @@ export default function InquiryList({ inquiries, followups, customers, quotes, o
                   {!isCompleted && stages[currentIdx + 1] && (
                     <div style={{ marginTop: 6, fontSize: 11, color: 'var(--text-muted)' }}>
                       Next: <span style={{ color: 'var(--text-secondary)' }}>{stages[currentIdx + 1].label}</span>
-                      <span style={{ color: ROLE_COLORS[stages[currentIdx + 1].role], marginLeft: 4 }}>
-                        — {ROLE_LABELS[stages[currentIdx + 1].role]}
+                      <span style={{ color: stageRoleColor(stages[currentIdx + 1]), marginLeft: 4 }}>
+                        — {stageRoleLabel(stages[currentIdx + 1])}
                       </span>
                     </div>
                   )}

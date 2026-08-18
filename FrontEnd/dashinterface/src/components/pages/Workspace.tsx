@@ -5,7 +5,7 @@ import {
   Globe, MessageCircle, Edit3, Copy, ClipboardCheck,
 } from 'lucide-react'
 import {
-  EMPLOYEES, WORKFLOW_STAGES, ROLE_LABELS, ROLE_COLORS,
+  EMPLOYEES, WORKFLOW_STAGES, ROLE_LABELS, ROLE_COLORS, stageRoleLabel, stageRoleColor,
   isSpotInquiry, daysUntil,
   type Inquiry, type Booking, type Quote, type Customer,
   type ActivityEntry, type WorkflowStage,
@@ -13,7 +13,7 @@ import {
   type ContainerLine, type LinerRecord, type ClientRecord,
 } from '../../types'
 import { useRole } from '../../RoleContext'
-import { apiGetLiners, apiCreateKycRequest, apiCreateQuotation, apiPatchQuotation, apiMarkQuotationSent, apiRecordQuotationResponse, apiUpdateKycStage, type KycPendingClient, type KycRequestRecord } from '../../api'
+import { apiGetLiners, apiCreateKycRequest, apiCreateQuotation, apiPatchQuotation, apiMarkQuotationSent, apiFetchQuotation, apiRecordQuotationResponse, apiUpdateKycStage, type KycPendingClient, type KycRequestRecord, type QuotationOptionRow } from '../../api'
 
 // ---------------------------------------------------------------------------
 // Props
@@ -107,8 +107,8 @@ const CS_STEPS: StepDef[] = [
   { key: 'cs-prep-quote', label: 'Prepare Quotation', actionKinds: ['prepare-quotation'], stepNumber: 4 },
   { key: 'cs-send-quote', label: 'Send Quote',  actionKinds: ['send-to-customer'],   stepNumber: 5 },
   { key: 'cs-response',   label: 'Response',    actionKinds: ['customer-response'],  stepNumber: 6 },
-  // Steps 6–14 hidden from CS step bar (comment back in to re-enable)
-  // { key: 'cs-booking',    label: 'Booking',     actionKinds: ['booking-request'],    stepNumber: 6 },
+  { key: 'cs-booking',    label: 'Booking',     actionKinds: ['booking-request'],    stepNumber: 7 },
+  // Steps 8–14 hidden from CS step bar (comment back in to re-enable)
   // { key: 'cs-release',    label: 'Release',     actionKinds: ['release-booking'],    stepNumber: 7 },
   // { key: 'cs-cutoff',     label: 'Cutoff',      actionKinds: ['record-cutoff'],      stepNumber: 8 },
   // { key: 'cs-si',         label: 'SI Reminder', actionKinds: ['request-si'],         stepNumber: 9 },
@@ -137,6 +137,7 @@ const SALES_STEPS: StepDef[] = [
   { key: 'sales-prep-quote', label: 'Prepare Quotation', actionKinds: ['prepare-quotation'],   stepNumber: 4 },
   { key: 'sales-send-quote', label: 'Send Quote',        actionKinds: ['send-to-customer'],    stepNumber: 5 },
   { key: 'sales-response',   label: 'Response',          actionKinds: ['customer-response'],   stepNumber: 6 },
+  { key: 'sales-booking',    label: 'Booking',           actionKinds: ['booking-request'],     stepNumber: 7 },
 ]
 
 const ADMIN_STEPS: StepDef[] = [
@@ -234,6 +235,10 @@ export default function Workspace({
   const [customerDecision, setCustomerDecision] = useState<'accepted' | 'rejected'>('accepted')
   // Backend quotation ID — set in prepare-quotation, used in customer-response
   const [lastQuotationId, setLastQuotationId] = useState<number | null>(null)
+  // Quotation options loaded from backend for the customer-response modal
+  const [quotationOptions, setQuotationOptions] = useState<QuotationOptionRow[]>([])
+  const [selectedOptionRateId, setSelectedOptionRateId] = useState<number | null>(null)
+  const [quotationOptionsLoading, setQuotationOptionsLoading] = useState(false)
   // Booking request form state
   const [bkShippingLine, setBkShippingLine] = useState('')
   const [bkContainerType, setBkContainerType] = useState("20'GP")
@@ -299,9 +304,7 @@ export default function Workspace({
       if (inq.status === 'completed' || !inq.workflow_stage) continue
       const stage = WORKFLOW_STAGES.find(s => s.id === inq.workflow_stage)
       if (!stage) continue
-      // CS and Sales both handle the full inquiry workflow (CS-roled and Sales-roled stages)
-      const isCSOrSales = role === 'CS' || role === 'Sales'
-      if (role && stage.role !== role && !(isCSOrSales && (stage.role === 'CS' || stage.role === 'Sales'))) continue
+      if (role && !stage.roles.includes(role)) continue
       if (inq.workflow_stage === 'completed') continue
 
       // Determine the next stage (simple step+1 — no KYC routing, all inquiries start at rate-check)
@@ -338,7 +341,7 @@ export default function Workspace({
 
         let title = ''
         let actionKind = 'advance-workflow'
-        let actionLabel = `Push to ${ROLE_LABELS[resolvedNextStage.role]}`
+        let actionLabel = `Push to ${stageRoleLabel(resolvedNextStage)}`
 
         switch (inq.workflow_stage) {
           case 'rate-check':
@@ -745,11 +748,11 @@ export default function Workspace({
         onLogActivity({
           actor_role: activeRole,
           actor_id: activeEmployee.id,
-          action: `Completed ${WORKFLOW_STAGES.find(s => s.id === inquiry.workflow_stage)?.label}. Pushed to ${ROLE_LABELS[nextStageObj.role]}.`,
+          action: `Completed ${WORKFLOW_STAGES.find(s => s.id === inquiry.workflow_stage)?.label}. Pushed to ${stageRoleLabel(nextStageObj)}.`,
           ref_type: 'inquiry',
           ref_id: inquiry.id,
           customer_name: inquiry.customer_name,
-          pushed_to: nextStageObj.role,
+          pushed_to: stageRoleLabel(nextStageObj),
           notes: `${inquiry.request} · ${inquiry.origin} → ${inquiry.destination}`,
         })
         // All inquiries go directly to Rate Check; open it immediately
@@ -877,6 +880,24 @@ ABC Logistics (Pvt) Ltd`
       case 'customer-response': {
         setFormNote('')
         setCustomerDecision('accepted')
+        setQuotationOptions([])
+        setSelectedOptionRateId(null)
+        setQuotationOptionsLoading(false)
+        // Load quotation options from backend
+        const crInquiry = item.sourceData?.inquiry
+        const crQuoteId = lastQuotationId ?? crInquiry?.quotation_id
+        if (crQuoteId) {
+          setQuotationOptionsLoading(true)
+          apiFetchQuotation(crQuoteId)
+            .then(rows => {
+              // Filter to rows that actually have an option (LEFT JOIN may return null option_id)
+              const opts = rows.filter(r => r.option_id != null)
+              setQuotationOptions(opts)
+              if (opts.length === 1) setSelectedOptionRateId(opts[0].rate_id)
+            })
+            .catch(err => console.error('[Workspace] Failed to load quotation options:', err))
+            .finally(() => setQuotationOptionsLoading(false))
+        }
         setActionModal(item)
         break
       }
@@ -1067,17 +1088,21 @@ ABC Logistics (Pvt) Ltd`
     switch (actionModal.actionKind) {
       case 'send-kyc': {
         const { customer, inquiry: kycInquiry, kycClient: pendingKycClient } = actionModal.sourceData
-        // Resolve backend cli_id: new flow uses kycClient directly; legacy uses inquiry/clientList
+        // Resolve backend cli_id: prefer kycClient.cli_id, fall back to clientList name lookup
         let cli_id: number | undefined
-        if (pendingKycClient) {
+        if (pendingKycClient?.cli_id) {
           cli_id = pendingKycClient.cli_id
         } else {
-          const kycClientRecord = clientList.find(c => c.name.toLowerCase() === customer?.name.toLowerCase())
+          const lookupName = pendingKycClient?.name ?? customer?.name
+          const kycClientRecord = lookupName
+            ? clientList.find(c => c.name.toLowerCase() === lookupName.toLowerCase())
+            : undefined
           cli_id = kycInquiry?.cli_id ?? kycClientRecord?.cli_id
         }
         if (cli_id) {
           setKycSending(true)
           try {
+            console.log('[Workspace] Creating KYC request for cli_id:', cli_id)
             await apiCreateKycRequest(cli_id, {
               br_number: kycBrNumber,
               parent_organization: kycParentOrg || undefined,
@@ -1108,14 +1133,17 @@ ABC Logistics (Pvt) Ltd`
                 form20:           kycDocForm20,
               },
             })
+            console.log('[Workspace] KYC request created, refreshing data')
             if (pendingKycClient) {
               // Remove from pending queue so the item disappears immediately
               onSetKycPendingClients(prev => prev.filter(c => c.cli_id !== pendingKycClient.cli_id))
             }
-            // Refresh Finance's KYC review queue so the submitted request appears without re-login
+            // Re-fetch KYC data so frontend picks up the backend's stage advancement
             onRefreshKycRequests()
-          } catch { /* fire-and-forget — optimistic update proceeds regardless */ }
+          } catch (err) { console.error('[Workspace] KYC request failed:', err) }
           setKycSending(false)
+        } else {
+          console.warn('[Workspace] KYC submit skipped — cli_id is undefined. sourceData:', actionModal.sourceData)
         }
         const customerName = pendingKycClient?.name ?? customer?.name ?? actionModal.customerName
         if (!pendingKycClient) {
@@ -1265,10 +1293,8 @@ ABC Logistics (Pvt) Ltd`
         // Record customer response in backend quotation record
         // Backend auto-advances workflow to customer_response; we then advance further below
         const quoteId = lastQuotationId ?? inquiry.quotation_id
-        if (quoteId && customerDecision === 'accepted') {
-          // option = rate_id of the accepted quotation option (backend validates it exists).
-          // TODO: Add UI to select the accepted rate option; 0 is a placeholder.
-          apiRecordQuotationResponse(quoteId, 'accepted', 0)
+        if (quoteId && customerDecision === 'accepted' && selectedOptionRateId != null) {
+          apiRecordQuotationResponse(quoteId, 'accepted', selectedOptionRateId)
             .catch(err => console.error('[Workspace] record quotation response failed:', err))
         }
         if (customerDecision === 'accepted') {
@@ -2222,6 +2248,58 @@ ABC Logistics (Pvt) Ltd`
                       </button>
                     </div>
                   </div>
+
+                  {/* Quotation option selection — shown only when accepted */}
+                  {customerDecision === 'accepted' && (
+                    <div>
+                      <label className="lt-label">Accepted Option</label>
+                      {quotationOptionsLoading ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 0', color: 'var(--text-muted)', fontSize: 12 }}>
+                          <Loader2 size={13} className="spin" /> Loading options…
+                        </div>
+                      ) : quotationOptions.length === 0 ? (
+                        <div style={{ padding: '8px 0', color: 'var(--text-muted)', fontSize: 12 }}>
+                          No options found for this quotation.
+                        </div>
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 4 }}>
+                          {quotationOptions.map(opt => {
+                            const isSelected = selectedOptionRateId === opt.rate_id
+                            return (
+                              <button
+                                key={opt.option_id}
+                                type="button"
+                                onClick={() => setSelectedOptionRateId(opt.rate_id)}
+                                style={{
+                                  display: 'flex', alignItems: 'center', gap: 10,
+                                  padding: '10px 12px', borderRadius: 8, cursor: 'pointer',
+                                  border: isSelected ? '2px solid #16a34a' : '1px solid var(--border)',
+                                  background: isSelected ? 'rgba(22,163,74,0.06)' : 'var(--bg-card)',
+                                  textAlign: 'left', width: '100%',
+                                }}
+                              >
+                                <div style={{
+                                  width: 16, height: 16, borderRadius: '50%', flexShrink: 0,
+                                  border: isSelected ? '5px solid #16a34a' : '2px solid var(--border)',
+                                  background: 'var(--bg)',
+                                }} />
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)' }}>
+                                    Option {opt.option_id}
+                                  </div>
+                                  <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>
+                                    {opt.option_currency ?? 'USD'} {opt.amt != null ? Number(opt.amt).toLocaleString(undefined, { minimumFractionDigits: 2 }) : '—'}
+                                    {opt.rate_id != null && <span style={{ marginLeft: 8, color: 'var(--text-muted)' }}>Rate #{opt.rate_id}</span>}
+                                  </div>
+                                </div>
+                                {isSelected && <Check size={14} style={{ color: '#16a34a', flexShrink: 0 }} />}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   <div>
                     <label className="lt-label">{customerDecision === 'rejected' ? 'Rejection Reason' : 'Notes'} (optional)</label>
@@ -3365,6 +3443,7 @@ ABC Logistics (Pvt) Ltd`
                   (actionModal.actionKind === 'create-house-bl' && (!houseBlNumber.trim() || !houseBlConsignee.trim())) ||
                   (actionModal.actionKind === 'create-house-bl' && sendMethod === 'email' && (!customerContactEmail.trim() || !customerContactEmail.includes('@'))) ||
                   (actionModal.actionKind === 'create-house-bl' && sendMethod === 'whatsapp' && !waConfirmed) ||
+                  (actionModal.actionKind === 'customer-response' && customerDecision === 'accepted' && quotationOptions.length > 0 && selectedOptionRateId == null) ||
                   kycSending || quotationSending
                 }
                 style={

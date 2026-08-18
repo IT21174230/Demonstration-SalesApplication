@@ -1,5 +1,5 @@
 import { ChevronRight, Check, Clock } from 'lucide-react'
-import { WORKFLOW_STAGES, ROLE_LABELS, ROLE_COLORS, type WorkflowStage } from '../../types'
+import { WORKFLOW_STAGES, stageRoleLabel, stageRoleColor, type WorkflowStage } from '../../types'
 import { useRole } from '../../RoleContext'
 
 interface WorkflowStepperProps {
@@ -16,7 +16,7 @@ export default function WorkflowStepper({ currentStage, onAdvance }: WorkflowSte
     ? WORKFLOW_STAGES[currentIdx + 1]
     : null
 
-  const isResponsible = WORKFLOW_STAGES[currentIdx]?.role === activeRole || activeRole === 'Admin'
+  const isResponsible = WORKFLOW_STAGES[currentIdx]?.roles.includes(activeRole) || activeRole === 'Admin'
 
   return (
     <div className="wf-stepper">
@@ -25,7 +25,7 @@ export default function WorkflowStepper({ currentStage, onAdvance }: WorkflowSte
           const done = idx < currentIdx
           const active = idx === currentIdx
           const pending = idx > currentIdx
-          const roleColor = ROLE_COLORS[stage.role]
+          const roleColor = stageRoleColor(stage)
           const isLast = idx === WORKFLOW_STAGES.length - 1
 
           return (
@@ -66,7 +66,7 @@ export default function WorkflowStepper({ currentStage, onAdvance }: WorkflowSte
                   className="wf-tl-role"
                   style={{ color: roleColor, opacity: pending ? 0.5 : 1 }}
                 >
-                  {ROLE_LABELS[stage.role]}
+                  {stageRoleLabel(stage)}
                 </span>
               </div>
 
@@ -91,11 +91,11 @@ export default function WorkflowStepper({ currentStage, onAdvance }: WorkflowSte
             onClick={() => onAdvance(nextStage.id)}
             style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11 }}
           >
-            Push to {ROLE_LABELS[nextStage.role]} <ChevronRight size={12} />
+            Push to {stageRoleLabel(nextStage)} <ChevronRight size={12} />
           </button>
         ) : (
           <div className="wf-status-badge" style={{ background: 'rgba(217,119,6,0.06)', color: '#d97706' }}>
-            <Clock size={12} /> Waiting on {ROLE_LABELS[WORKFLOW_STAGES[currentIdx]?.role ?? 'CS']}
+            <Clock size={12} /> Waiting on {WORKFLOW_STAGES[currentIdx] ? stageRoleLabel(WORKFLOW_STAGES[currentIdx]) : 'Customer Service / Sales'}
           </div>
         )}
       </div>

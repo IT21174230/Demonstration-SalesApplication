@@ -155,15 +155,25 @@ export type WorkflowStage =
   | 'booking-request'
   | 'completed'
 
-export const WORKFLOW_STAGES: { id: WorkflowStage; label: string; role: UserRole; step: number; skippable?: boolean }[] = [
-  { id: 'rate-check',          label: 'Rate Check',            role: 'CS',          step: 1 },
-  { id: 'procurement-request', label: 'Procurement Escalation', role: 'Procurement', step: 2, skippable: true },
-  { id: 'quotation-prep',      label: 'Quotation Prep',        role: 'CS',          step: 3 },
-  { id: 'quotation-sent',      label: 'Quote Sent',            role: 'CS',          step: 4 },
-  { id: 'customer-response',   label: 'Customer Response',     role: 'CS',          step: 5 },
-  { id: 'booking-request',     label: 'Booking Request',       role: 'CS',          step: 6 },
-  { id: 'completed',           label: 'Completed',             role: 'CS',          step: 7 },
+export const WORKFLOW_STAGES: { id: WorkflowStage; label: string; roles: UserRole[]; step: number; skippable?: boolean }[] = [
+  { id: 'rate-check',          label: 'Rate Check',            roles: ['CS', 'Sales'],  step: 1 },
+  { id: 'procurement-request', label: 'Procurement Escalation', roles: ['Procurement'], step: 2, skippable: true },
+  { id: 'quotation-prep',      label: 'Quotation Prep',        roles: ['CS', 'Sales'],  step: 3 },
+  { id: 'quotation-sent',      label: 'Quote Sent',            roles: ['CS', 'Sales'],  step: 4 },
+  { id: 'customer-response',   label: 'Customer Response',     roles: ['CS', 'Sales'],  step: 5 },
+  { id: 'booking-request',     label: 'Booking Request',       roles: ['CS', 'Sales'],  step: 6 },
+  { id: 'completed',           label: 'Completed',             roles: ['CS', 'Sales'],  step: 7 },
 ]
+
+/** Display helper — join role labels for a stage (e.g. "CS / Sales") */
+export function stageRoleLabel(stage: typeof WORKFLOW_STAGES[number]): string {
+  return stage.roles.map(r => ROLE_LABELS[r]).join(' / ')
+}
+
+/** Color for a stage — uses the first role's color */
+export function stageRoleColor(stage: typeof WORKFLOW_STAGES[number]): string {
+  return ROLE_COLORS[stage.roles[0]]
+}
 
 // Heuristic for "this inquiry is time-critical" — used by Operations page urgency
 // section. Spot rates have ~15-min validity windows (per the Friday meeting).

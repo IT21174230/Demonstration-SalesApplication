@@ -1078,6 +1078,21 @@ export interface QuotationOptionPayload {
   currency: string
 }
 
+/** Row returned by GET /quotations/{quote_id} — one row per option (LEFT JOIN). */
+export interface QuotationOptionRow {
+  quote_id: number
+  inq_id: number
+  quote_date: string
+  sent_via: string
+  acceptence_deadline: string | null
+  status: string
+  option_id: number | null
+  rate_id: number | null
+  amt: number | null
+  option_currency: string | null
+  option_inq_id: number | null
+}
+
 /** Create a structured quotation record in the backend. */
 export function apiCreateQuotation(data: {
   inq_id: number
@@ -1087,6 +1102,11 @@ export function apiCreateQuotation(data: {
   acceptance_deadline?: string        // QuotationNew uses correct spelling; DB column is acceptance_deadline
 }): Promise<QuotationRecord> {
   return post<QuotationRecord>('/quotations/', data)
+}
+
+/** Fetch a single quotation with all its options (one row per option via LEFT JOIN). */
+export function apiFetchQuotation(quoteId: number): Promise<QuotationOptionRow[]> {
+  return get<QuotationOptionRow[]>(`/quotations/${quoteId}`)
 }
 
 /** Mark a quotation as sent. Backend auto-advances workflow to quotation_sent. */
