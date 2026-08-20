@@ -12,6 +12,7 @@ import Quotations from './components/pages/Quotations'
 import Shipments from './components/pages/Shipments'
 import KYCForm from './components/pages/KYCForm'
 import Workspace from './components/pages/Workspace'
+import BookingList from './components/pages/BookingList'
 import NewInquiry from './components/pages/NewInquiry'
 import RecordRate from './components/pages/RecordRate'
 import RateCheck from './components/pages/RateCheck'
@@ -24,9 +25,10 @@ import {
   type PageId, type Inquiry, type Task, type Followup, type Customer,
   type Quote, type QuoteStatus, type Shipment, type ShipmentStatus, type Booking,
   type MissingItem, type UserRole, type WorkflowStage, type ActivityEntry, type ContainerLine,
-  type ClientRecord, type ContactPersonRecord,
+  type ClientRecord, type ContactPersonRecord, type ReleaseOrderFields, type VesselSchedule,
 } from './types'
 import { RoleContext, type RoleContextValue } from './RoleContext'
+import { MOCK_INQUIRIES, MOCK_BOOKINGS, MOCK_ACTIVITY } from './mockData'
 import {
   apiCreateFollowup,
   apiCreateQuote, apiSetQuoteStatus,
@@ -172,8 +174,8 @@ export default function App() {
       .then(setKycRequests)
       .catch(() => console.warn('[loadAppData] Could not load KYC requests'))
     apiFetchAllInquiries()
-      .then(rows => setInquiries(mapInquiryRows(rows)))
-      .catch(() => console.warn('[loadAppData] Could not load inquiries from backend'))
+      .then(rows => setInquiries([...mapInquiryRows(rows), ...MOCK_INQUIRIES]))
+      .catch(() => setInquiries(MOCK_INQUIRIES))
       .finally(() => setInitState('ready'))
   }
 
@@ -275,8 +277,9 @@ export default function App() {
   const [customers, setCustomers] = useState<Customer[]>([])
   const [quotes, setQuotes] = useState<Quote[]>([])
   const [shipments, setShipments] = useState<Shipment[]>([])
-  const [bookings, setBookings] = useState<Booking[]>([])
-  const [activityLog, setActivityLog] = useState<ActivityEntry[]>([])
+  const [bookings, setBookings] = useState<Booking[]>(MOCK_BOOKINGS)
+  const [vesselSchedules, setVesselSchedules] = useState<VesselSchedule[]>([])
+  const [activityLog, setActivityLog] = useState<ActivityEntry[]>(MOCK_ACTIVITY)
   // Reference data — fetched once at startup and cached for the session
   const [clientList, setClientList] = useState<ClientRecord[]>([])
   const contactPersonList: ContactPersonRecord[] = []  // disabled until backend provides bulk endpoint
@@ -525,6 +528,28 @@ export default function App() {
     flash(`${bookingId} → Liner Confirmed`)
   }
 
+  const markRaAssigned = (bookingId: string, raNumber: string, vessel: string, carrier: string) => {
+    setBookings(prev => prev.map(b =>
+      b.id === bookingId
+        ? { ...b, status: 'RA Assigned' as const, voyage_number: raNumber, vessel_name: vessel, shipping_line: carrier || b.shipping_line }
+        : b
+    ))
+  }
+
+  const revertBookingRequest = (bookingId: string) => {
+    setBookings(prev => prev.map(b =>
+      b.id === bookingId
+        ? { ...b, status: 'Pending Liner' as const, voyage_number: '', vessel_name: '' }
+        : b
+    ))
+  }
+
+  const attachReleaseOrder = (bookingId: string, fields: ReleaseOrderFields) => {
+    setBookings(prev => prev.map(b =>
+      b.id === bookingId ? { ...b, release_order_attached: true, release_order_fields: fields } : b
+    ))
+  }
+
   const releaseBooking = (bookingId: string, note: string) => {
     setBookings(prev => prev.map(b =>
       b.id === bookingId
@@ -559,15 +584,38 @@ export default function App() {
     ))
   }
 
+  const setBookingVgmCutoff = (bookingId: string, date: string) => {
+    setBookings(prev => prev.map(b =>
+      b.id === bookingId ? { ...b, vgm_cutoff_date: date } : b
+    ))
+  }
+
+  const setBookingFilingCutoff = (bookingId: string, date: string) => {
+    setBookings(prev => prev.map(b =>
+      b.id === bookingId ? { ...b, filing_cutoff_date: date } : b
+    ))
+  }
+
   const markSiSubmitted = (bookingId: string) => {
     setBookings(prev => prev.map(b =>
       b.id === bookingId ? { ...b, si_submitted: true } : b
     ))
   }
 
+  const addVesselSchedule = (vs: Omit<VesselSchedule, 'id'>) => {
+    const id = `VS-${Date.now()}`
+    setVesselSchedules(prev => [...prev, { ...vs, id }])
+  }
+
   const markDraftBlSent = (bookingId: string) => {
     setBookings(prev => prev.map(b =>
       b.id === bookingId ? { ...b, draft_bl_sent: true } : b
+    ))
+  }
+
+  const markPreAdviceSent = (bookingId: string) => {
+    setBookings(prev => prev.map(b =>
+      b.id === bookingId ? { ...b, pre_advice_sent: true } : b
     ))
   }
 
@@ -818,6 +866,8 @@ export default function App() {
         )
       case 'rate-list':
         return <RateList />
+      case 'booking-list':
+        return <BookingList bookings={bookings} activityLog={activityLog} />
       case 'followups':
         return (
           <Followups
@@ -846,14 +896,22 @@ export default function App() {
             onGoTo={navigateTo}
             onAdvanceWorkflow={advanceWorkflow}
             onConfirmBooking={confirmBooking}
+            onMarkRaAssigned={markRaAssigned}
+            onRevertBookingRequest={revertBookingRequest}
+            onAttachReleaseOrder={attachReleaseOrder}
             onReleaseBooking={releaseBooking}
             onAcknowledgeProcurement={acknowledgeProcurement}
             onCreateBooking={createBooking}
             onSetBookingSiCutoff={setBookingSiCutoff}
-            onMarkSiRequested={markSiRequested}
             onSetBookingBlCutoff={setBookingBlCutoff}
+            onSetBookingVgmCutoff={setBookingVgmCutoff}
+            onSetBookingFilingCutoff={setBookingFilingCutoff}
+            onMarkSiRequested={markSiRequested}
             onMarkSiSubmitted={markSiSubmitted}
+            vesselSchedules={vesselSchedules}
+            onAddVesselSchedule={addVesselSchedule}
             onMarkDraftBlSent={markDraftBlSent}
+            onMarkPreAdviceSent={markPreAdviceSent}
             onSetBlStatus={setBlStatus}
             onRecordMasterBl={recordMasterBl}
             onCreateHouseBl={createHouseBl}

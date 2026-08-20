@@ -23,6 +23,7 @@ const NAV_ITEMS: { id: PageId; label: string; icon: typeof MessageSquare }[] = [
   { id: 'workspace', label: 'Workspace', icon: Inbox },
   { id: 'inquiry-list', label: 'Inquiry List', icon: ListChecks },
   { id: 'rate-list', label: 'Rate List', icon: DollarSign },
+  { id: 'booking-list', label: 'Booking List', icon: PackageCheck },
   { id: 'quotations', label: 'Quotations', icon: FileText },
   { id: 'shipments', label: 'Shipments', icon: Ship },
   { id: 'followups', label: 'Operations', icon: ClipboardList },
@@ -31,9 +32,9 @@ const NAV_ITEMS: { id: PageId; label: string; icon: typeof MessageSquare }[] = [
 ]
 
 const ROLE_NAV_VISIBLE: Partial<Record<UserRole, PageId[]>> = {
-  CS: ['workspace', 'inquiry-list', 'rate-list', 'customers'],
+  CS: ['workspace', 'inquiry-list', 'rate-list', 'booking-list', 'customers'],
   Sales: ['workspace', 'inquiry-list', 'rate-list', 'customers'],
-  Procurement: ['workspace', 'inquiry-list', 'rate-list'],
+  Procurement: ['workspace', 'inquiry-list', 'rate-list', 'booking-list'],
   Finance: ['workspace'],
 }
 

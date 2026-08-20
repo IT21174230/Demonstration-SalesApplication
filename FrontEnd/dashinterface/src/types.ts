@@ -8,6 +8,7 @@ export type PageId =
   | 'rate-check'
   | 'inquiry-list'
   | 'rate-list'
+  | 'booking-list'
   | 'quotations'
   | 'shipments'
   | 'followups'
@@ -24,6 +25,7 @@ export const PAGE_LABELS: Record<PageId, string> = {
   'rate-check': 'Rate Check',
   'inquiry-list': 'Inquiry List',
   'rate-list': 'Rate List',
+  'booking-list': 'Booking List',
   quotations: 'Quotations',
   shipments: 'Shipments',
   followups: 'Operations',
@@ -53,11 +55,11 @@ export const ROLE_COLORS: Record<UserRole, string> = {
 }
 
 export const ROLE_PAGE_ACCESS: Record<UserRole, PageId[]> = {
-  CS:          ['dashboard', 'chat', 'workspace', 'new-inquiry', 'inquiry-list', 'rate-list', 'followups', 'customers', 'kyc', 'profile'],
+  CS:          ['dashboard', 'chat', 'workspace', 'new-inquiry', 'inquiry-list', 'rate-list', 'booking-list', 'followups', 'customers', 'kyc', 'profile'],
   Sales:       ['dashboard', 'chat', 'workspace', 'new-inquiry', 'inquiry-list', 'rate-list', 'followups', 'customers', 'profile'],
   Finance:     ['dashboard', 'chat', 'workspace', 'customers', 'kyc', 'profile'],
-  Procurement: ['dashboard', 'chat', 'workspace', 'inquiry-list', 'record-rate', 'rate-check', 'rate-list', 'followups', 'profile'],
-  Admin:       ['dashboard', 'chat', 'workspace', 'new-inquiry', 'record-rate', 'rate-check', 'inquiry-list', 'rate-list', 'shipments', 'followups', 'customers', 'kyc', 'profile'],
+  Procurement: ['dashboard', 'chat', 'workspace', 'inquiry-list', 'record-rate', 'rate-check', 'rate-list', 'booking-list', 'followups', 'profile'],
+  Admin:       ['dashboard', 'chat', 'workspace', 'new-inquiry', 'record-rate', 'rate-check', 'inquiry-list', 'rate-list', 'booking-list', 'shipments', 'followups', 'customers', 'kyc', 'profile'],
 }
 
 export const ROLE_QUICK_COMMANDS: Record<UserRole, string[]> = {
@@ -689,7 +691,7 @@ export interface Shipment {
 }
 
 // ==================== BOOKINGS ====================
-export type BookingStatus = 'Pending Liner' | 'Liner Confirmed' | 'Released' | 'Cancelled'
+export type BookingStatus = 'Pending Liner' | 'RA Assigned' | 'Liner Confirmed' | 'Released' | 'Cancelled'
 
 export interface Booking {
   id: string
@@ -713,8 +715,10 @@ export interface Booking {
   procurement_notified: boolean
   notes: string
   si_cutoff_date?: string
-  si_requested?: boolean
   bl_cutoff_date?: string
+  vgm_cutoff_date?: string
+  filing_cutoff_date?: string
+  si_requested?: boolean
   si_submitted?: boolean
   draft_bl_sent?: boolean
   bl_status?: 'pending' | 'approved' | 'changes-requested'
@@ -727,6 +731,44 @@ export interface Booking {
   house_bl_shipper?: string
   house_bl_consignee?: string
   house_bl_created?: boolean
+  pre_advice_sent?: boolean         // true after CS sends pre-advice to door agent (door-to-door / port-to-door)
+  release_order_attached?: boolean  // true after Procurement attaches release order and sends to CS
+  release_order_fields?: ReleaseOrderFields
+}
+
+// ==================== VESSEL SCHEDULES ====================
+export interface VesselSchedule {
+  id: string
+  vessel_name: string
+  voyage_number: string
+  schedule_type: 'FCL' | 'CONSOL' | 'BOTH'
+  pol: string
+  eta_pol: string
+  etd_pol: string
+  routing_type: 'DIRECT' | 'TRANSSHIPMENT'
+  final_pod: string
+  eta_fpod: string
+  remarks: string
+  agent: string
+  created_at: string
+  created_by: number
+}
+
+// ==================== RELEASE ORDER ====================
+export interface ReleaseOrderFields {
+  reference_nbr: string
+  pickup_empty_date: string
+  validity_expiration_date: string
+  pickup_depot: string
+  pickup_depot_address: string
+  cargo_description: string
+  cargo_weight: string
+  cut_off_date: string
+  etd: string
+  eta: string
+  next_port_of_discharge?: string
+  transport_mode?: string
+  transport_carrier?: string
 }
 
 // ==================== ACTIVITY LOG ====================
