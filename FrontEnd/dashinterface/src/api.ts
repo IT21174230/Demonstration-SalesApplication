@@ -15,12 +15,22 @@ import type {
 
 const BASE = import.meta.env.VITE_API_BASE || '/api'
 
+// --- TEMPORARY dev auth -----------------------------------------------------
+// The Azure AD SSO flow is not wired up yet. Until it is, paste a token into
+// the browser console:   localStorage.setItem('devToken', '<token>')
+// Remove this block once /auth/login -> /auth/callback is implemented.
+function authHeaders(): Record<string, string> {
+  const t = localStorage.getItem('devToken')
+  return t ? { Authorization: `Bearer ${t}` } : {}
+}
+// -----------------------------------------------------------------------------
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
 async function get<T>(path: string): Promise<T> {
-  const res = await fetch(`${BASE}${path}`)
+  const res = await fetch(`${BASE}${path}`, { headers: { ...authHeaders() } })
   if (!res.ok) throw new Error(`GET ${path} failed: ${res.status}`)
   return res.json()
 }
@@ -28,7 +38,7 @@ async function get<T>(path: string): Promise<T> {
 async function post<T>(path: string, body: unknown): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
     body: JSON.stringify(body),
   })
   if (!res.ok) {
@@ -47,7 +57,7 @@ async function post<T>(path: string, body: unknown): Promise<T> {
 async function patch<T>(path: string, body?: unknown): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
     body: body ? JSON.stringify(body) : undefined,
   })
   if (!res.ok) throw new Error(`PATCH ${path} failed: ${res.status}`)
@@ -55,7 +65,10 @@ async function patch<T>(path: string, body?: unknown): Promise<T> {
 }
 
 async function del<T>(path: string): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, { method: 'DELETE' })
+  const res = await fetch(`${BASE}${path}`, {
+    method: 'DELETE',
+    headers: { ...authHeaders() },
+  })
   if (!res.ok) throw new Error(`DELETE ${path} failed: ${res.status}`)
   return res.json()
 }
