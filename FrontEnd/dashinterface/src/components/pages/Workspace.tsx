@@ -262,12 +262,16 @@ export default function Workspace({
   const [bkShippingLine, setBkShippingLine] = useState('')       // Carrier
   const [bkContainerType, setBkContainerType] = useState("20'GP")
   const [bkQuantity, setBkQuantity] = useState(1)
+  // Dynamic container list (prefilled from inquiry, editable)
+  const [bkContainers, setBkContainers] = useState<{ type: string; qty: number }[]>([{ type: "20'GP", qty: 1 }])
   const [bkCommodity, setBkCommodity] = useState('')
   const [bkCargoReadyDate, setBkCargoReadyDate] = useState('')
-  const [bkVesselEtd, setBkVesselEtd] = useState('')            // Vessel/voyage + ETD (if already known)
+  const [bkVessel, setBkVessel] = useState('')                   // Vessel name
+  const [bkVoyage, setBkVoyage] = useState('')                   // Voyage number
   const [bkPod, setBkPod] = useState('')                        // Port of Discharge
   const [bkContractNo, setBkContractNo] = useState('')
   const [bkAgreedRate, setBkAgreedRate] = useState('')
+  const [bkRateRemark, setBkRateRemark] = useState('')
   const [bkDeliveryTerm, setBkDeliveryTerm] = useState('')
   const [bkHsCode, setBkHsCode] = useState('')
   const [bkBlType, setBkBlType] = useState<'OBL' | 'Seaway Bill' | ''>('')
@@ -1144,12 +1148,21 @@ ABC Logistics (Pvt) Ltd`
         setBkShippingLine(liner)
         setBkContainerType(container || "20'GP")
         setBkQuantity(parseInt(qty, 10) || 1)
+        // Prefill container list from inquiry containers
+        const ctFmt = (ct: string) => ct.replace(/\s+/g, '').replace(/(\d{2})(.*)/,(_, sz, tp) => `${sz}'${tp}`)
+        if (brInq.containers && brInq.containers.length > 0) {
+          setBkContainers(brInq.containers.map(c => ({ type: ctFmt(c.containerType), qty: c.quantity })))
+        } else {
+          setBkContainers([{ type: container || "20'GP", qty: parseInt(qty, 10) || 1 }])
+        }
         setBkCommodity('')
         setBkCargoReadyDate('')
-        setBkVesselEtd('')
+        setBkVessel('')
+        setBkVoyage('')
         setBkPod(brInq.destination ?? '')
         setBkContractNo('')
         setBkAgreedRate('')
+        setBkRateRemark('')
         setBkDeliveryTerm('')
         setBkHsCode('')
         setBkBlType('')
@@ -1169,12 +1182,25 @@ ABC Logistics (Pvt) Ltd`
         setBkShippingLine(rbBkg.shipping_line ?? '')
         setBkContainerType(rbBkg.container_type ?? "20'GP")
         setBkQuantity(rbBkg.quantity ?? 1)
+        // Parse containers from notes: "Containers: 2x20'GP, 1x40'HC"
+        const ctnNote = getNote('Containers')
+        if (ctnNote) {
+          const parsed = ctnNote.split(',').map(s => s.trim()).map(s => {
+            const m = s.match(/(\d+)\s*x\s*(.+)/)
+            return m ? { type: m[2].trim(), qty: parseInt(m[1], 10) || 1 } : null
+          }).filter(Boolean) as { type: string; qty: number }[]
+          setBkContainers(parsed.length > 0 ? parsed : [{ type: rbBkg.container_type ?? "20'GP", qty: rbBkg.quantity ?? 1 }])
+        } else {
+          setBkContainers([{ type: rbBkg.container_type ?? "20'GP", qty: rbBkg.quantity ?? 1 }])
+        }
         setBkCommodity(getNote('Commodity'))
         setBkCargoReadyDate(getNote('Cargo Ready'))
-        setBkVesselEtd(getNote('Vessel'))
+        setBkVessel(getNote('Vessel'))
+        setBkVoyage(getNote('Voyage'))
         setBkPod(rbBkg.destination ?? '')
         setBkContractNo(getNote('Contract'))
         setBkAgreedRate(getNote('Rate'))
+        setBkRateRemark(getNote('Rate Remark'))
         setBkDeliveryTerm(getNote('Term'))
         setBkHsCode(getNote('HS'))
         setBkBlType((getNote('BL') as 'OBL' | 'Seaway Bill' | '') || '')
@@ -1258,6 +1284,8 @@ ABC Logistics (Pvt) Ltd`
         setSiFileName('')
         setSiMode('paste')
         setInttraSiLoading(false)
+        setVgmCertFileName('')
+        setVgmCertContent('')
         setFormNote('')
         setActionModal(item)
         break
@@ -1760,20 +1788,23 @@ ABC Logistics (Pvt) Ltd`
       }
       case 'booking-request': {
         const { inquiry } = actionModal.sourceData
+        const ctnSummary = bkContainers.map(c => `${c.qty}x${c.type}`).join(', ')
         const bookingId = onCreateBooking({
           customer_name: inquiry.customer_name,
           quote_id: inquiry.id,
           shipping_line: bkShippingLine,
-          container_type: bkContainerType,
-          quantity: bkQuantity,
+          container_type: bkContainers[0]?.type ?? bkContainerType,
+          quantity: bkContainers.reduce((s, c) => s + c.qty, 0),
           origin: inquiry.origin,
           destination: bkPod || inquiry.destination,
           is_urgent: false,
           booked_by: activeEmployee.id,
           notes: [
+            `Containers: ${ctnSummary}`,
             bkCommodity && `Commodity: ${bkCommodity}`,
             bkContractNo && `Contract: ${bkContractNo}`,
             bkAgreedRate && `Agreed Rate: ${bkAgreedRate}`,
+            bkRateRemark && `Rate Remark: ${bkRateRemark}`,
             bkDeliveryTerm && `Delivery Term: ${bkDeliveryTerm}`,
             bkHsCode && `HS Code: ${bkHsCode}`,
             bkBlType && `BL Type: ${bkBlType}`,
@@ -1782,18 +1813,21 @@ ABC Logistics (Pvt) Ltd`
             bkReeferTemp && `Reefer/PTI: ${bkReeferTemp}`,
             bkDeliveryAgent && `Delivery Agent: ${bkDeliveryAgent}`,
             bkCargoReadyDate && `Cargo Ready: ${bkCargoReadyDate}`,
-            bkVesselEtd && `Vessel/ETD: ${bkVesselEtd}`,
+            bkVessel && `Vessel: ${bkVessel}`,
+            bkVoyage && `Voyage: ${bkVoyage}`,
+            bkRaNumber && `RA No: ${bkRaNumber}`,
           ].filter(Boolean).join(' | ') || `Booking for ${inquiry.customer_name}: ${inquiry.request}`,
           delivery_type: inquiry.delivery_type,
         })
         onAdvanceWorkflow(inquiry.id, 'completed')
         const noteParts = [
-          `${bkQuantity}x ${bkContainerType}`,
+          ctnSummary,
           bkShippingLine || 'Any carrier',
           `${inquiry.origin} → ${bkPod || inquiry.destination}`,
           bkCommodity && `Commodity: ${bkCommodity}`,
           bkContractNo && `Contract: ${bkContractNo}`,
-          bkAgreedRate && `Rate: ${bkAgreedRate}`,
+          bkAgreedRate && `Rate: $${bkAgreedRate}`,
+          bkRateRemark && `Rate Remark: ${bkRateRemark}`,
           bkDeliveryTerm && `Term: ${bkDeliveryTerm}`,
           bkHsCode && `HS: ${bkHsCode}`,
           bkBlType && `BL: ${bkBlType}`,
@@ -1801,7 +1835,9 @@ ABC Logistics (Pvt) Ltd`
           bkReeferTemp && `Reefer/PTI: ${bkReeferTemp}`,
           bkDeliveryAgent && `Agent: ${bkDeliveryAgent}`,
           bkCargoReadyDate && `Cargo Ready: ${bkCargoReadyDate}`,
-          bkVesselEtd && `Vessel: ${bkVesselEtd}`,
+          bkVessel && `Vessel: ${bkVessel}`,
+          bkVoyage && `Voyage: ${bkVoyage}`,
+          bkRaNumber && `RA No: ${bkRaNumber}`,
         ].filter(Boolean).join(' | ')
         onLogActivity({
           actor_role: activeRole,
@@ -1819,14 +1855,15 @@ ABC Logistics (Pvt) Ltd`
       case 'review-booking-request': {
         const { booking: rbBkg } = actionModal.sourceData
         // Assign the RA number — booking moves to proc-booking step for liner confirmation
-        onMarkRaAssigned(rbBkg.id, bkRaNumber, bkVesselEtd || '', bkShippingLine)
+        onMarkRaAssigned(rbBkg.id, bkRaNumber, [bkVessel, bkVoyage].filter(Boolean).join(' / ') || '', bkShippingLine)
         const rbNoteParts = [
-          `${bkQuantity}x ${bkContainerType}`,
+          bkContainers.map(c => `${c.qty}x${c.type}`).join(', '),
           bkShippingLine && `Carrier: ${bkShippingLine}`,
           `${rbBkg.origin} → ${bkPod || rbBkg.destination}`,
           bkCommodity && `Commodity: ${bkCommodity}`,
           bkContractNo && `Contract: ${bkContractNo}`,
-          bkAgreedRate && `Rate: ${bkAgreedRate}`,
+          bkAgreedRate && `Rate: $${bkAgreedRate}`,
+          bkRateRemark && `Rate Remark: ${bkRateRemark}`,
           bkDeliveryTerm && `Term: ${bkDeliveryTerm}`,
           bkHsCode && `HS: ${bkHsCode}`,
           bkBlType && `BL: ${bkBlType}`,
@@ -1835,7 +1872,8 @@ ABC Logistics (Pvt) Ltd`
           bkDeliveryAgent && `Agent: ${bkDeliveryAgent}`,
           bkSpecificRouting && `Routing: ${bkSpecificRouting}`,
           bkCargoReadyDate && `Cargo Ready: ${bkCargoReadyDate}`,
-          bkVesselEtd && `Vessel: ${bkVesselEtd}`,
+          bkVessel && `Vessel: ${bkVessel}`,
+          bkVoyage && `Voyage: ${bkVoyage}`,
           bkRaNumber && `RA#: ${bkRaNumber}`,
         ].filter(Boolean).join(' | ')
         onLogActivity({
@@ -1988,14 +2026,14 @@ ABC Logistics (Pvt) Ltd`
         onLogActivity({
           actor_role: activeRole,
           actor_id: activeEmployee.id,
-          action: `SI submitted to ${booking.shipping_line || 'liner'} for ${booking.customer_name} ${method}.`,
+          action: `SI submitted to ${booking.shipping_line || 'liner'} for ${booking.customer_name} ${method}.${vgmCertFileName ? ` VGM document attached: ${vgmCertFileName}` : ''}`,
           ref_type: 'booking',
           ref_id: booking.id,
           customer_name: booking.customer_name,
           pushed_to: 'CS',
-          notes: `SI submitted ${method}${siContent ? ` | Document attached` : ''}${formNote ? ` | ${formNote}` : ''}`,
+          notes: `SI submitted ${method}${siContent ? ` | SI document attached` : ''}${vgmCertFileName ? ` | VGM: ${vgmCertFileName}` : ''}${formNote ? ` | ${formNote}` : ''}`,
         })
-        onFlash(`${booking.id} → SI submitted to ${booking.shipping_line || 'liner'} ${method}`, nextStepAction)
+        onFlash(`${booking.id} → SI submitted to ${booking.shipping_line || 'liner'} ${method}${vgmCertFileName ? ' (VGM attached)' : ''}`, nextStepAction)
         break
       }
       case 'send-draft-bl': {
@@ -2172,7 +2210,7 @@ ABC Logistics (Pvt) Ltd`
                   key={key}
                   onClick={() => {
                     setSelectedItemId(key)
-                    if (item.actionKind === 'booking-request' || item.actionKind === 'review-booking-request' || item.actionKind === 'confirm-liner-booking' || item.actionKind === 'attach-release-order' || item.actionKind === 'release-booking' || item.actionKind === 'send-draft-bl' || item.actionKind === 'record-cutoff' || item.actionKind === 'request-si' || item.actionKind === 'send-pre-advice') {
+                    if (item.actionKind === 'booking-request' || item.actionKind === 'review-booking-request' || item.actionKind === 'confirm-liner-booking' || item.actionKind === 'attach-release-order' || item.actionKind === 'release-booking' || item.actionKind === 'send-draft-bl' || item.actionKind === 'record-cutoff' || item.actionKind === 'request-si' || item.actionKind === 'submit-si' || item.actionKind === 'send-pre-advice') {
                       handleAction(item)
                     }
                   }}
@@ -3649,9 +3687,157 @@ ABC Logistics (Pvt) Ltd`
                   </div>
                 </div>
               )
+            })() : selectedItem.actionKind === 'submit-si' && actionModal ? (() => {
+              const siBkg = actionModal.sourceData.booking as Booking
+              return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+                  {/* Header */}
+                  <div style={{ padding: '8px 14px', background: '#0891b2', borderRadius: '8px 8px 0 0', marginBottom: 1 }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: '#fff', letterSpacing: 0.5 }}>SUBMIT SHIPPING INSTRUCTIONS</span>
+                  </div>
+                  <div style={{ border: '1px solid var(--border)', borderRadius: '0 0 8px 8px', overflow: 'hidden' }}>
+                    {/* Booking summary */}
+                    <div style={{ padding: '10px 14px', background: 'rgba(8,145,178,0.04)', borderBottom: '1px solid var(--border)', fontSize: 12 }}>
+                      <strong>{siBkg.customer_name}</strong> — {siBkg.origin} → {siBkg.destination}
+                      <span style={{ color: 'var(--text-muted)', marginLeft: 8 }}>
+                        {siBkg.quantity}x {siBkg.container_type} · {siBkg.shipping_line || 'No liner'}
+                      </span>
+                    </div>
+
+                    {/* Cutoff dates */}
+                    {(siBkg.si_cutoff_date || siBkg.bl_cutoff_date || siBkg.vgm_cutoff_date) && (
+                      <div style={{ display: 'flex', gap: 0, borderBottom: '1px solid var(--border)' }}>
+                        {siBkg.si_cutoff_date && (
+                          <div style={{ flex: 1, padding: '6px 12px', background: 'rgba(8,145,178,0.04)', borderRight: '1px solid var(--border)', fontSize: 11 }}>
+                            <span style={{ color: 'var(--text-muted)' }}>SI Cutoff:</span> <strong>{siBkg.si_cutoff_date}</strong>
+                          </div>
+                        )}
+                        {siBkg.bl_cutoff_date && (
+                          <div style={{ flex: 1, padding: '6px 12px', background: 'rgba(217,119,6,0.04)', borderRight: '1px solid var(--border)', fontSize: 11 }}>
+                            <span style={{ color: 'var(--text-muted)' }}>BL Cutoff:</span> <strong>{siBkg.bl_cutoff_date}</strong>
+                          </div>
+                        )}
+                        {siBkg.vgm_cutoff_date && (
+                          <div style={{ flex: 1, padding: '6px 12px', background: 'rgba(168,85,247,0.04)', fontSize: 11 }}>
+                            <span style={{ color: 'var(--text-muted)' }}>VGM Cutoff:</span> <strong>{siBkg.vgm_cutoff_date}</strong>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* SI Document section */}
+                    <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)' }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: '#0891b2', marginBottom: 6 }}>SI DOCUMENT</div>
+                      <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                        <button
+                          className={`db-btn ${siMode === 'paste' ? 'primary' : ''}`}
+                          style={siMode !== 'paste' ? { background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-secondary)', fontSize: 11 } : { fontSize: 11 }}
+                          onClick={() => setSiMode('paste')}
+                        >
+                          <ClipboardPaste size={12} style={{ marginRight: 4 }} /> Paste
+                        </button>
+                        <button
+                          className={`db-btn ${siMode === 'upload' ? 'primary' : ''}`}
+                          style={siMode !== 'upload' ? { background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-secondary)', fontSize: 11 } : { fontSize: 11 }}
+                          onClick={() => setSiMode('upload')}
+                        >
+                          <Paperclip size={12} style={{ marginRight: 4 }} /> Upload
+                        </button>
+                      </div>
+
+                      {siMode === 'paste' && (
+                        <textarea
+                          className="lt-input"
+                          style={{ width: '100%', minHeight: 90, fontFamily: 'monospace', fontSize: 11, lineHeight: 1.5, resize: 'vertical' }}
+                          value={siContent}
+                          onChange={e => setSiContent(e.target.value)}
+                          placeholder="Paste shipping instructions here..."
+                        />
+                      )}
+
+                      {siMode === 'upload' && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <label className="db-btn"
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, cursor: 'pointer', background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}>
+                            <Paperclip size={12} />
+                            {siFileName ? 'Replace file' : 'Choose file'}
+                            <input type="file" accept=".pdf,.xlsx,.xls,.csv,.png,.jpg,.jpeg,.txt,.doc,.docx" style={{ display: 'none' }}
+                              onChange={e => {
+                                const file = e.target.files?.[0]
+                                if (!file) return
+                                setSiFileName(file.name)
+                                const reader = new FileReader()
+                                reader.onload = () => setSiContent(reader.result as string)
+                                reader.readAsDataURL(file)
+                                e.target.value = ''
+                              }} />
+                          </label>
+                          {siFileName && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+                              <FileText size={13} style={{ color: '#16a34a' }} />
+                              <span style={{ fontWeight: 600 }}>{siFileName}</span>
+                              <button style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, color: 'var(--text-muted)' }}
+                                onClick={() => { setSiFileName(''); setSiContent('') }} title="Remove file"><X size={12} /></button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* VGM Document section */}
+                    <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)' }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: '#7c3aed', marginBottom: 6 }}>VGM DOCUMENT <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>(optional)</span></div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <label className="db-btn"
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, cursor: 'pointer', background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}>
+                          <Paperclip size={12} />
+                          {vgmCertFileName ? 'Replace file' : 'Upload VGM'}
+                          <input type="file" accept=".pdf,.xlsx,.xls,.csv,.png,.jpg,.jpeg,.doc,.docx" style={{ display: 'none' }}
+                            onChange={e => {
+                              const f = e.target.files?.[0]
+                              if (!f) return
+                              setVgmCertFileName(f.name)
+                              const r = new FileReader()
+                              r.onload = () => setVgmCertContent(r.result as string)
+                              r.readAsDataURL(f)
+                              e.target.value = ''
+                            }} />
+                        </label>
+                        {vgmCertFileName && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+                            <FileText size={13} style={{ color: '#16a34a' }} />
+                            <span style={{ fontWeight: 600 }}>{vgmCertFileName}</span>
+                            <button style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, color: 'var(--text-muted)' }}
+                              onClick={() => { setVgmCertFileName(''); setVgmCertContent('') }}><X size={12} /></button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Notes */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr' }}>
+                      <div style={{ padding: '8px 12px', background: 'var(--bg-card)', borderRight: '1px solid var(--border)', fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center' }}>Notes</div>
+                      <div style={{ padding: '4px 8px' }}>
+                        <input className="lt-input" style={{ width: '100%', border: 'none', background: 'transparent', padding: '4px 0' }}
+                          value={formNote} onChange={e => setFormNote(e.target.value)} placeholder="Any notes about the SI submission..." />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Submit */}
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
+                    <button className="db-btn primary"
+                      disabled={!siContent.trim() || inttraSiLoading}
+                      style={siContent.trim() ? { background: '#0891b2', borderColor: '#0891b2' } : { opacity: 0.4, cursor: 'not-allowed' }}
+                      onClick={handleModalSubmit}>
+                      <Globe size={12} /> Submit SI & Confirm{vgmCertFileName ? ' (VGM attached)' : ''}
+                    </button>
+                  </div>
+                </div>
+              )
             })() : (selectedItem.actionKind === 'booking-request' || selectedItem.actionKind === 'review-booking-request') && actionModal ? (() => {
               const isCS = selectedItem.actionKind === 'booking-request'
-              const isReefer = bkContainerType.includes('RF')
+              const isReefer = bkContainers.some(c => c.type.includes('RF'))
               return (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
                   {/* Form header */}
@@ -3670,21 +3856,38 @@ ABC Logistics (Pvt) Ltd`
                         <datalist id="rp-bk-liners">{linerList.map(l => <option key={l.lin_id} value={l.name} />)}</datalist>
                       </div>
                     </div>
-                    {/* Unit */}
+                    {/* Containers (dynamic list) */}
                     <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', borderBottom: '1px solid var(--border)' }}>
-                      <div style={{ padding: '8px 12px', background: 'var(--bg-card)', borderRight: '1px solid var(--border)', fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center' }}>Unit</div>
-                      <div style={{ padding: '4px 8px', display: 'flex', gap: 8, alignItems: 'center' }}>
-                        <input className="lt-input" style={{ width: 56, border: 'none', background: 'transparent', padding: '4px 0' }}
-                          type="number" min={1} value={bkQuantity} onChange={e => setBkQuantity(Math.max(1, parseInt(e.target.value) || 1))} />
-                        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>×</span>
-                        <select className="lt-input" style={{ flex: 1, border: 'none', background: 'transparent', padding: '4px 0' }}
-                          value={bkContainerType} onChange={e => setBkContainerType(e.target.value)}>
-                          <option value="20'GP">20' GP</option><option value="40'GP">40' GP</option>
-                          <option value="40'HC">40' HC</option><option value="20'RF">20' RF (Reefer)</option>
-                          <option value="40'RF">40' RF (Reefer)</option><option value="20'OT">20' OT (Open Top)</option>
-                          <option value="40'OT">40' OT (Open Top)</option><option value="20'FR">20' FR (Flat Rack)</option>
-                          <option value="40'FR">40' FR (Flat Rack)</option>
-                        </select>
+                      <div style={{ padding: '8px 12px', background: 'var(--bg-card)', borderRight: '1px solid var(--border)', fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'flex-start', paddingTop: 10 }}>
+                        Containers
+                        <span style={{ fontSize: 9, color: 'var(--text-muted)', marginLeft: 4 }}>({bkContainers.reduce((s, c) => s + c.qty, 0)})</span>
+                      </div>
+                      <div style={{ padding: '4px 8px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        {bkContainers.map((ctn, ci) => (
+                          <div key={ci} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                            <input className="lt-input" style={{ width: 48, border: '1px solid var(--border)', borderRadius: 4, background: 'transparent', padding: '3px 4px', textAlign: 'center' }}
+                              type="number" min={1} value={ctn.qty}
+                              onChange={e => setBkContainers(prev => prev.map((c, i) => i === ci ? { ...c, qty: Math.max(1, parseInt(e.target.value) || 1) } : c))} />
+                            <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>×</span>
+                            <select className="lt-input" style={{ flex: 1, border: '1px solid var(--border)', borderRadius: 4, background: 'transparent', padding: '3px 4px', fontSize: 12 }}
+                              value={ctn.type} onChange={e => setBkContainers(prev => prev.map((c, i) => i === ci ? { ...c, type: e.target.value } : c))}>
+                              <option value="20'GP">20' GP</option><option value="40'GP">40' GP</option>
+                              <option value="40'HC">40' HC</option><option value="20'RF">20' RF (Reefer)</option>
+                              <option value="40'RF">40' RF (Reefer)</option><option value="20'OT">20' OT (Open Top)</option>
+                              <option value="40'OT">40' OT (Open Top)</option><option value="20'FR">20' FR (Flat Rack)</option>
+                              <option value="40'FR">40' FR (Flat Rack)</option>
+                            </select>
+                            {bkContainers.length > 1 && (
+                              <button type="button" onClick={() => setBkContainers(prev => prev.filter((_, i) => i !== ci))}
+                                style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#ef4444', fontSize: 14, padding: '0 2px', lineHeight: 1 }}
+                                title="Remove">×</button>
+                            )}
+                          </div>
+                        ))}
+                        <button type="button" onClick={() => setBkContainers(prev => [...prev, { type: "20'GP", qty: 1 }])}
+                          style={{ border: '1px dashed var(--border)', borderRadius: 4, background: 'transparent', cursor: 'pointer', padding: '3px 8px', fontSize: 11, color: 'var(--accent)', fontWeight: 600, alignSelf: 'flex-start', marginTop: 2 }}>
+                          + Add Container
+                        </button>
                       </div>
                     </div>
                     {/* Commodity */}
@@ -3695,16 +3898,25 @@ ABC Logistics (Pvt) Ltd`
                           value={bkCommodity} onChange={e => setBkCommodity(e.target.value)} placeholder="e.g. Coconut Milk, Garments" />
                       </div>
                     </div>
-                    {/* Cargo Ready / Vessel ETD */}
+                    {/* Cargo Ready Date */}
                     <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', borderBottom: '1px solid var(--border)' }}>
-                      <div style={{ padding: '8px 12px', background: 'var(--bg-card)', borderRight: '1px solid var(--border)', fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'flex-start', paddingTop: 10 }}>
-                        Cargo Ready<br /><span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>or Vessel/ETD</span>
-                      </div>
-                      <div style={{ padding: '4px 8px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      <div style={{ padding: '8px 12px', background: 'var(--bg-card)', borderRight: '1px solid var(--border)', fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center' }}>Cargo Ready Date</div>
+                      <div style={{ padding: '4px 8px' }}>
                         <input className="lt-input" type="date" style={{ width: '100%', border: 'none', background: 'transparent', padding: '4px 0' }}
                           value={bkCargoReadyDate} onChange={e => setBkCargoReadyDate(e.target.value)} />
-                        <input className="lt-input" style={{ width: '100%', border: 'none', background: 'transparent', padding: '4px 0', fontSize: 11 }}
-                          value={bkVesselEtd} onChange={e => setBkVesselEtd(e.target.value)} placeholder="Vessel / Voyage, ETD" />
+                      </div>
+                    </div>
+                    {/* Vessel + Voyage */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr 90px 1fr', borderBottom: '1px solid var(--border)' }}>
+                      <div style={{ padding: '8px 12px', background: 'var(--bg-card)', borderRight: '1px solid var(--border)', fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center' }}>Vessel</div>
+                      <div style={{ padding: '4px 8px', borderRight: '1px solid var(--border)' }}>
+                        <input className="lt-input" style={{ width: '100%', border: 'none', background: 'transparent', padding: '4px 0' }}
+                          value={bkVessel} onChange={e => setBkVessel(e.target.value)} placeholder="e.g. MSC Asya" />
+                      </div>
+                      <div style={{ padding: '8px 8px', background: 'var(--bg-card)', borderRight: '1px solid var(--border)', fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center' }}>Voyage</div>
+                      <div style={{ padding: '4px 8px' }}>
+                        <input className="lt-input" style={{ width: '100%', border: 'none', background: 'transparent', padding: '4px 0' }}
+                          value={bkVoyage} onChange={e => setBkVoyage(e.target.value)} placeholder="e.g. MA622R" />
                       </div>
                     </div>
                     {/* POD */}
@@ -3715,24 +3927,28 @@ ABC Logistics (Pvt) Ltd`
                           value={bkPod} onChange={e => setBkPod(e.target.value)} placeholder="Port of Discharge" />
                       </div>
                     </div>
-                    {/* Customer + Contract No */}
-                    <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr 90px 1fr', borderBottom: '1px solid var(--border)' }}>
+                    {/* Customer */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', borderBottom: '1px solid var(--border)' }}>
                       <div style={{ padding: '8px 12px', background: 'var(--bg-card)', borderRight: '1px solid var(--border)', fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center' }}>Customer</div>
-                      <div style={{ padding: '8px 10px', fontSize: 12, fontWeight: 600, color: 'var(--text)', borderRight: '1px solid var(--border)', display: 'flex', alignItems: 'center' }}>{selectedItem.customerName}</div>
-                      <div style={{ padding: '8px 8px', background: 'rgba(234,179,8,0.1)', borderRight: '1px solid var(--border)', fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center' }}>Contract</div>
+                      <div style={{ padding: '8px 10px', fontSize: 12, fontWeight: 600, color: 'var(--text)' }}>{selectedItem.customerName}</div>
+                    </div>
+                    {/* Agreed Rate + Rate Remark */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr 100px 1fr', borderBottom: '1px solid var(--border)' }}>
+                      <div style={{ padding: '8px 12px', background: 'var(--bg-card)', borderRight: '1px solid var(--border)', fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center' }}>Agreed Rate</div>
+                      <div style={{ padding: '4px 8px', borderRight: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>$</span>
+                        <input className="lt-input" type="number" min={0} step="any" style={{ width: '100%', border: 'none', background: 'transparent', padding: '4px 0' }}
+                          value={bkAgreedRate} onChange={e => { const v = e.target.value; if (v === '' || /^\d*\.?\d*$/.test(v)) setBkAgreedRate(v) }} placeholder="e.g. 1200" />
+                      </div>
+                      <div style={{ padding: '8px 8px', background: 'var(--bg-card)', borderRight: '1px solid var(--border)', fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center' }}>Rate Remark</div>
                       <div style={{ padding: '4px 8px' }}>
-                        <input className="lt-input" style={{ width: '100%', border: 'none', background: 'transparent', padding: '4px 0', fontWeight: 600 }}
-                          value={bkContractNo} onChange={e => setBkContractNo(e.target.value)} placeholder="e.g. 26-751GAC" />
+                        <input className="lt-input" style={{ width: '100%', border: 'none', background: 'transparent', padding: '4px 0' }}
+                          value={bkRateRemark} onChange={e => setBkRateRemark(e.target.value)} placeholder="e.g. As per contract, TBD" />
                       </div>
                     </div>
-                    {/* Agreed Rate + Delivery Term */}
-                    <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr 90px 1fr', borderBottom: '1px solid var(--border)' }}>
-                      <div style={{ padding: '8px 12px', background: 'var(--bg-card)', borderRight: '1px solid var(--border)', fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center' }}>Agreed Rate</div>
-                      <div style={{ padding: '4px 8px', borderRight: '1px solid var(--border)' }}>
-                        <input className="lt-input" style={{ width: '100%', border: 'none', background: 'transparent', padding: '4px 0' }}
-                          value={bkAgreedRate} onChange={e => setBkAgreedRate(e.target.value)} placeholder="e.g. $1,200" />
-                      </div>
-                      <div style={{ padding: '8px 8px', background: 'var(--bg-card)', borderRight: '1px solid var(--border)', fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center' }}>Delivery</div>
+                    {/* Delivery Term */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', borderBottom: '1px solid var(--border)' }}>
+                      <div style={{ padding: '8px 12px', background: 'var(--bg-card)', borderRight: '1px solid var(--border)', fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center' }}>Delivery Term</div>
                       <div style={{ padding: '4px 8px' }}>
                         <input className="lt-input" style={{ width: '100%', border: 'none', background: 'transparent', padding: '4px 0' }}
                           value={bkDeliveryTerm} onChange={e => setBkDeliveryTerm(e.target.value)} placeholder="CY/CY" />
@@ -3750,14 +3966,26 @@ ABC Logistics (Pvt) Ltd`
                     <div style={{ padding: '7px 12px', background: 'rgba(15,143,168,0.12)', borderBottom: '1px solid var(--border)' }}>
                       <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)', letterSpacing: 0.4 }}>SPECIAL INSTRUCTIONS</span>
                     </div>
-                    {/* Contract # if Apply */}
-                    <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', borderBottom: '1px solid var(--border)' }}>
-                      <div style={{ padding: '8px 12px', background: 'var(--bg-card)', borderRight: '1px solid var(--border)', fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center' }}>Contract # if Apply</div>
-                      <div style={{ padding: '4px 8px' }}>
+                    {/* Contract No + RA No (mutually exclusive) */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr 90px 1fr', borderBottom: '1px solid var(--border)' }}>
+                      <div style={{ padding: '8px 12px', background: 'var(--bg-card)', borderRight: '1px solid var(--border)', fontSize: 11, fontWeight: 600, color: bkRaNumber ? 'var(--text-muted)' : 'var(--text-secondary)', display: 'flex', alignItems: 'center' }}>Contract No</div>
+                      <div style={{ padding: '4px 8px', borderRight: '1px solid var(--border)', opacity: bkRaNumber ? 0.4 : 1 }}>
                         <input className="lt-input" style={{ width: '100%', border: 'none', background: 'transparent', padding: '4px 0' }}
-                          value={bkContractNo} onChange={e => setBkContractNo(e.target.value)} placeholder="Contract number if applicable" />
+                          value={bkContractNo} onChange={e => { setBkContractNo(e.target.value); if (e.target.value) setBkRaNumber('') }}
+                          disabled={!!bkRaNumber} placeholder={bkRaNumber ? 'N/A (RA No is set)' : 'e.g. 26-751GAC'} />
+                      </div>
+                      <div style={{ padding: '8px 8px', background: bkContractNo ? 'var(--bg-card)' : 'rgba(22,163,74,0.06)', borderRight: '1px solid var(--border)', fontSize: 11, fontWeight: 600, color: bkContractNo ? 'var(--text-muted)' : '#16a34a', display: 'flex', alignItems: 'center' }}>RA No</div>
+                      <div style={{ padding: '4px 8px', opacity: bkContractNo ? 0.4 : 1 }}>
+                        <input className="lt-input" style={{ width: '100%', border: 'none', background: 'transparent', padding: '4px 0', fontWeight: 600 }}
+                          value={bkRaNumber} onChange={e => { setBkRaNumber(e.target.value); if (e.target.value) setBkContractNo('') }}
+                          disabled={!!bkContractNo} placeholder={bkContractNo ? 'N/A (Contract is set)' : 'Liner booking ref'} />
                       </div>
                     </div>
+                    {bkContractNo && bkRaNumber && (
+                      <div style={{ padding: '6px 12px', background: '#fef2f2', color: '#dc2626', fontSize: 11, fontWeight: 600 }}>
+                        A customer cannot have both Contract No and RA No. Please clear one.
+                      </div>
+                    )}
                     {/* Specific Routing */}
                     <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', borderBottom: '1px solid var(--border)' }}>
                       <div style={{ padding: '8px 12px', background: 'var(--bg-card)', borderRight: '1px solid var(--border)', fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center' }}>Specific Routing</div>
@@ -3798,23 +4026,13 @@ ABC Logistics (Pvt) Ltd`
                       </div>
                     </div>
                     {/* Delivery Agent */}
-                    <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', borderBottom: !isCS ? '1px solid var(--border)' : undefined }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr' }}>
                       <div style={{ padding: '8px 12px', background: 'var(--bg-card)', borderRight: '1px solid var(--border)', fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center' }}>Delivery Agent</div>
                       <div style={{ padding: '4px 8px' }}>
                         <input className="lt-input" style={{ width: '100%', border: 'none', background: 'transparent', padding: '4px 0' }}
                           value={bkDeliveryAgent} onChange={e => setBkDeliveryAgent(e.target.value)} placeholder="Will advise / agent name" />
                       </div>
                     </div>
-                    {/* RA Number — Procurement only */}
-                    {!isCS && (
-                      <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', background: 'rgba(22,163,74,0.04)', borderTop: '2px solid rgba(22,163,74,0.3)' }}>
-                        <div style={{ padding: '10px 12px', borderRight: '1px solid var(--border)', fontSize: 11, fontWeight: 700, color: '#16a34a', display: 'flex', alignItems: 'center' }}>RA Number</div>
-                        <div style={{ padding: '4px 8px' }}>
-                          <input className="lt-input" style={{ width: '100%', border: 'none', background: 'transparent', padding: '6px 0', fontWeight: 600, fontSize: 13 }}
-                            value={bkRaNumber} onChange={e => setBkRaNumber(e.target.value)} placeholder="Liner booking reference / RA number" />
-                        </div>
-                      </div>
-                    )}
                   </div>
                   {/* Submit */}
                   <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
@@ -4003,7 +4221,7 @@ ABC Logistics (Pvt) Ltd`
       </div>
 
       {/* Action Modal */}
-      {actionModal && actionModal.actionKind !== 'booking-request' && actionModal.actionKind !== 'review-booking-request' && actionModal.actionKind !== 'confirm-liner-booking' && actionModal.actionKind !== 'attach-release-order' && actionModal.actionKind !== 'release-booking' && actionModal.actionKind !== 'send-draft-bl' && actionModal.actionKind !== 'record-cutoff' && actionModal.actionKind !== 'request-si' && actionModal.actionKind !== 'send-pre-advice' && (
+      {actionModal && actionModal.actionKind !== 'booking-request' && actionModal.actionKind !== 'review-booking-request' && actionModal.actionKind !== 'confirm-liner-booking' && actionModal.actionKind !== 'attach-release-order' && actionModal.actionKind !== 'release-booking' && actionModal.actionKind !== 'send-draft-bl' && actionModal.actionKind !== 'record-cutoff' && actionModal.actionKind !== 'request-si' && actionModal.actionKind !== 'submit-si' && actionModal.actionKind !== 'send-pre-advice' && (
         <div className="lt-modal-backdrop" onClick={() => setActionModal(null)}>
           <div className="lt-modal" onClick={e => e.stopPropagation()} style={{ width: actionModal.actionKind === 'send-kyc' ? 660 : 520, padding: '28px 30px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
@@ -4565,115 +4783,7 @@ ABC Logistics (Pvt) Ltd`
               )
             })()}
 
-            {/* Submit SI modal */}
-            {actionModal.actionKind === 'submit-si' && (() => {
-              const { booking: siBkg } = actionModal.sourceData
-              return (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-                  {/* Booking summary */}
-                  <div style={{ padding: '10px 14px', background: 'rgba(15,143,168,0.06)', border: '1px solid rgba(15,143,168,0.15)', borderRadius: 8, fontSize: 12 }}>
-                    <strong>{siBkg.customer_name}</strong> — {siBkg.origin} → {siBkg.destination}
-                    <div style={{ color: 'var(--text-muted)', marginTop: 2 }}>
-                      {siBkg.quantity}x {siBkg.container_type} · {siBkg.shipping_line || 'No liner'}
-                    </div>
-                  </div>
-
-                  {/* Cutoff dates */}
-                  {(siBkg.si_cutoff_date || siBkg.bl_cutoff_date) && (
-                    <div style={{ display: 'flex', gap: 12, fontSize: 11 }}>
-                      {siBkg.si_cutoff_date && (
-                        <div style={{ flex: 1, padding: '6px 10px', background: 'rgba(8,145,178,0.06)', border: '1px solid rgba(8,145,178,0.15)', borderRadius: 6 }}>
-                          <span style={{ color: 'var(--text-muted)' }}>SI Cutoff:</span> <strong>{siBkg.si_cutoff_date}</strong>
-                        </div>
-                      )}
-                      {siBkg.bl_cutoff_date && (
-                        <div style={{ flex: 1, padding: '6px 10px', background: 'rgba(217,119,6,0.06)', border: '1px solid rgba(217,119,6,0.15)', borderRadius: 6 }}>
-                          <span style={{ color: 'var(--text-muted)' }}>BL Cutoff:</span> <strong>{siBkg.bl_cutoff_date}</strong>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-
-                  {/* SI Document */}
-                  <div>
-                        <label className="lt-label">SI Document</label>
-                        <div style={{ display: 'flex', gap: 8, marginTop: 4, marginBottom: 8 }}>
-                          <button
-                            className={`db-btn ${siMode === 'paste' ? 'primary' : ''}`}
-                            style={siMode !== 'paste' ? { background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-secondary)' } : {}}
-                            onClick={() => setSiMode('paste')}
-                          >
-                            <ClipboardPaste size={13} style={{ marginRight: 4 }} /> Paste
-                          </button>
-                          <button
-                            className={`db-btn ${siMode === 'upload' ? 'primary' : ''}`}
-                            style={siMode !== 'upload' ? { background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-secondary)' } : {}}
-                            onClick={() => setSiMode('upload')}
-                          >
-                            <Paperclip size={13} style={{ marginRight: 4 }} /> Upload
-                          </button>
-                        </div>
-
-                        {siMode === 'paste' && (
-                          <textarea
-                            className="lt-input"
-                            style={{ width: '100%', minHeight: 100, fontFamily: 'monospace', fontSize: 11, lineHeight: 1.5, resize: 'vertical' }}
-                            value={siContent}
-                            onChange={e => setSiContent(e.target.value)}
-                            placeholder="Paste shipping instructions here..."
-                          />
-                        )}
-
-                        {siMode === 'upload' && (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <label
-                              className="db-btn"
-                              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, cursor: 'pointer', background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}
-                            >
-                              <Paperclip size={13} />
-                              {siFileName ? 'Replace file' : 'Choose file'}
-                              <input
-                                type="file"
-                                accept=".pdf,.xlsx,.xls,.csv,.png,.jpg,.jpeg,.txt,.doc,.docx"
-                                style={{ display: 'none' }}
-                                onChange={e => {
-                                  const file = e.target.files?.[0]
-                                  if (!file) return
-                                  setSiFileName(file.name)
-                                  const reader = new FileReader()
-                                  reader.onload = () => setSiContent(reader.result as string)
-                                  reader.readAsDataURL(file)
-                                  e.target.value = ''
-                                }}
-                              />
-                            </label>
-                            {siFileName && (
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text)' }}>
-                                <FileText size={13} style={{ color: '#16a34a' }} />
-                                <span style={{ fontWeight: 600 }}>{siFileName}</span>
-                                <button
-                                  style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, color: 'var(--text-muted)' }}
-                                  onClick={() => { setSiFileName(''); setSiContent('') }}
-                                  title="Remove file"
-                                >
-                                  <X size={12} />
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                        )}
-                  </div>
-
-                  <div>
-                    <label className="lt-label">Notes (optional)</label>
-                    <input className="lt-input" style={{ width: '100%' }} value={formNote}
-                      onChange={e => setFormNote(e.target.value)}
-                      placeholder="Any notes about the SI submission..." />
-                  </div>
-                </div>
-              )
-            })()}
+            {/* Submit SI — now inline, see ternary chain above */}
 
             {/* BL Approval modal */}
             {actionModal.actionKind === 'bl-approval' && (() => {
@@ -4996,8 +5106,6 @@ ABC Logistics (Pvt) Ltd`
                   (actionModal.actionKind === 'confirm-booking' && !formVessel.trim()) ||
                   (actionModal.actionKind === 'release-booking' && sendMethod === 'email' && (!customerContactEmail.trim() || !customerContactEmail.includes('@'))) ||
                   (actionModal.actionKind === 'release-booking' && sendMethod === 'whatsapp' && !waConfirmed) ||
-                  (actionModal.actionKind === 'submit-si' && inttraSiLoading) ||
-                  (actionModal.actionKind === 'submit-si' && !siContent.trim()) ||
                   (actionModal.actionKind === 'bl-approval' && blDecision === 'changes-requested' && !formNote.trim()) ||
                   (actionModal.actionKind === 'record-master-bl' && (!masterBlNumber.trim() || !masterBlConsignee.trim())) ||
                   (actionModal.actionKind === 'create-house-bl' && (!houseBlNumber.trim() || !houseBlConsignee.trim())) ||
@@ -5021,8 +5129,6 @@ ABC Logistics (Pvt) Ltd`
                   actionModal.actionKind === 'release-booking' && sendMethod === 'whatsapp' && waConfirmed ? { background: '#25d366', borderColor: '#25d366' } :
                   actionModal.actionKind === 'release-booking' && sendMethod === 'email' && customerContactEmail.includes('@') ? {} :
                   actionModal.actionKind === 'release-booking' ? { opacity: 0.4, cursor: 'not-allowed' } :
-                  actionModal.actionKind === 'submit-si' && siContent.trim() ? { background: '#0891b2', borderColor: '#0891b2' } :
-                  actionModal.actionKind === 'submit-si' ? { opacity: 0.4, cursor: 'not-allowed' } :
                   actionModal.actionKind === 'bl-approval' && blDecision === 'approved' ? { background: '#16a34a', borderColor: '#16a34a' } :
                   actionModal.actionKind === 'bl-approval' && blDecision === 'changes-requested' && formNote.trim() ? { background: '#d97706', borderColor: '#d97706' } :
                   actionModal.actionKind === 'bl-approval' ? { opacity: 0.4, cursor: 'not-allowed' } :
@@ -5053,7 +5159,6 @@ ABC Logistics (Pvt) Ltd`
                  actionModal.actionKind === 'confirm-booking' && formVessel.trim() ?<><Ship size={12} /> Confirm Manually &amp; Send to CS</> :
                  actionModal.actionKind === 'release-booking' && sendMethod === 'email' ? <><Mail size={12} /> Release &amp; Send via Email</> :
                  actionModal.actionKind === 'release-booking' && sendMethod === 'whatsapp' ? <><MessageCircle size={12} /> Release &amp; Confirm WhatsApp Sent</> :
-                 actionModal.actionKind === 'submit-si' ?<><Globe size={12} /> Submit SI &amp; Confirm</> :
                  actionModal.actionKind === 'bl-approval' && blDecision === 'approved' ? <><Check size={12} /> BL Approved</> :
                  actionModal.actionKind === 'bl-approval' && blDecision === 'changes-requested' ? <><Edit3 size={12} /> Record Changes Requested</> :
                  actionModal.actionKind === 'record-master-bl' ? <><FileText size={12} /> Record Master BL</> :
