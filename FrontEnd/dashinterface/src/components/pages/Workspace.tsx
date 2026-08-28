@@ -80,6 +80,8 @@ interface WorkspaceItem {
   urgencySortKey?: number
   /** True when the client's KYC is not yet completed for this inquiry. */
   kycIncomplete?: boolean
+  /** RFQ group number — present when this inquiry came from an uploaded tender. */
+  rfqRef?: number
 }
 
 const TYPE_BADGE_CLASS: Record<ItemType, string> = {
@@ -390,6 +392,7 @@ export default function Workspace({
           actionKind,
           sourceData: { inquiry: inq, nextStage: resolvedNextStage.id, container: cont, containerIdx: ci, customer: cust },
           kycIncomplete: inq.kyc_completed === false,
+          rfqRef: inq.rfq_ref,
         })
       }
     }
@@ -732,6 +735,20 @@ export default function Workspace({
     if (!step) return pendingItems
     return pendingItems.filter(i => step.actionKinds.includes(i.actionKind))
   }, [pendingItems, effectiveStep, roleSteps])
+
+
+  // Group work items by RFQ. Items with no rfq_ref stay ungrouped and sort last.
+  const itemGroups = useMemo(() => {
+    const groups = new Map<number | null, WorkspaceItem[]>()
+    for (const it of filteredItems) {
+      const k = it.rfqRef ?? null
+      if (!groups.has(k)) groups.set(k, [])
+      groups.get(k)!.push(it)
+    }
+    return [...groups.entries()]
+      .sort((a, b) => (a[0] ?? Infinity) - (b[0] ?? Infinity))
+      .map(([rfqRef, items]) => ({ rfqRef, items }))
+  }, [filteredItems])
 
 
   // ---------------------------------------------------------------------------
@@ -1598,7 +1615,19 @@ ABC Logistics (Pvt) Ltd`
               Nothing in this step right now.
             </div>
           ) : (
-            filteredItems.map(item => {
+            itemGroups.map(group => (
+              <div key={group.rfqRef ?? 'ungrouped'}>
+                {group.rfqRef != null && (
+                  <div style={{
+                    padding: '7px 11px', margin: '10px 0 5px',
+                    background: 'rgba(44,44,130,0.07)', borderLeft: '3px solid #2c2c82',
+                    borderRadius: 4, fontSize: 11, fontWeight: 700, color: '#2c2c82',
+                    textTransform: 'uppercase', letterSpacing: '0.04em',
+                  }}>
+                    RFQ-{group.rfqRef} · {group.items[0].customerName} · {group.items.length} route{group.items.length !== 1 ? 's' : ''}
+                  </div>
+                )}
+                {group.items.map(item => {
               const key = getItemKey(item)
               const isSelected = selectedItem ? getItemKey(selectedItem) === key : false
               return (
@@ -1616,7 +1645,9 @@ ABC Logistics (Pvt) Ltd`
                   <span className={TYPE_BADGE_CLASS[item.type]} style={{ fontSize: 10 }}>{item.actionLabel}</span>
                 </div>
               )
-            })
+                })}
+              </div>
+            ))
           )}
         </div>
       </div>
