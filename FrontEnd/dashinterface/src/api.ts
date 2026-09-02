@@ -12,60 +12,144 @@ import type {
   LinerRecord, TradeLaneRecord, ContactPersonRecord, EmployeeRecord, ClientRecord,
   ContainerLine, BackendReleaseOrderPayload,
 } from './types'
+import { getAccessToken, getRefreshToken, setTokens, clearTokens } from './auth'
 
 const BASE = import.meta.env.VITE_API_BASE || '/api'
 
 // ---------------------------------------------------------------------------
-// Helpers
+// Helpers (with Bearer token + 401 auto-refresh)
 // ---------------------------------------------------------------------------
 
-async function get<T>(path: string): Promise<T> {
-  const res = await fetch(`${BASE}${path}`)
-  if (!res.ok) throw new Error(`GET ${path} failed: ${res.status}`)
-  return res.json()
+// Deduplication: only one refresh call at a time
+let refreshPromise: Promise<boolean> | null = null
+
+async function tryRefresh(): Promise<boolean> {
+  const rt = getRefreshToken()
+  if (!rt) return false
+  try {
+    const res = await fetch(`${BASE}/auth/refresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: rt }),
+    })
+    if (!res.ok) return false
+    const data = await res.json()
+    setTokens(data.access_token, data.refresh_token)
+    return true
+  } catch {
+    return false
+  }
 }
 
-async function post<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  })
+function authHeaders(): Record<string, string> {
+  const token = getAccessToken()
+  return token ? { Authorization: `Bearer ${token}` } : {}
+}
+
+async function handleResponse<T>(res: Response, method: string, path: string, retryFn: () => Promise<T>): Promise<T> {
+  if (res.status === 401) {
+    if (!refreshPromise) refreshPromise = tryRefresh().finally(() => { refreshPromise = null })
+    const ok = await refreshPromise
+    if (ok) return retryFn()
+    clearTokens()
+    window.location.href = '/'
+    throw new Error('Session expired')
+  }
   if (!res.ok) {
-    const detail = await res.json().catch(() => null)
-    console.error(`POST ${path} failed ${res.status}:`, detail)
-    // Surface FastAPI validation detail in the error message
-    let msg = `POST ${path} failed: ${res.status}`
-    if (detail) {
-      msg += ' — ' + JSON.stringify(detail)
+    if (method === 'POST') {
+      const detail = await res.json().catch(() => null)
+      console.error(`POST ${path} failed ${res.status}:`, detail)
+      let msg = `POST ${path} failed: ${res.status}`
+      if (detail) msg += ' — ' + JSON.stringify(detail)
+      throw new Error(msg)
     }
-    throw new Error(msg)
+    throw new Error(`${method} ${path} failed: ${res.status}`)
   }
   return res.json()
 }
 
+async function get<T>(path: string): Promise<T> {
+  const doFetch = () => fetch(`${BASE}${path}`, { headers: authHeaders() })
+  const res = await doFetch()
+  return handleResponse<T>(res, 'GET', path, async () => {
+    const r = await doFetch()
+    if (!r.ok) throw new Error(`GET ${path} failed: ${r.status}`)
+    return r.json()
+  })
+}
+
+async function post<T>(path: string, body: unknown): Promise<T> {
+  const doFetch = () => fetch(`${BASE}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify(body),
+  })
+  const res = await doFetch()
+  return handleResponse<T>(res, 'POST', path, async () => {
+    const r = await doFetch()
+    if (!r.ok) {
+      const detail = await r.json().catch(() => null)
+      let msg = `POST ${path} failed: ${r.status}`
+      if (detail) msg += ' — ' + JSON.stringify(detail)
+      throw new Error(msg)
+    }
+    return r.json()
+  })
+}
+
 async function patch<T>(path: string, body?: unknown): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
+  const doFetch = () => fetch(`${BASE}${path}`, {
     method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
     body: body ? JSON.stringify(body) : undefined,
   })
-  if (!res.ok) throw new Error(`PATCH ${path} failed: ${res.status}`)
-  return res.json()
+  const res = await doFetch()
+  return handleResponse<T>(res, 'PATCH', path, async () => {
+    const r = await doFetch()
+    if (!r.ok) throw new Error(`PATCH ${path} failed: ${r.status}`)
+    return r.json()
+  })
 }
 
 async function del<T>(path: string): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, { method: 'DELETE' })
-  if (!res.ok) throw new Error(`DELETE ${path} failed: ${res.status}`)
-  return res.json()
+  const doFetch = () => fetch(`${BASE}${path}`, { method: 'DELETE', headers: authHeaders() })
+  const res = await doFetch()
+  return handleResponse<T>(res, 'DELETE', path, async () => {
+    const r = await doFetch()
+    if (!r.ok) throw new Error(`DELETE ${path} failed: ${r.status}`)
+    return r.json()
+  })
 }
 
 // ---------------------------------------------------------------------------
-// Authentication
+// Authentication (SSO)
 // ---------------------------------------------------------------------------
 
-export function apiSwitchUser(empId: number): Promise<Employee> {
-  return post<Employee>(`/auth/switch-user/${empId}`, {})
+export function apiGetLoginUrl(): Promise<{ auth_url: string }> {
+  return get<{ auth_url: string }>('/auth/login')
+}
+
+/** Refresh tokens — bypasses Bearer header (uses direct fetch since access token is expired). */
+export async function apiRefreshToken(refreshToken: string): Promise<{ access_token: string; refresh_token: string; expires_in: number }> {
+  const res = await fetch(`${BASE}/auth/refresh`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ refresh_token: refreshToken }),
+  })
+  if (!res.ok) throw new Error(`Token refresh failed: ${res.status}`)
+  return res.json()
+}
+
+export function apiGetMe(): Promise<{ emp_id: number; name: string; dept: string; desig: string; mail_id: string }> {
+  return get<{ emp_id: number; name: string; dept: string; desig: string; mail_id: string }>('/auth/me')
+}
+
+export async function apiLogout(refreshToken: string | null): Promise<void> {
+  await fetch(`${BASE}/auth/logout`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ refresh_token: refreshToken }),
+  }).catch(() => {})
 }
 
 // ---------------------------------------------------------------------------

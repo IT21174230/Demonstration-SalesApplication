@@ -136,14 +136,6 @@ export const ROLE_ACTIONS: Record<UserRole, ActionId[]> = {
   ],
 }
 
-export const EMPLOYEE_ROLE_MAP: Record<number, UserRole> = {
-  5: 'Procurement',
-  6: 'Finance',
-  7: 'CS',
-  8: 'Sales',
-  9: 'Admin',
-}
-
 // ==================== WORKFLOW STAGES ====================
 
 // Stages match the backend WorkflowStage enum exactly (snake_case → kebab-case via BE_STAGE_TO_FE).
@@ -373,14 +365,19 @@ export interface Employee {
   id: number
   name: string
   role: string
+  dept?: string
+  email?: string
 }
 
+// UI-only employee directory for name lookups, dropdowns, and dashboard KPIs.
+// Not used for authentication (SSO handles that via JWT).
+// TODO: replace with dynamic data from GET /employees once all components are refactored.
 export const EMPLOYEES: Employee[] = [
-  { id: 5, name: 'procu-test',         role: 'Procurement' },
-  { id: 6, name: 'fin-test',           role: 'Finance' },
-  { id: 7, name: 'cs-test',            role: 'Customer Service' },
-  { id: 8, name: 'sales-test',         role: 'Sales Executive' },
-  { id: 9, name: 'IT-AD',              role: 'Admin (All Access)' },
+  { id: 5, name: 'procu-test',         role: 'Procurement',         dept: 'procurement' },
+  { id: 6, name: 'fin-test',           role: 'Finance',             dept: 'finance' },
+  { id: 7, name: 'cs-test',            role: 'Customer Service',    dept: 'customer-service' },
+  { id: 8, name: 'sales-test',         role: 'Sales Executive',     dept: 'sales' },
+  { id: 9, name: 'IT-AD',              role: 'Admin (All Access)',   dept: 'IT' },
 ]
 
 // ==================== TASKS ====================
