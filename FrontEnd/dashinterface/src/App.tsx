@@ -26,6 +26,7 @@ import {
   type Quote, type QuoteStatus, type Shipment, type ShipmentStatus, type Booking,
   type MissingItem, type UserRole, type WorkflowStage, type ActivityEntry, type ContainerLine,
   type ClientRecord, type ContactPersonRecord, type ReleaseOrderFields, type VesselSchedule,
+  type BackendReleaseOrderPayload,
 } from './types'
 import { RoleContext, type RoleContextValue } from './RoleContext'
 import { MOCK_INQUIRIES, MOCK_BOOKINGS, MOCK_ACTIVITY } from './mockData'
@@ -42,6 +43,8 @@ import {
   apiPatchInquiry, apiPatchCommodity, apiPatchContainer, apiDeleteInquiry,
   BE_STAGE_TO_FE,
   apiSwitchUser,
+  apiCreateBookingRequest, apiPatchBookingRequest, apiReviewBookingRequest,
+  apiConfirmBookingRequest, apiCreateReleaseOrder, apiPatchReleaseOrder,
 } from './api'
 
 // crypto.randomUUID() requires HTTPS (secure context). Fall back for plain HTTP deployments.
@@ -520,42 +523,102 @@ export default function App() {
   }
 
   const confirmBooking = (bookingId: string, vesselName: string, voyageNumber: string) => {
-    setBookings(prev => prev.map(b =>
-      b.id === bookingId
-        ? { ...b, status: 'Liner Confirmed' as const, vessel_name: vesselName, voyage_number: voyageNumber, confirmed_by: 1, confirmed_at: nowStamp() }
-        : b
-    ))
+    setBookings(prev => {
+      const bkg = prev.find(b => b.id === bookingId)
+      if (bkg?.booking_id) {
+        apiConfirmBookingRequest(bkg.booking_id)
+          .catch(err => console.error('[confirmBooking] API failed:', err))
+      }
+      return prev.map(b =>
+        b.id === bookingId
+          ? { ...b, status: 'Liner Confirmed' as const, vessel_name: vesselName, voyage_number: voyageNumber, confirmed_by: 1, confirmed_at: nowStamp() }
+          : b
+      )
+    })
     flash(`${bookingId} → Liner Confirmed`)
   }
 
   const markRaAssigned = (bookingId: string, raNumber: string, vessel: string, carrier: string) => {
-    setBookings(prev => prev.map(b =>
-      b.id === bookingId
-        ? { ...b, status: 'RA Assigned' as const, voyage_number: raNumber, vessel_name: vessel, shipping_line: carrier || b.shipping_line }
-        : b
-    ))
+    setBookings(prev => {
+      const bkg = prev.find(b => b.id === bookingId)
+      if (bkg?.booking_id) {
+        apiReviewBookingRequest(bkg.booking_id, {
+          ra_number: raNumber || undefined,
+          vessel: vessel || undefined,
+        }).catch(err => console.error('[markRaAssigned] API failed:', err))
+      }
+      return prev.map(b =>
+        b.id === bookingId
+          ? { ...b, status: 'RA Assigned' as const, voyage_number: raNumber, vessel_name: vessel, shipping_line: carrier || b.shipping_line, ra_number: raNumber }
+          : b
+      )
+    })
   }
 
   const revertBookingRequest = (bookingId: string) => {
-    setBookings(prev => prev.map(b =>
-      b.id === bookingId
-        ? { ...b, status: 'Pending Liner' as const, voyage_number: '', vessel_name: '' }
-        : b
-    ))
+    setBookings(prev => {
+      const bkg = prev.find(b => b.id === bookingId)
+      if (bkg?.booking_id) {
+        // No dedicated revert endpoint — clear fields via PATCH
+        apiPatchBookingRequest(bkg.booking_id, { ra_number: '', vessel: '' } as any)
+          .catch(err => console.error('[revertBookingRequest] API failed:', err))
+      }
+      return prev.map(b =>
+        b.id === bookingId
+          ? { ...b, status: 'Pending Liner' as const, voyage_number: '', vessel_name: '' }
+          : b
+      )
+    })
   }
 
   const attachReleaseOrder = (bookingId: string, fields: ReleaseOrderFields) => {
-    setBookings(prev => prev.map(b =>
-      b.id === bookingId ? { ...b, release_order_attached: true, release_order_fields: fields } : b
-    ))
+    setBookings(prev => {
+      const bkg = prev.find(b => b.id === bookingId)
+      if (bkg?.booking_id && bkg?.inq_id && bkg?.cli_id) {
+        const roPayload: BackendReleaseOrderPayload = {
+          inq_id: bkg.inq_id,
+          booking_id: bkg.booking_id,
+          cli_id: bkg.cli_id,
+          liner_ref: fields.reference_nbr || undefined,
+          empty_pickup: fields.pickup_empty_date || undefined,
+          validity_exp: fields.validity_expiration_date || undefined,
+          depot_name: fields.pickup_depot || undefined,
+          depot_addr: fields.pickup_depot_address || undefined,
+          vessel_cutoff: fields.cut_off_date || undefined,
+          etd: fields.etd || undefined,
+          eta_destination: fields.eta || undefined,
+          next_port: fields.next_port_of_discharge || undefined,
+          remark: [fields.transport_mode, fields.transport_carrier].filter(Boolean).join(' / ') || undefined,
+          cargo_weight: fields.cargo_weight ? parseFloat(fields.cargo_weight) : undefined,
+          cargo_desc: fields.cargo_description || undefined,
+        }
+        apiCreateReleaseOrder(roPayload)
+          .then((result: any) => {
+            if (result.ro_id) {
+              setBookings(p => p.map(b => b.id === bookingId ? { ...b, ro_id: result.ro_id } : b))
+            }
+          })
+          .catch(err => console.error('[attachReleaseOrder] API failed:', err))
+      }
+      return prev.map(b =>
+        b.id === bookingId ? { ...b, release_order_attached: true, release_order_fields: fields } : b
+      )
+    })
   }
 
   const releaseBooking = (bookingId: string, note: string) => {
-    setBookings(prev => prev.map(b =>
-      b.id === bookingId
-        ? { ...b, status: 'Released' as const, released_by: 1, released_at: nowStamp(), notes: note || b.notes }
-        : b
-    ))
+    setBookings(prev => {
+      const bkg = prev.find(b => b.id === bookingId)
+      if (bkg?.ro_id && note) {
+        apiPatchReleaseOrder(bkg.ro_id, { remark: note })
+          .catch(err => console.error('[releaseBooking] RO patch failed:', err))
+      }
+      return prev.map(b =>
+        b.id === bookingId
+          ? { ...b, status: 'Released' as const, released_by: 1, released_at: nowStamp(), notes: note || b.notes }
+          : b
+      )
+    })
     flash(`${bookingId} → Released`)
   }
 
@@ -641,6 +704,13 @@ export default function App() {
     customer_name: string; quote_id: string; shipping_line: string;
     container_type: string; quantity: number; origin: string; destination: string;
     is_urgent: boolean; booked_by: number; notes: string; delivery_type?: 'port-to-port' | 'door-to-door';
+    // Backend integration fields (internal, never shown to user)
+    inq_id?: number; cli_id?: number; lin_id?: number; commodity_id?: number;
+    vessel_etd?: string; agreed_rate?: number; delivery_term?: string;
+    hs_code?: string; bl_type?: string; cargo_ready_date?: string;
+    contract_no?: string; ra_number?: string; specific_routing?: string;
+    booking_type?: string; reefer_temp?: string; delivery_agent?: string;
+    vessel?: string; voyage?: string; rate_remark?: string;
   }) => {
     const newId = `BKG-${uuid()}`
     const stamp = nowStamp()
@@ -651,8 +721,8 @@ export default function App() {
       origin: payload.origin,
       destination: payload.destination,
       shipping_line: payload.shipping_line,
-      vessel_name: '',
-      voyage_number: '',
+      vessel_name: payload.vessel || '',
+      voyage_number: payload.voyage || '',
       container_type: payload.container_type,
       quantity: payload.quantity,
       status: 'Pending Liner',
@@ -666,9 +736,67 @@ export default function App() {
       procurement_notified: false,
       notes: payload.notes,
       delivery_type: payload.delivery_type,
+      // Store backend IDs for subsequent API calls
+      inq_id: payload.inq_id,
+      cli_id: payload.cli_id,
+      lin_id: payload.lin_id,
+      commodity_id: payload.commodity_id,
+      vessel_etd: payload.vessel_etd,
+      agreed_rate: payload.agreed_rate,
+      delivery_term: payload.delivery_term,
+      contract_no: payload.contract_no,
+      hs_code: payload.hs_code,
+      bl_type: payload.bl_type,
+      cargo_ready_date: payload.cargo_ready_date,
+      ra_number: payload.ra_number,
+      specific_routing: payload.specific_routing,
+      booking_type: payload.booking_type,
+      reefer_temp: payload.reefer_temp,
+      delivery_agent: payload.delivery_agent,
     }
     setBookings(prev => [newBooking, ...prev])
     flash(`Booking created for ${payload.customer_name}`)
+
+    // Background API call — gated on having required backend IDs
+    if (payload.inq_id && payload.cli_id && payload.lin_id) {
+      const deliveryTypeMap: Record<string, string> = {
+        'port-to-port': 'PORT_TO_PORT', 'door-to-door': 'DOOR_TO_DOOR',
+        'port-to-door': 'PORT_TO_DOOR', 'door-to-port': 'DOOR_TO_PORT',
+      }
+      apiCreateBookingRequest({
+        inq_id: payload.inq_id,
+        cli_id: payload.cli_id,
+        lin_id: payload.lin_id,
+        origin: payload.origin,
+        destination: payload.destination,
+        vessel: payload.vessel || '',
+        vessel_etd: payload.vessel_etd || new Date().toISOString(),
+        voyage: payload.voyage || '',
+        cargo_ready_date: payload.cargo_ready_date || new Date().toISOString().slice(0, 10),
+        delivery_type: deliveryTypeMap[payload.delivery_type || 'port-to-port'] || 'PORT_TO_PORT',
+        agreed_rate: payload.agreed_rate || 0,
+        delivery_term: payload.delivery_term || 'FOB',
+        commodity: payload.commodity_id || 0,
+        hs_code: payload.hs_code || '',
+        bl_type: payload.bl_type === 'Seaway Bill' ? 'SEAWAY_BILL' : 'OBL',
+        notes: payload.notes,
+        rate_remark: payload.rate_remark,
+        contract_no: payload.contract_no,
+        ra_number: payload.ra_number,
+        specific_routing: payload.specific_routing,
+        booking_type: payload.booking_type,
+        reefer_temp: payload.reefer_temp,
+        delivery_agent: payload.delivery_agent,
+      }).then(result => {
+        setBookings(prev => prev.map(b =>
+          b.id === newId ? { ...b, booking_id: result.booking_id } : b
+        ))
+      }).catch(err => {
+        console.error('[createBooking] API failed:', err)
+        flash(`Warning: booking saved locally but backend sync failed`)
+      })
+    }
+
     return newId
   }
 

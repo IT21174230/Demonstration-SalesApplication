@@ -693,6 +693,30 @@ export interface Shipment {
 // ==================== BOOKINGS ====================
 export type BookingStatus = 'Pending Liner' | 'RA Assigned' | 'Liner Confirmed' | 'Released' | 'Cancelled'
 
+// Backend booking status enum — matches the API exactly
+export type BackendBookingStatus =
+  | 'request_initiated'
+  | 'request_reviewed'
+  | 'request_booking_success'
+  | 'request_booking_failure'
+  | 'release_order_received'
+
+export const FE_TO_BE_BOOKING_STATUS: Record<BookingStatus, BackendBookingStatus> = {
+  'Pending Liner':    'request_initiated',
+  'RA Assigned':      'request_reviewed',
+  'Liner Confirmed':  'request_booking_success',
+  'Released':         'release_order_received',
+  'Cancelled':        'request_initiated',
+}
+
+export const BE_TO_FE_BOOKING_STATUS: Record<BackendBookingStatus, BookingStatus> = {
+  request_initiated:        'Pending Liner',
+  request_reviewed:         'RA Assigned',
+  request_booking_success:  'Liner Confirmed',
+  request_booking_failure:  'Pending Liner',
+  release_order_received:   'Released',
+}
+
 export interface Booking {
   id: string
   quote_id: string
@@ -734,6 +758,26 @@ export interface Booking {
   pre_advice_sent?: boolean         // true after CS sends pre-advice to door agent (door-to-door / port-to-door)
   release_order_attached?: boolean  // true after Procurement attaches release order and sends to CS
   release_order_fields?: ReleaseOrderFields
+  // --- Backend integration IDs (internal, never rendered in UI) ---
+  booking_id?: number       // Backend PK from POST /booking-requests
+  inq_id?: number           // Inquiry PK — needed for booking & release-order API calls
+  cli_id?: number           // Client PK — needed for booking & release-order API calls
+  lin_id?: number           // Liner PK — resolved from LinerRecord by shipping_line name
+  ro_id?: number            // Release order PK — set after POST /booking-requests/release-orders
+  commodity_id?: number     // Commodity com_id — needed for POST /booking-requests
+  // --- Structured fields stored alongside notes for API payloads ---
+  vessel_etd?: string
+  agreed_rate?: number
+  delivery_term?: string
+  contract_no?: string
+  hs_code?: string
+  bl_type?: string
+  booking_type?: string
+  ra_number?: string
+  specific_routing?: string
+  reefer_temp?: string
+  delivery_agent?: string
+  cargo_ready_date?: string
 }
 
 // ==================== VESSEL SCHEDULES ====================
@@ -769,6 +813,25 @@ export interface ReleaseOrderFields {
   next_port_of_discharge?: string
   transport_mode?: string
   transport_carrier?: string
+}
+
+// Maps frontend ReleaseOrderFields → backend POST /booking-requests/release-orders body
+export interface BackendReleaseOrderPayload {
+  inq_id: number
+  booking_id: number
+  cli_id: number
+  liner_ref?: string         // ← reference_nbr
+  empty_pickup?: string      // ← pickup_empty_date
+  validity_exp?: string      // ← validity_expiration_date
+  depot_name?: string        // ← pickup_depot
+  depot_addr?: string        // ← pickup_depot_address
+  vessel_cutoff?: string     // ← cut_off_date
+  etd?: string               // ← etd
+  eta_destination?: string   // ← eta
+  next_port?: string         // ← next_port_of_discharge
+  remark?: string            // ← transport_mode + transport_carrier concatenated
+  cargo_weight?: number      // ← parseFloat(cargo_weight)
+  cargo_desc?: string        // ← cargo_description
 }
 
 // ==================== ACTIVITY LOG ====================
