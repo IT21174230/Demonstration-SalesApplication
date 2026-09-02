@@ -13,6 +13,7 @@ import Shipments from './components/pages/Shipments'
 import KYCForm from './components/pages/KYCForm'
 import Workspace from './components/pages/Workspace'
 import NewInquiry from './components/pages/NewInquiry'
+import RfqNew from './components/pages/RfqNew'
 import RecordRate from './components/pages/RecordRate'
 import RateCheck from './components/pages/RateCheck'
 import Login from './components/pages/Login'
@@ -106,6 +107,7 @@ function mapInquiryRows(rows: InquiryRow[]): Inquiry[] {
       id: String(inq_id),
       inq_id,
       cli_id: h.cli_id,
+      rfq_ref: h.rfq_ref ?? undefined,
       customer_name: h.name,
       employee_id: 0, // not returned by list endpoint; overwritten when activeEmployeeId is known
       origin: h.origin,
@@ -882,6 +884,14 @@ export default function App() {
             onCreateInquiry={addInquiry}
             onFlash={flash}
             onGoBack={() => navigateTo('workspace')}
+          />
+        )
+        case 'rfq-new':
+        return (
+          <RfqNew
+            clientList={clientList}
+            onFlash={flash}
+            onGoBack={() => { refreshData(); navigateTo('workspace') }}
           />
         )
       case 'record-rate':

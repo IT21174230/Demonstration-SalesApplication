@@ -38,6 +38,8 @@ export default function NewInquiry({ clientList, contactPersonList, activeEmploy
   const [niContactPerson, setNiContactPerson] = useState('')
   const [niContactDesignation, setNiContactDesignation] = useState('')
   const [niContactChannelId, setNiContactChannelId] = useState('')
+  const [errors, setErrors] = useState<Record<string, string>>({})
+
 
   // Multi-container state
   const [containers, setContainers] = useState<ContainerLine[]>([emptyContainerLine()])
@@ -92,9 +94,74 @@ export default function NewInquiry({ clientList, contactPersonList, activeEmploy
       ) ?? null)
     : null
 
-  const handleSave = () => {
+  const UNLOCODE = /^[A-Z]{2}[A-Z0-9]{3}$/
+  const EMAIL    = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+  const validate = (): Record<string, string> => {
+    const e: Record<string, string> = {}
+    const today = new Date().toISOString().slice(0, 10)
+
+    if (!niCustomer.trim()) e.customer = 'Customer is required'
+
+    if (!niOrigin.trim()) e.origin = 'Origin port is required'
+    else if (!UNLOCODE.test(niOrigin.trim().toUpperCase()))
+      e.origin = 'Must be a 5-character port code'
+
+    if (!matchedCp) {
+      if (!niContactPerson.trim()) e.contactPerson = 'Contact person is required'
+      if (niContactDesignation.trim().length > 20) e.designation = 'Max 20 characters'
+
+      const v = niContactChannelId.trim()
+      if (!v) {
+        e.channelId = `${niChannel} detail is required`
+      } else if (niChannel === 'Email') {
+        if (!EMAIL.test(v))      e.channelId = 'Enter a valid email'
+        else if (v.length > 120) e.channelId = 'Maximum 120 characters'
+      } else if (niChannel === 'Phone' || niChannel === 'WhatsApp') {
+        const digits = v.replace(/\D/g, '')
+        const max = niChannel === 'Phone' ? 20 : 30
+        if (!/^[+0-9 ()-]+$/.test(v)) e.channelId = 'Only digits, spaces, + ( ) - allowed'
+        else if (digits.length < 7)   e.channelId = 'Too short — needs at least 7 digits'
+        else if (digits.length > 15)  e.channelId = 'Too long — maximum 15 digits'
+        else if (v.length > max)      e.channelId = `Maximum ${max} characters`
+      } else if (niChannel === 'WeChat') {
+        if (v.length > 50) e.channelId = 'Maximum 50 characters'
+      }
+    }
+
+    if (niCargoReadyDate && niCargoReadyDate < today)
+      e.cargoReady = 'Cannot be in the past'
+
+    if (containers.length === 0) e.containers = 'Add at least one container'
+
+    containers.forEach((c, i) => {
+      const d = c.destination.trim()
+      if (!d) e[`c${i}.destination`] = 'Destination is required'
+      else if (!UNLOCODE.test(d.toUpperCase()))
+        e[`c${i}.destination`] = 'Must be a 5-character port code'
+      else if (d.toUpperCase() === niOrigin.trim().toUpperCase())
+        e[`c${i}.destination`] = 'Cannot be the same as origin'
+
+      if (c.hs_code && !/^\d{6,10}$/.test(c.hs_code))
+        e[`c${i}.hs_code`] = 'HS code must be 6-10 digits'
+    })
+
+    return e
+  }
+
+  const Err = ({ k }: { k: string }) =>
+    errors[k] ? <div style={{ color: '#dc2626', fontSize: 11, marginTop: 3 }}>{errors[k]}</div> : null
+
+
+    const handleSave = () => {
+    const found = validate()
+    setErrors(found)
+    if (Object.keys(found).length > 0) {
+      onFlash(`Please fix ${Object.keys(found).length} field(s)`)
+      return
+    }
     const customerName = niCustomer.trim()
-    if (!customerName) return
+
     const firstContainer = containers[0]
     const autoRequest = [
       firstContainer ? `${firstContainer.quantity}x ${firstContainer.containerType}` : '',
@@ -109,8 +176,9 @@ export default function NewInquiry({ clientList, contactPersonList, activeEmploy
       ...(matchedCli ? { cli_id: matchedCli.cli_id } : {}),
       ...(matchedCp  ? { cpid:   matchedCp.cp_id   } : {}),
       request: autoRequest,
-      origin: niOrigin.trim() || 'TBD',
-      destination: firstContainer?.destination.trim() || 'TBD',
+      origin: niOrigin.trim().toUpperCase(),
+      destination: (firstContainer?.destination ?? '').trim().toUpperCase(),
+
       delivery_type: niDelivery,
       sbu: niSbu,
       employee_id: activeEmployee.id,
@@ -137,7 +205,7 @@ export default function NewInquiry({ clientList, contactPersonList, activeEmploy
     resetForm()
   }
 
-  const canSave = !!niCustomer.trim()
+  const canSave = true
 
   const selectStyle = { width: '100%', padding: '10px 12px', fontSize: 13, borderRadius: 8 } as const
 
@@ -175,6 +243,7 @@ export default function NewInquiry({ clientList, contactPersonList, activeEmploy
               placeholder="Type or select customer name"
               autoFocus
             />
+            <Err k="customer" />
           </div>
 
           {/* Contact person — filtered to the matched client's contacts */}
@@ -192,13 +261,15 @@ export default function NewInquiry({ clientList, contactPersonList, activeEmploy
               ).map(cp => ({ label: cp.name ?? '', sublabel: cp.email ?? undefined }))}
               placeholder="Name of the person making the inquiry"
             />
+            <Err k="contactPerson" />
           </div>
 
           {/* Designation / channel — hidden when contact already exists in DB (case 3) */}
           {!matchedCp && (<>
           <div>
             <label className="lt-label">Designation</label>
-            <input className="lt-input" style={{ width: '100%' }} value={niContactDesignation} onChange={e => setNiContactDesignation(e.target.value)} placeholder="e.g. Logistics Manager" />
+            <input className="lt-input" maxLength={20} style={{ width: '100%' }} value={niContactDesignation} onChange={e => setNiContactDesignation(e.target.value)} placeholder="e.g. Logistics Manager" />
+            <Err k="designation" />
           </div>
           <div>
             <label className="lt-label">Channel <span style={{ color: '#dc2626' }}>*</span></label>
@@ -215,6 +286,7 @@ export default function NewInquiry({ clientList, contactPersonList, activeEmploy
               onChange={e => setNiContactChannelId(e.target.value)}
               placeholder={niChannel === 'Email' ? 'e.g. john@acme.com' : niChannel === 'WhatsApp' ? 'e.g. +94 77 123 4567' : niChannel === 'Phone' ? 'e.g. +94 11 234 5678' : 'e.g. john_doe'}
             />
+            <Err k="channelId" />
           </div>
           </>)}
           <div>
@@ -224,6 +296,7 @@ export default function NewInquiry({ clientList, contactPersonList, activeEmploy
               onChange={setNiOrigin}
               placeholder="e.g. Colombo/Sri Lanka"
             />
+            <Err k="origin" />
           </div>
           <div>
             <label className="lt-label">Priority <span style={{ color: '#dc2626' }}>*</span></label>
@@ -253,6 +326,7 @@ export default function NewInquiry({ clientList, contactPersonList, activeEmploy
           <div>
             <label className="lt-label">Cargo Ready Date</label>
             <input className="lt-input" type="date" style={{ width: '100%' }} value={niCargoReadyDate} onChange={e => setNiCargoReadyDate(e.target.value)} />
+            <Err k="cargoReady" />
           </div>
           <div>
             <label className="lt-label">Preferred Rate (USD)</label>
@@ -305,6 +379,8 @@ export default function NewInquiry({ clientList, contactPersonList, activeEmploy
                     onChange={dest => updateContainer(idx, { destination: dest })}
                     placeholder="e.g. Hamburg/Germany"
                   />
+                  <Err k={`c${idx}.destination`} />
+
                 </div>
                 <div>
                   <label className="lt-label">Container Type <span style={{ color: '#dc2626' }}>*</span></label>

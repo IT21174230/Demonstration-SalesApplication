@@ -15,12 +15,22 @@ import type {
 
 const BASE = import.meta.env.VITE_API_BASE || '/api'
 
+// --- TEMPORARY dev auth -----------------------------------------------------
+// The Azure AD SSO flow is not wired up yet. Until it is, paste a token into
+// the browser console:   localStorage.setItem('devToken', '<token>')
+// Remove this block once /auth/login -> /auth/callback is implemented.
+function authHeaders(): Record<string, string> {
+  const t = localStorage.getItem('devToken')
+  return t ? { Authorization: `Bearer ${t}` } : {}
+}
+// -----------------------------------------------------------------------------
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
 async function get<T>(path: string): Promise<T> {
-  const res = await fetch(`${BASE}${path}`)
+  const res = await fetch(`${BASE}${path}`, { headers: { ...authHeaders() } })
   if (!res.ok) throw new Error(`GET ${path} failed: ${res.status}`)
   return res.json()
 }
@@ -28,7 +38,7 @@ async function get<T>(path: string): Promise<T> {
 async function post<T>(path: string, body: unknown): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
     body: JSON.stringify(body),
   })
   if (!res.ok) {
@@ -47,7 +57,7 @@ async function post<T>(path: string, body: unknown): Promise<T> {
 async function patch<T>(path: string, body?: unknown): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
     body: body ? JSON.stringify(body) : undefined,
   })
   if (!res.ok) throw new Error(`PATCH ${path} failed: ${res.status}`)
@@ -55,10 +65,29 @@ async function patch<T>(path: string, body?: unknown): Promise<T> {
 }
 
 async function del<T>(path: string): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, { method: 'DELETE' })
+  const res = await fetch(`${BASE}${path}`, {
+    method: 'DELETE',
+    headers: { ...authHeaders() },
+  })
   if (!res.ok) throw new Error(`DELETE ${path} failed: ${res.status}`)
   return res.json()
 }
+
+async function postFile<T>(path: string, file: File): Promise<T> {
+  const form = new FormData()
+  form.append('file', file)
+  const res = await fetch(`${BASE}${path}`, {
+    method: 'POST',
+    headers: { ...authHeaders() },   // NO Content-Type — the browser sets it with the boundary
+    body: form,
+  })
+  if (!res.ok) {
+    const detail = await res.json().catch(() => null)
+    throw new Error(`POST ${path} failed: ${res.status}${detail ? ' — ' + JSON.stringify(detail) : ''}`)
+  }
+  return res.json()
+}
+
 
 // ---------------------------------------------------------------------------
 // Authentication
@@ -107,6 +136,7 @@ export interface InquiryCreateResult {
 export interface InquiryRow {
   inq_id: number
   cli_id: number        // backend client PK — used for KYC status lookup
+  rfq_ref: number | null
   workflow_stage: string | null  // from LEFT JOIN workflow_stats; null for brand-new rows
   kyc_completed: boolean | null  // joined from kyc_request; true when kyc_stage = 'kyc_completed'
   name: string          // client company name (cl.name)
@@ -1168,3 +1198,58 @@ export function apiCreateActivity(_data: {
   // Activity log state is maintained in the frontend; this is a no-op to suppress 404s.
   return Promise.resolve({} as ActivityEntry)
 }
+
+
+
+
+// ---------------------------------------------------------------------------
+// RFQ — bulk inquiry creation
+// ---------------------------------------------------------------------------
+
+export interface RfqLinePayload {
+  inquiry: { origin: string; service_mode: string; remark?: string; sbu?: string }
+  commodities: { name?: string; com_type?: string }[]
+  containers: { commodity_index: number; container_type: string; qty: number; destination: string }[]
+}
+
+export interface RfqCreateResult {
+  rfq_ref: number
+  cli_id: number
+  cpid: number
+  line_count: number
+  inquiries: { inq_id: number; com_ids: number[]; cont_ids: number[] }[]
+}
+
+export function apiCreateRfq(data: {
+  cli_id: number
+  contact?: { name: string; email?: string }
+  cp_id?: number
+  lines: RfqLinePayload[]
+}): Promise<RfqCreateResult> {
+  return post<RfqCreateResult>('/inquiries/rfq', data)
+}
+
+
+
+export interface RfqPreviewRow {
+  row: number
+  origin: string
+  origin_code: string
+  destination: string
+  destination_code: string
+  country: string
+  known_port: boolean
+}
+
+
+export interface RfqPreviewResult {
+  destination: string | null
+  rows: RfqPreviewRow[]
+  skipped: { row: number; reason: string }[]
+  unknown_count: number
+}
+
+export function apiPreviewRfq(file: File): Promise<RfqPreviewResult> {
+  return postFile<RfqPreviewResult>('/inquiries/rfq/preview', file)
+}
+
