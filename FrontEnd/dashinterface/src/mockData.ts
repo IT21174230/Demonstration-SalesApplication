@@ -60,7 +60,7 @@ export const MOCK_INQUIRIES: Inquiry[] = [
     incoterm: 'FOB',
     remark: 'Handle with care — fragile glassware. Marks: ASS/SIN/2024',
     containers: [
-      mkContainer('20 GP', 2, 'Glass, glassware, ceramic products', 'Industrial Glassware & Components', 'Singapore'),
+      mkContainer('20 GP', 2, 'Stone, plaster, cement, ceramic, glass', 'Industrial Glassware & Components', 'Singapore'),
     ],
     recorded_by: 7,
   },
@@ -82,7 +82,7 @@ export const MOCK_INQUIRIES: Inquiry[] = [
     incoterm: 'CIF',
     remark: 'GOLS Certified organic latex. Must maintain ambient temperature. ACI HBL: CLSMTR14146',
     containers: [
-      mkContainer('40 HC', 1, 'Rubber and articles thereof', 'GOLS Certified Organic Latex Foam Sheets & Pillows', 'Colombo'),
+      mkContainer('40 HC', 1, 'Plastics and rubber', 'GOLS Certified Organic Latex Foam Sheets & Pillows', 'Colombo'),
     ],
     recorded_by: 7,
   },

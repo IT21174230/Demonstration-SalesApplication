@@ -5,7 +5,7 @@ import {
   Globe, MessageCircle, Edit3, Copy, ClipboardCheck, Send, Clock,
 } from 'lucide-react'
 import {
-  EMPLOYEES, WORKFLOW_STAGES, ROLE_LABELS, ROLE_COLORS, stageRoleLabel, stageRoleColor,
+  EMPLOYEES, WORKFLOW_STAGES, ROLE_LABELS, ROLE_COLORS, stageRoleLabel,
   isSpotInquiry, daysUntil,
   type Inquiry, type Booking, type Quote, type Customer,
   type ActivityEntry, type WorkflowStage,
@@ -267,7 +267,7 @@ export default function Workspace({
   // Booking request form state
   const [bkShippingLine, setBkShippingLine] = useState('')       // Carrier
   const [bkContainerType, setBkContainerType] = useState("20'GP")
-  const [bkQuantity, setBkQuantity] = useState(1)
+  const [_bkQuantity, setBkQuantity] = useState(1)
   // Dynamic container list (prefilled from inquiry, editable)
   const [bkContainers, setBkContainers] = useState<{ type: string; qty: number }[]>([{ type: "20'GP", qty: 1 }])
   const [bkCommodity, setBkCommodity] = useState('')
@@ -321,7 +321,7 @@ export default function Workspace({
   const [inttraSiLoading, setInttraSiLoading] = useState(false)
   // VGM certificate upload
   const [vgmCertFileName, setVgmCertFileName] = useState('')
-  const [vgmCertContent, setVgmCertContent] = useState('')
+  const [_vgmCertContent, setVgmCertContent] = useState('')
   // Draft BL state
   const [draftBlContent, setDraftBlContent] = useState('')
   const [draftBlFileName, setDraftBlFileName] = useState('')
@@ -990,9 +990,9 @@ export default function Workspace({
         const destActionKind = stageActionMap[resolvedNext]
         const destStep = destActionKind ? roleSteps.find(s => s.actionKinds.includes(destActionKind)) : null
         const csOrSales = (r: string) => r === 'CS' || r === 'Sales'
-        const crossDept = activeRole !== 'Admin' && nextStageObj.role !== activeRole &&
-                          !(csOrSales(activeRole) && csOrSales(nextStageObj.role))
-        onFlash(`${inquiry.id} pushed to ${ROLE_LABELS[nextStageObj.role]}`,
+        const crossDept = activeRole !== 'Admin' && !nextStageObj.roles.includes(activeRole) &&
+                          !(csOrSales(activeRole) && nextStageObj.roles.some(csOrSales))
+        onFlash(`${inquiry.id} pushed to ${ROLE_LABELS[nextStageObj.roles[0]]}`,
           !crossDept && destStep ? { label: `Go to ${destStep.label}`, onClick: () => setActiveStep(destStep.key) } : undefined)
         break
       }
@@ -1158,7 +1158,7 @@ ABC Logistics (Pvt) Ltd`
         // Prefill container list from inquiry containers
         const ctFmt = (ct: string) => ct.replace(/\s+/g, '').replace(/(\d{2})(.*)/,(_, sz, tp) => `${sz}'${tp}`)
         if (brInq.containers && brInq.containers.length > 0) {
-          setBkContainers(brInq.containers.map(c => ({ type: ctFmt(c.containerType), qty: c.quantity })))
+          setBkContainers(brInq.containers.map((c: { containerType: string; quantity: number }) => ({ type: ctFmt(c.containerType), qty: c.quantity })))
         } else {
           setBkContainers([{ type: container || "20'GP", qty: parseInt(qty, 10) || 1 }])
         }
@@ -1193,7 +1193,7 @@ ABC Logistics (Pvt) Ltd`
         // Parse containers from notes: "Containers: 2x20'GP, 1x40'HC"
         const ctnNote = getNote('Containers')
         if (ctnNote) {
-          const parsed = ctnNote.split(',').map(s => s.trim()).map(s => {
+          const parsed = ctnNote.split(',').map((s: string) => s.trim()).map((s: string) => {
             const m = s.match(/(\d+)\s*x\s*(.+)/)
             return m ? { type: m[2].trim(), qty: parseInt(m[1], 10) || 1 } : null
           }).filter(Boolean) as { type: string; qty: number }[]
@@ -1556,7 +1556,7 @@ ABC Logistics (Pvt) Ltd`
     })()
     switch (effectiveKind) {
       case 'send-kyc': {
-        const { customer, inquiry: kycInquiry, kycClient: pendingKycClient } = actionModal.sourceData
+        const { customer, inquiry: kycInquiry, kycClient: pendingKycClient } = actionModal!.sourceData
         // Resolve backend cli_id: prefer kycClient.cli_id, fall back to clientList name lookup
         let cli_id: number | undefined
         if (pendingKycClient?.cli_id) {
@@ -1612,9 +1612,9 @@ ABC Logistics (Pvt) Ltd`
           } catch (err) { console.error('[Workspace] KYC request failed:', err) }
           setKycSending(false)
         } else {
-          console.warn('[Workspace] KYC submit skipped — cli_id is undefined. sourceData:', actionModal.sourceData)
+          console.warn('[Workspace] KYC submit skipped — cli_id is undefined. sourceData:', actionModal!.sourceData)
         }
-        const customerName = pendingKycClient?.name ?? customer?.name ?? actionModal.customerName
+        const customerName = pendingKycClient?.name ?? customer?.name ?? actionModal!.customerName
         if (!pendingKycClient) {
           // Legacy flow: update local customer record and advance inquiry
           if (customer) onUpdateCustomerKyc(customer.name, 'pending_customer')
@@ -1634,9 +1634,9 @@ ABC Logistics (Pvt) Ltd`
         break
       }
       case 'verify-kyc': {
-        const { kycRequest } = actionModal.sourceData
+        const { kycRequest } = actionModal!.sourceData
         const kycCliId = kycRequest?.cli_id
-        const kycCustomerName = kycRequest?.name ?? actionModal.customerName
+        const kycCustomerName = kycRequest?.name ?? actionModal!.customerName
         const approved = formDecision === 'approve'
         if (approved) {
           // Mark KYC completed in backend
@@ -1687,7 +1687,7 @@ ABC Logistics (Pvt) Ltd`
         break
       }
       case 'prepare-quotation': {
-        const { inquiry } = actionModal.sourceData
+        const { inquiry } = actionModal!.sourceData
         // Create quotation record in backend (status = in_prep).
         // Do NOT mark as sent here — that happens in the send-to-customer step.
         if (inquiry.inq_id) {
@@ -1725,7 +1725,7 @@ ABC Logistics (Pvt) Ltd`
         break
       }
       case 'send-to-customer': {
-        const { inquiry } = actionModal.sourceData
+        const { inquiry } = actionModal!.sourceData
         // Update sent_via on the quotation record, then mark as sent.
         // PATCH must happen before marking sent (backend blocks PATCH once status = 'sent').
         const sendQuoteId = lastQuotationId ?? inquiry.quotation_id
@@ -1758,7 +1758,7 @@ ABC Logistics (Pvt) Ltd`
         break
       }
       case 'customer-response': {
-        const { inquiry } = actionModal.sourceData
+        const { inquiry } = actionModal!.sourceData
         // Record customer response in backend quotation record
         // Backend auto-advances workflow to customer_response; we then advance further below
         const quoteId = lastQuotationId ?? inquiry.quotation_id
@@ -1796,7 +1796,7 @@ ABC Logistics (Pvt) Ltd`
         break
       }
       case 'booking-request': {
-        const { inquiry } = actionModal.sourceData
+        const { inquiry } = actionModal!.sourceData
         const ctnSummary = bkContainers.map(c => `${c.qty}x${c.type}`).join(', ')
         // Resolve liner ID from name for backend API
         const resolvedLinId = linerList.find(l => l.name === bkShippingLine)?.lin_id
@@ -1887,7 +1887,7 @@ ABC Logistics (Pvt) Ltd`
         break
       }
       case 'review-booking-request': {
-        const { booking: rbBkg } = actionModal.sourceData
+        const { booking: rbBkg } = actionModal!.sourceData
         // Assign the RA number — booking moves to proc-booking step for liner confirmation
         onMarkRaAssigned(rbBkg.id, bkRaNumber, [bkVessel, bkVoyage].filter(Boolean).join(' / ') || '', bkShippingLine)
         const rbNoteParts = [
@@ -1941,7 +1941,7 @@ ABC Logistics (Pvt) Ltd`
         break
       }
       case 'confirm-liner-booking': {
-        const { booking: cbBkg } = actionModal.sourceData
+        const { booking: cbBkg } = actionModal!.sourceData
         if (linerBooked === 'yes') {
           onConfirmBooking(cbBkg.id, cbBkg.vessel_name, cbBkg.voyage_number)
           onLogActivity({
@@ -1972,7 +1972,7 @@ ABC Logistics (Pvt) Ltd`
         break
       }
       case 'confirm-booking': {
-        const { booking } = actionModal.sourceData
+        const { booking } = actionModal!.sourceData
         onConfirmBooking(booking.id, formVessel, formVoyage)
         const confirmNotes = [
           `Vessel: ${formVessel || 'TBD'}, Voyage: ${formVoyage || 'TBD'}`,
@@ -1991,7 +1991,7 @@ ABC Logistics (Pvt) Ltd`
         break
       }
       case 'release-booking': {
-        const { booking } = actionModal.sourceData
+        const { booking } = actionModal!.sourceData
         onReleaseBooking(booking.id, formNote)
         const sendVia = sendMethod === 'email'
           ? `via Email to ${customerContactEmail}`
@@ -2010,7 +2010,7 @@ ABC Logistics (Pvt) Ltd`
         break
       }
       case 'record-cutoff': {
-        const { booking } = actionModal.sourceData
+        const { booking } = actionModal!.sourceData
         if (cutoffSiDate)     onSetBookingSiCutoff(booking.id, cutoffSiDate)
         if (cutoffBlDate)     onSetBookingBlCutoff(booking.id, cutoffBlDate)
         if (cutoffVgmDate)    onSetBookingVgmCutoff(booking.id, cutoffVgmDate)
@@ -2034,7 +2034,7 @@ ABC Logistics (Pvt) Ltd`
         break
       }
       case 'request-si': {
-        const { booking } = actionModal.sourceData
+        const { booking } = actionModal!.sourceData
         onMarkSiRequested(booking.id)
         const sendVia = sendMethod === 'email'
           ? `via Email to ${customerContactEmail}`
@@ -2054,7 +2054,7 @@ ABC Logistics (Pvt) Ltd`
         break
       }
       case 'submit-si': {
-        const { booking } = actionModal.sourceData
+        const { booking } = actionModal!.sourceData
         onMarkSiSubmitted(booking.id)
         const method = 'manually'
         onLogActivity({
@@ -2071,7 +2071,7 @@ ABC Logistics (Pvt) Ltd`
         break
       }
       case 'send-draft-bl': {
-        const { booking } = actionModal.sourceData
+        const { booking } = actionModal!.sourceData
         onMarkDraftBlSent(booking.id)
         const sendVia = sendMethod === 'email'
           ? `via Email to ${customerContactEmail}`
@@ -2090,7 +2090,7 @@ ABC Logistics (Pvt) Ltd`
         break
       }
       case 'send-pre-advice': {
-        const { booking } = actionModal.sourceData
+        const { booking } = actionModal!.sourceData
         onMarkPreAdviceSent(booking.id)
         const sendVia = sendMethod === 'email'
           ? `via Email to ${paField('door_agent_email')}`
@@ -2109,7 +2109,7 @@ ABC Logistics (Pvt) Ltd`
         break
       }
       case 'bl-approval': {
-        const { booking } = actionModal.sourceData
+        const { booking } = actionModal!.sourceData
         const approved = blDecision === 'approved'
         const baBlType = booking.delivery_type === 'door-to-door' ? 'House BL' : 'Draft BL'
         onSetBlStatus(booking.id, blDecision)
@@ -2134,7 +2134,7 @@ ABC Logistics (Pvt) Ltd`
         break
       }
       case 'record-master-bl': {
-        const { booking } = actionModal.sourceData
+        const { booking } = actionModal!.sourceData
         onRecordMasterBl(booking.id, { master_bl_number: masterBlNumber, shipper: masterBlShipper, consignee: masterBlConsignee })
         onLogActivity({
           actor_role: activeRole,
@@ -2150,7 +2150,7 @@ ABC Logistics (Pvt) Ltd`
         break
       }
       case 'create-house-bl': {
-        const { booking } = actionModal.sourceData
+        const { booking } = actionModal!.sourceData
         onCreateHouseBl(booking.id, { house_bl_number: houseBlNumber, shipper: houseBlShipper, consignee: houseBlConsignee })
         const hbSendVia = sendMethod === 'email'
           ? `via Email to ${customerContactEmail}`
@@ -2169,7 +2169,7 @@ ABC Logistics (Pvt) Ltd`
         break
       }
       case 'approve-quote': {
-        const { quote } = actionModal.sourceData
+        const { quote } = actionModal!.sourceData
         const approved = formDecision === 'approve'
         onSetQuoteStatus(quote.id, approved ? 'Approved' : 'Lost')
         onLogActivity({
@@ -2306,7 +2306,7 @@ ABC Logistics (Pvt) Ltd`
             <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '0.05em', color: '#94a3b8', marginBottom: 14 }}>Complete this step</div>
 
             {selectedItem.actionKind === 'record-cutoff' && actionModal ? (() => {
-              const coBkg = actionModal.sourceData.booking as Booking
+              const coBkg = actionModal!.sourceData.booking as Booking
               return (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                   {/* Booking summary */}
@@ -2413,7 +2413,7 @@ ABC Logistics (Pvt) Ltd`
                 </div>
               )
             })() : selectedItem.actionKind === 'request-si' && actionModal ? (() => {
-              const siBkg = actionModal.sourceData.booking as Booking
+              const siBkg = actionModal!.sourceData.booking as Booking
               const ctx = actionModal.previousContext
               const siblCutoff = siBkg.si_cutoff_date || siBkg.bl_cutoff_date
               const dLeft = siblCutoff ? daysUntil(siblCutoff) : 999
@@ -2577,7 +2577,7 @@ ABC Logistics (Pvt) Ltd`
                 </div>
               )
             })() : selectedItem.actionKind === 'send-draft-bl' && actionModal ? (() => {
-              const blBkg = actionModal.sourceData.booking as Booking
+              const blBkg = actionModal!.sourceData.booking as Booking
               // bookings that have release order fields (for pre-fill selector)
               const roBookings = bookings.filter(b => b.release_order_fields)
               const applyReleaseOrder = (roId: string) => {
@@ -3125,7 +3125,7 @@ ABC Logistics (Pvt) Ltd`
                 </div>
               )
             })() : selectedItem.actionKind === 'send-pre-advice' && actionModal ? (() => {
-              const paBkg = actionModal.sourceData.booking as Booking
+              const paBkg = actionModal!.sourceData.booking as Booking
               const blCutoff = paBkg.bl_cutoff_date || paBkg.si_cutoff_date
 
               const paSectionHeader = (title: string) => (
@@ -3379,7 +3379,7 @@ ABC Logistics (Pvt) Ltd`
                 </div>
               )
             })() : selectedItem.actionKind === 'release-booking' && actionModal ? (() => {
-              const rbkg = actionModal.sourceData.booking as Booking
+              const rbkg = actionModal!.sourceData.booking as Booking
               const ro = rbkg.release_order_fields
               const roRow = (label: string, value: string | undefined) =>
                 value ? (
@@ -3661,7 +3661,7 @@ ABC Logistics (Pvt) Ltd`
                 </div>
               )
             })() : selectedItem.actionKind === 'confirm-liner-booking' && actionModal ? (() => {
-              const { booking: cbBkg } = actionModal.sourceData
+              const { booking: cbBkg } = actionModal!.sourceData
               return (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
                   {/* Form header */}
@@ -3722,7 +3722,7 @@ ABC Logistics (Pvt) Ltd`
                 </div>
               )
             })() : selectedItem.actionKind === 'submit-si' && actionModal ? (() => {
-              const siBkg = actionModal.sourceData.booking as Booking
+              const siBkg = actionModal!.sourceData.booking as Booking
               return (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
                   {/* Header */}
@@ -4286,8 +4286,8 @@ ABC Logistics (Pvt) Ltd`
               <div style={{ display: 'flex', flexDirection: 'column', gap: 20, maxHeight: '65vh', overflowY: 'auto', paddingRight: 4 }}>
 
                 {/* ── Pre-fetched client registry data (only for KYC pending queue items) ── */}
-                {actionModal.sourceData.kycClient && (() => {
-                  const c: KycPendingClient = actionModal.sourceData.kycClient
+                {actionModal!.sourceData.kycClient && (() => {
+                  const c: KycPendingClient = actionModal!.sourceData.kycClient
                   const address = [c.addr_street_ln, c.addr_city, c.addr_country].filter(Boolean).join(', ')
                   return (
                     <div style={{ padding: '12px 14px', background: 'rgba(8,145,178,0.04)', border: '1px solid rgba(8,145,178,0.14)', borderLeft: '3px solid #0891b2', borderRadius: 8 }}>
@@ -4438,7 +4438,7 @@ ABC Logistics (Pvt) Ltd`
 
             {/* Verify KYC form (Finance) */}
             {actionModal.actionKind === 'verify-kyc' && (() => {
-              const kycReq: KycRequestRecord | undefined = actionModal.sourceData?.kycRequest
+              const kycReq: KycRequestRecord | undefined = actionModal!.sourceData?.kycRequest
               const docLabel = (label: string, val?: string) => (
                 <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
                   <span style={{
@@ -4785,7 +4785,7 @@ ABC Logistics (Pvt) Ltd`
 
             {/* Confirm booking form — Procurement books via InttraAPI */}
             {actionModal.actionKind === 'confirm-booking' && (() => {
-              const { booking: cbkg } = actionModal.sourceData
+              const { booking: cbkg } = actionModal!.sourceData
               const ctx = actionModal.previousContext
               return (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
@@ -4832,7 +4832,7 @@ ABC Logistics (Pvt) Ltd`
 
             {/* BL Approval modal */}
             {actionModal.actionKind === 'bl-approval' && (() => {
-              const { booking: baBkg } = actionModal.sourceData
+              const { booking: baBkg } = actionModal!.sourceData
               const isDtd = baBkg.delivery_type === 'door-to-door'
               const blType = isDtd ? 'House BL' : 'Draft BL'
               return (
@@ -4920,7 +4920,7 @@ ABC Logistics (Pvt) Ltd`
 
             {/* Record Master BL modal */}
             {actionModal.actionKind === 'record-master-bl' && (() => {
-              const { booking: mbBkg } = actionModal.sourceData
+              const { booking: mbBkg } = actionModal!.sourceData
               return (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
                   {/* Booking summary */}
@@ -4984,7 +4984,7 @@ ABC Logistics (Pvt) Ltd`
 
             {/* Create House BL modal */}
             {actionModal.actionKind === 'create-house-bl' && (() => {
-              const { booking: hbBkg } = actionModal.sourceData
+              const { booking: hbBkg } = actionModal!.sourceData
               return (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
                   {/* Booking summary */}

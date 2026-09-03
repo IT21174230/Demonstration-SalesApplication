@@ -841,7 +841,7 @@ export interface ActivityEntry {
   ref_type: 'inquiry' | 'quote' | 'booking'
   ref_id: string
   customer_name: string
-  pushed_to: UserRole
+  pushed_to: string
   notes: string
 }
 
