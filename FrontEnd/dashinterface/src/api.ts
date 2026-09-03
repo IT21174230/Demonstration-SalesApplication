@@ -1348,6 +1348,61 @@ export interface BookingRequestPayload {
   delivery_agent?: string
 }
 
+/** Shape of a single booking request record returned by GET /booking-requests */
+export interface BackendBookingRecord {
+  booking_id: number
+  inq_id: number
+  cli_id: number
+  lin_id: number
+  origin: string
+  destination: string
+  vessel: string
+  voyage: string
+  status: string              // BackendBookingStatus enum value
+  created_at: string
+  vessel_etd?: string
+  cargo_ready_date?: string
+  delivery_type?: string
+  agreed_rate?: number
+  delivery_term?: string
+  commodity?: number
+  hs_code?: string
+  bl_type?: string
+  booking_type?: string
+  ra_number?: string
+  specific_routing?: string
+  reefer_temp?: string
+  delivery_agent?: string
+  notes?: string
+  rate_remark?: string
+  contract_no?: string
+}
+
+/** Fetch all booking requests for the current user. */
+export function apiGetBookingRequests(): Promise<BackendBookingRecord[]> {
+  return get<BackendBookingRecord[]>('/booking-requests')
+}
+
+/** Shape of a release order record returned by GET /booking-requests/release-orders */
+export interface BackendReleaseOrderRecord {
+  ro_id: number
+  booking_id: number
+  inq_id: number
+  cli_id: number
+  liner_ref?: string
+  empty_pickup?: string
+  validity_exp?: string
+  depot_name?: string
+  depot_addr?: string
+  vessel_cutoff?: string
+  etd?: string
+  eta_destination?: string
+  next_port?: string
+  remark?: string
+  cargo_weight?: number
+  cargo_desc?: string
+}
+
 /** Create a booking request. Auto-sets workflow → booking_request. */
 export function apiCreateBookingRequest(
   data: BookingRequestPayload
@@ -1398,6 +1453,6 @@ export function apiPatchReleaseOrder(
 }
 
 /** Fetch pending release orders for the current user. */
-export function apiFetchPendingReleaseOrders(): Promise<Record<string, unknown>[]> {
-  return get<Record<string, unknown>[]>('/booking-requests/release-orders')
+export function apiFetchPendingReleaseOrders(): Promise<BackendReleaseOrderRecord[]> {
+  return get<BackendReleaseOrderRecord[]>('/booking-requests/release-orders')
 }

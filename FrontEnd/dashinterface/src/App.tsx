@@ -23,14 +23,16 @@ import {
   PAGE_LABELS, nowStamp,
   ROLE_ACTIONS, ROLE_PAGE_ACCESS, ROLE_LABELS,
   WORKFLOW_STAGES,
+  BE_TO_FE_BOOKING_STATUS,
+  type BackendBookingStatus,
   type PageId, type Inquiry, type Task, type Followup, type Customer,
   type Quote, type QuoteStatus, type Shipment, type ShipmentStatus, type Booking,
   type MissingItem, type UserRole, type WorkflowStage, type ActivityEntry, type ContainerLine,
   type ClientRecord, type ContactPersonRecord, type ReleaseOrderFields, type VesselSchedule,
-  type BackendReleaseOrderPayload, type Employee,
+  type BackendReleaseOrderPayload, type Employee, type LinerRecord,
 } from './types'
 import { RoleContext, type RoleContextValue } from './RoleContext'
-import { MOCK_INQUIRIES, MOCK_BOOKINGS, MOCK_ACTIVITY } from './mockData'
+import { MOCK_INQUIRIES, MOCK_ACTIVITY } from './mockData'
 import {
   apiCreateFollowup,
   apiCreateQuote, apiSetQuoteStatus,
@@ -46,6 +48,8 @@ import {
   apiLogout,
   apiCreateBookingRequest, apiPatchBookingRequest, apiReviewBookingRequest,
   apiConfirmBookingRequest, apiCreateReleaseOrder, apiPatchReleaseOrder,
+  apiGetBookingRequests, apiFetchPendingReleaseOrders, apiGetLiners,
+  type BackendBookingRecord, type BackendReleaseOrderRecord,
 } from './api'
 import {
   getAccessToken, getRefreshToken, setTokens, clearTokens,
@@ -143,25 +147,133 @@ function mapInquiryRows(rows: InquiryRow[]): Inquiry[] {
   return result
 }
 
+// Delivery type: backend uppercase → frontend hyphenated
+const BE_DELIVERY_TYPE: Record<string, Booking['delivery_type']> = {
+  DOOR_TO_DOOR: 'door-to-door',
+  PORT_TO_DOOR: 'port-to-door',
+  DOOR_TO_PORT: 'door-to-port',
+  PORT_TO_PORT: 'port-to-port',
+}
+
+/**
+ * Maps a single GET /booking-requests record to the frontend Booking shape.
+ * Client and liner lists are passed in so names can be resolved without
+ * waiting for component state to settle.
+ */
+function mapBackendBooking(
+  r: BackendBookingRecord,
+  clients: ClientRecord[],
+  liners: LinerRecord[],
+): Booking {
+  const feStatus = BE_TO_FE_BOOKING_STATUS[r.status as BackendBookingStatus] ?? 'Pending Liner'
+  const client = clients.find(c => c.cli_id === r.cli_id)
+  const liner  = liners.find(l => l.lin_id === r.lin_id)
+  return {
+    id:                   `BKG-${r.booking_id}`,
+    quote_id:             '',
+    customer_name:        client?.name ?? `Client #${r.cli_id}`,
+    origin:               r.origin,
+    destination:          r.destination,
+    shipping_line:        liner?.name ?? `Liner #${r.lin_id}`,
+    vessel_name:          r.vessel,
+    voyage_number:        r.voyage,
+    container_type:       '',   // not stored in booking-request; populated from inquiry
+    quantity:             1,    // not stored in booking-request; populated from inquiry
+    status:               feStatus,
+    is_urgent:            false,
+    booked_by:            0,
+    confirmed_by:         feStatus !== 'Pending Liner' ? 0 : null,
+    released_by:          feStatus === 'Released' ? 0 : null,
+    created_at:           r.created_at,
+    confirmed_at:         feStatus !== 'Pending Liner' ? r.created_at : null,
+    released_at:          feStatus === 'Released' ? r.created_at : null,
+    procurement_notified: feStatus !== 'Pending Liner',
+    notes:                r.notes ?? '',
+    delivery_type:        r.delivery_type ? BE_DELIVERY_TYPE[r.delivery_type] : undefined,
+    // backend IDs — stored for subsequent API calls, never displayed
+    booking_id:           r.booking_id,
+    inq_id:               r.inq_id,
+    cli_id:               r.cli_id,
+    lin_id:               r.lin_id,
+    // structured booking fields
+    vessel_etd:           r.vessel_etd,
+    agreed_rate:          r.agreed_rate,
+    delivery_term:        r.delivery_term,
+    hs_code:              r.hs_code,
+    bl_type:              r.bl_type,
+    booking_type:         r.booking_type,
+    ra_number:            r.ra_number,
+    specific_routing:     r.specific_routing,
+    reefer_temp:          r.reefer_temp,
+    delivery_agent:       r.delivery_agent,
+    cargo_ready_date:     r.cargo_ready_date,
+    contract_no:          r.contract_no,
+  }
+}
+
+/**
+ * Maps a release order record from the backend into frontend ReleaseOrderFields
+ * and merges it onto the matching Booking.
+ */
+function applyReleaseOrder(
+  bookings: Booking[],
+  ro: BackendReleaseOrderRecord,
+): Booking[] {
+  return bookings.map(b => {
+    if (b.booking_id !== ro.booking_id) return b
+    const fields: ReleaseOrderFields = {
+      reference_nbr:          ro.liner_ref         ?? '',
+      pickup_empty_date:      ro.empty_pickup       ?? '',
+      validity_expiration_date: ro.validity_exp     ?? '',
+      pickup_depot:           ro.depot_name         ?? '',
+      pickup_depot_address:   ro.depot_addr         ?? '',
+      cargo_description:      ro.cargo_desc         ?? '',
+      cargo_weight:           ro.cargo_weight != null ? String(ro.cargo_weight) : '',
+      cut_off_date:           ro.vessel_cutoff      ?? '',
+      etd:                    ro.etd               ?? '',
+      eta:                    ro.eta_destination   ?? '',
+      next_port_of_discharge: ro.next_port,
+    }
+    return { ...b, release_order_attached: true, release_order_fields: fields, ro_id: ro.ro_id }
+  })
+}
+
 export default function App() {
   // SSO user — populated from JWT claims on callback or from localStorage on mount
   const [ssoUser, setSsoUser] = useState<Employee | null>(null)
 
   const loadAppData = () => {
-    apiGetClientsDb().then(cl => {
-      setClientList(cl)
-      setCustomers(cl.map(r => ({
-        id:            String(r.cli_id),
-        name:          r.name,
-        location:      r.city ?? '',
-        tier:          'Regular'     as const,
-        payment_terms: 'Pay Upfront' as const,
-        blacklisted:   false,
-        credit_hold:   false,
-        min_margin_pct: 0,
-        kyc_status:    r.kyc_completed ? 'approved' as const : 'not_started' as const,
-      })))
-    }).catch(() => console.warn('[loadAppData] Could not load client list'))
+    // Load clients + liners in parallel, then use both to map booking records
+    Promise.all([apiGetClientsDb(), apiGetLiners()])
+      .then(([cl, liners]) => {
+        setClientList(cl)
+        setCustomers(cl.map(r => ({
+          id:            String(r.cli_id),
+          name:          r.name,
+          location:      r.city ?? '',
+          tier:          'Regular'     as const,
+          payment_terms: 'Pay Upfront' as const,
+          blacklisted:   false,
+          credit_hold:   false,
+          min_margin_pct: 0,
+          kyc_status:    r.kyc_completed ? 'approved' as const : 'not_started' as const,
+        })))
+
+        // Fetch bookings and release orders in parallel now that we have client + liner lists
+        Promise.all([
+          apiGetBookingRequests(),
+          apiFetchPendingReleaseOrders(),
+        ]).then(([bookingRecords, releaseOrders]) => {
+          let mapped = bookingRecords.map(r => mapBackendBooking(r, cl, liners))
+          for (const ro of releaseOrders) mapped = applyReleaseOrder(mapped, ro)
+          setBookings(mapped)
+        }).catch(err => {
+          console.warn('[loadAppData] Could not load bookings:', err)
+          setBookings([])
+        })
+      })
+      .catch(() => console.warn('[loadAppData] Could not load client/liner list'))
+
     apiGetKycPendingClients()
       .then(setKycPendingClients)
       .catch(() => console.warn('[loadAppData] Could not load KYC pending clients'))
@@ -278,7 +390,7 @@ export default function App() {
   const [customers, setCustomers] = useState<Customer[]>([])
   const [quotes, setQuotes] = useState<Quote[]>([])
   const [shipments, setShipments] = useState<Shipment[]>([])
-  const [bookings, setBookings] = useState<Booking[]>(MOCK_BOOKINGS)
+  const [bookings, setBookings] = useState<Booking[]>([])
   const [vesselSchedules, setVesselSchedules] = useState<VesselSchedule[]>([])
   const [activityLog, setActivityLog] = useState<ActivityEntry[]>(MOCK_ACTIVITY)
   // Reference data — fetched once at startup and cached for the session
