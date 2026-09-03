@@ -893,8 +893,13 @@ export default function App() {
     setBookings(prev => [newBooking, ...prev])
     flash(`Booking created for ${payload.customer_name}`)
 
-    // Background API call — gated on having required backend IDs
-    if (payload.inq_id && payload.cli_id && payload.lin_id) {
+    // Background API call — requires inq_id, cli_id, lin_id from backend
+    if (!payload.inq_id || !payload.cli_id || !payload.lin_id) {
+      console.error('[createBooking] POST skipped — missing required IDs:', {
+        inq_id: payload.inq_id, cli_id: payload.cli_id, lin_id: payload.lin_id,
+      })
+      flash('Warning: booking saved locally but not sent to backend — select a carrier from the list')
+    } else {
       const deliveryTypeMap: Record<string, string> = {
         'port-to-port': 'PORT_TO_PORT', 'door-to-door': 'DOOR_TO_DOOR',
         'port-to-door': 'PORT_TO_DOOR', 'door-to-port': 'DOOR_TO_PORT',
@@ -935,6 +940,7 @@ export default function App() {
 
     return newId
   }
+
 
   const addInquiry = (data: Omit<Inquiry, 'id' | 'created_at' | 'status' | 'completed_at' | 'followup_note' | 'inquiry_text'>): Inquiry => {
     const tempId = `INQ-${uuid()}`

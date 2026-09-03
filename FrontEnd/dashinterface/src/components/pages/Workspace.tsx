@@ -1819,7 +1819,7 @@ ABC Logistics (Pvt) Ltd`
         const { inquiry } = actionModal!.sourceData
         const ctnSummary = bkContainers.map(c => `${c.qty}x${c.type}`).join(', ')
         // Resolve liner ID from name for backend API
-        const resolvedLinId = linerList.find(l => l.name === bkShippingLine)?.lin_id
+        const resolvedLinId = linerList.find(l => l.name.toLowerCase() === bkShippingLine.toLowerCase())?.lin_id
         const resolvedCommodityId = inquiry.com_ids?.[0]
 
         const bookingId = onCreateBooking({
@@ -3919,9 +3919,11 @@ ABC Logistics (Pvt) Ltd`
                     <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', borderBottom: '1px solid var(--border)' }}>
                       <div style={{ padding: '8px 12px', background: 'var(--bg-card)', borderRight: '1px solid var(--border)', fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center' }}>Carrier</div>
                       <div style={{ padding: '4px 8px' }}>
-                        <input list="rp-bk-liners" className="lt-input" style={{ width: '100%', border: 'none', background: 'transparent', padding: '4px 0' }}
-                          value={bkShippingLine} onChange={e => setBkShippingLine(e.target.value)} placeholder="e.g. MSC, Maersk, Hapag-Lloyd" />
-                        <datalist id="rp-bk-liners">{linerList.map(l => <option key={l.lin_id} value={l.name} />)}</datalist>
+                        <select className="lt-input" style={{ width: '100%', border: 'none', background: 'transparent', padding: '4px 0' }}
+                          value={bkShippingLine} onChange={e => setBkShippingLine(e.target.value)}>
+                          <option value="">— Select carrier —</option>
+                          {linerList.map(l => <option key={l.lin_id} value={l.name}>{l.name}</option>)}
+                        </select>
                       </div>
                     </div>
                     {/* Containers (dynamic list) */}
