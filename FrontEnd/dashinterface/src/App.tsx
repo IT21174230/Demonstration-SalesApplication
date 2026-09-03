@@ -43,13 +43,13 @@ import {
   apiUpdateCustomer, apiAdvanceWorkflow, apiGetInquiry,
   apiPatchInquiry, apiPatchCommodity, apiPatchContainer, apiDeleteInquiry,
   BE_STAGE_TO_FE,
-  apiLogout, apiRefreshToken,
+  apiLogout,
   apiCreateBookingRequest, apiPatchBookingRequest, apiReviewBookingRequest,
   apiConfirmBookingRequest, apiCreateReleaseOrder, apiPatchReleaseOrder,
 } from './api'
 import {
   getAccessToken, getRefreshToken, setTokens, clearTokens,
-  decodeJwt, isTokenExpired, deptToRole, scheduleTokenRefresh,
+  decodeJwt, deptToRole,
 } from './auth'
 
 // crypto.randomUUID() requires HTTPS (secure context). Fall back for plain HTTP deployments.
@@ -311,25 +311,7 @@ export default function App() {
         return
       }
 
-      // 3. If access token expired, try refresh
-      if (isTokenExpired(token)) {
-        const rt = getRefreshToken()
-        if (rt) {
-          try {
-            const result = await apiRefreshToken(rt)
-            setTokens(result.access_token, result.refresh_token)
-            token = result.access_token
-          } catch {
-            clearTokens()
-            setInitState('ready')
-            return
-          }
-        } else {
-          clearTokens()
-          setInitState('ready')
-          return
-        }
-      }
+      // 3. TEST BRANCH: expiry check skipped — hardcoded test token accepted as-is
 
       // 4. Create Employee from JWT and load app data
       const emp = employeeFromToken(token)
@@ -340,21 +322,10 @@ export default function App() {
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Schedule proactive token refresh
+  // TEST BRANCH: disabled — hardcoded test token has no real refresh token
   useEffect(() => {
     if (!ssoUser) return
-    const doRefresh = async () => {
-      const rt = getRefreshToken()
-      if (!rt) return
-      try {
-        const result = await apiRefreshToken(rt)
-        setTokens(result.access_token, result.refresh_token)
-        setSsoUser(employeeFromToken(result.access_token))
-      } catch {
-        clearTokens()
-        setSsoUser(null)
-      }
-    }
-    return scheduleTokenRefresh(doRefresh)
+    // no-op in test branch
   }, [ssoUser]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const refreshData = () => {

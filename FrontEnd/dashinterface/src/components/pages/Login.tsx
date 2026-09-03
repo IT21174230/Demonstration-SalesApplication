@@ -1,20 +1,12 @@
-import { useState } from 'react'
-import { apiGetLoginUrl } from '../../api'
+import { setTokens } from '../../auth'
+
+// TEST BRANCH: hardcoded bearer token — bypasses real Azure AD SSO
+const TEST_TOKEN = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIiwibWFpbF9pZCI6InRlc3RAZXhhbXBsZS5jb20iLCJuYW1lIjoiVGVzdCBVc2VyIiwiZGVwdCI6IkVuZ2luZWVyaW5nIiwiZGVzaWciOiJEZXZlbG9wZXIiLCJleHAiOjE3ODg0MDY4NDYsImp0aSI6ImZlNWUwNTNhLTU4YmMtNDMwNS1iMmQ1LTlkMjJjMzQ5ZDMwZiJ9.8AZyMPDjMRdoi7AX01VfiKGRskhSMnKRNEjHiM94NJ4'
 
 export default function Login() {
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
-
-  const handleSsoLogin = async () => {
-    setLoading(true)
-    setError('')
-    try {
-      const { auth_url } = await apiGetLoginUrl()
-      window.location.href = auth_url
-    } catch {
-      setError('Failed to initiate login. Please try again.')
-      setLoading(false)
-    }
+  const handleTestLogin = () => {
+    setTokens(TEST_TOKEN, '')
+    window.location.reload()
   }
 
   return (
@@ -26,15 +18,13 @@ export default function Login() {
         </div>
         <p className="login-subtitle">Sign in to continue</p>
 
-        <button
-          className="login-submit"
-          onClick={handleSsoLogin}
-          disabled={loading}
-        >
-          {loading ? 'Redirecting...' : 'Sign in with Microsoft'}
+        <button className="login-submit" onClick={handleTestLogin}>
+          Test Login (Dev)
         </button>
 
-        {error && <div className="login-error">{error}</div>}
+        <p style={{ marginTop: 12, fontSize: 12, color: '#888', textAlign: 'center' }}>
+          Test branch — MS auth bypassed
+        </p>
       </div>
     </div>
   )
