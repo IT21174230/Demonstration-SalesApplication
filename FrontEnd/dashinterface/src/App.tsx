@@ -12,6 +12,7 @@ import Quotations from './components/pages/Quotations'
 import Shipments from './components/pages/Shipments'
 import KYCForm from './components/pages/KYCForm'
 import Workspace from './components/pages/Workspace'
+import BookingList from './components/pages/BookingList'
 import NewInquiry from './components/pages/NewInquiry'
 import RfqNew from './components/pages/RfqNew'
 import RecordRate from './components/pages/RecordRate'
@@ -20,14 +21,16 @@ import Login from './components/pages/Login'
 import Profile from './components/pages/Profile'
 import {
   PAGE_LABELS, nowStamp,
-  EMPLOYEES, EMPLOYEE_ROLE_MAP, ROLE_ACTIONS, ROLE_PAGE_ACCESS, ROLE_LABELS,
+  ROLE_ACTIONS, ROLE_PAGE_ACCESS, ROLE_LABELS,
   WORKFLOW_STAGES,
   type PageId, type Inquiry, type Task, type Followup, type Customer,
   type Quote, type QuoteStatus, type Shipment, type ShipmentStatus, type Booking,
   type MissingItem, type UserRole, type WorkflowStage, type ActivityEntry, type ContainerLine,
-  type ClientRecord, type ContactPersonRecord,
+  type ClientRecord, type ContactPersonRecord, type ReleaseOrderFields, type VesselSchedule,
+  type BackendReleaseOrderPayload, type Employee,
 } from './types'
 import { RoleContext, type RoleContextValue } from './RoleContext'
+import { MOCK_INQUIRIES, MOCK_BOOKINGS, MOCK_ACTIVITY } from './mockData'
 import {
   apiCreateFollowup,
   apiCreateQuote, apiSetQuoteStatus,
@@ -40,8 +43,14 @@ import {
   apiUpdateCustomer, apiAdvanceWorkflow, apiGetInquiry,
   apiPatchInquiry, apiPatchCommodity, apiPatchContainer, apiDeleteInquiry,
   BE_STAGE_TO_FE,
-  apiSwitchUser,
+  apiLogout, apiRefreshToken,
+  apiCreateBookingRequest, apiPatchBookingRequest, apiReviewBookingRequest,
+  apiConfirmBookingRequest, apiCreateReleaseOrder, apiPatchReleaseOrder,
 } from './api'
+import {
+  getAccessToken, getRefreshToken, setTokens, clearTokens,
+  decodeJwt, isTokenExpired, deptToRole, scheduleTokenRefresh,
+} from './auth'
 
 // crypto.randomUUID() requires HTTPS (secure context). Fall back for plain HTTP deployments.
 const uuid = (): string =>
@@ -109,7 +118,7 @@ function mapInquiryRows(rows: InquiryRow[]): Inquiry[] {
       cli_id: h.cli_id,
       rfq_ref: h.rfq_ref ?? undefined,
       customer_name: h.name,
-      employee_id: 0, // not returned by list endpoint; overwritten when activeEmployeeId is known
+      employee_id: 0, // not returned by list endpoint; overwritten when activeEmployee.id is known
       origin: h.origin,
       destination: group[0]?.destination ?? '',
       status: 'pending',
@@ -135,22 +144,8 @@ function mapInquiryRows(rows: InquiryRow[]): Inquiry[] {
 }
 
 export default function App() {
-  // Valid employee IDs the backend accepts — stale sessionStorage values must be rejected
-  const validEmpIds = EMPLOYEES.map(e => e.id)
-
-  const [loggedInEmployeeId, setLoggedInEmployeeId] = useState<number | null>(
-    () => {
-      const stored = sessionStorage.getItem('loggedInEmployeeId')
-      if (!stored) return null
-      const id = Number(stored)
-      if (!validEmpIds.includes(id)) {
-        // Stale session from old employee IDs — clear and force re-login
-        sessionStorage.removeItem('loggedInEmployeeId')
-        return null
-      }
-      return id
-    }
-  )
+  // SSO user — populated from JWT claims on callback or from localStorage on mount
+  const [ssoUser, setSsoUser] = useState<Employee | null>(null)
 
   const loadAppData = () => {
     apiGetClientsDb().then(cl => {
@@ -174,24 +169,35 @@ export default function App() {
       .then(setKycRequests)
       .catch(() => console.warn('[loadAppData] Could not load KYC requests'))
     apiFetchAllInquiries()
-      .then(rows => setInquiries(mapInquiryRows(rows)))
-      .catch(() => console.warn('[loadAppData] Could not load inquiries from backend'))
+      .then(rows => setInquiries([...mapInquiryRows(rows), ...MOCK_INQUIRIES]))
+      .catch(() => setInquiries(MOCK_INQUIRIES))
       .finally(() => setInitState('ready'))
   }
 
-  const handleLogin = (empId: number) => {
-    sessionStorage.setItem('loggedInEmployeeId', String(empId))
-    setLoggedInEmployeeId(empId)
-    setActiveEmployeeId(empId)
-    // Switch backend user context, then re-fetch all employee-scoped data
-    apiSwitchUser(empId)
-      .then(() => loadAppData())
-      .catch(err => console.error('Failed to switch user on backend:', err))
+  /** Build an Employee object from JWT claims */
+  const employeeFromToken = (token: string): Employee => {
+    const claims = decodeJwt(token)
+    const role = deptToRole(claims.dept)
+    const roleLabel: Record<UserRole, string> = {
+      Procurement: 'Procurement',
+      Finance: 'Finance',
+      CS: 'Customer Service',
+      Sales: 'Sales Executive',
+      Admin: 'Admin (All Access)',
+    }
+    return {
+      id: Number(claims.sub),
+      name: claims.name,
+      role: roleLabel[role] ?? claims.dept,
+      dept: claims.dept,
+      email: claims.mail_id,
+    }
   }
 
-  const handleLogout = () => {
-    sessionStorage.removeItem('loggedInEmployeeId')
-    setLoggedInEmployeeId(null)
+  const handleLogout = async () => {
+    await apiLogout(getRefreshToken()).catch(() => {})
+    clearTokens()
+    setSsoUser(null)
   }
 
   const [currentPage, setCurrentPage] = useState<PageId>('workspace')
@@ -199,14 +205,9 @@ export default function App() {
   // Cleared by a useEffect once workspace has mounted and captured the value.
   const [workspaceInitialStep, setWorkspaceInitialStep] = useState<string | null>(null)
 
-  // ---- Role-based access control ----
-  const [activeEmployeeId, setActiveEmployeeId] = useState<number>(() => {
-    const stored = sessionStorage.getItem('loggedInEmployeeId')
-    if (stored && validEmpIds.includes(Number(stored))) return Number(stored)
-    return EMPLOYEES[0].id
-  })
-  const activeEmployee = EMPLOYEES.find(e => e.id === activeEmployeeId) ?? EMPLOYEES[0]
-  const activeRole: UserRole = EMPLOYEE_ROLE_MAP[activeEmployeeId] ?? 'CS'
+  // ---- Role-based access control (derived from SSO) ----
+  const activeEmployee: Employee = ssoUser ?? { id: 0, name: '', role: '' }
+  const activeRole: UserRole = ssoUser ? deptToRole(ssoUser.dept) : 'CS'
 
   const canAccessPage = (page: PageId) => ROLE_PAGE_ACCESS[activeRole].includes(page)
 
@@ -229,7 +230,7 @@ export default function App() {
     if (!canAccessPage(currentPage)) {
       setCurrentPage('dashboard')
     }
-  }, [activeEmployeeId]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activeEmployee.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Once workspace mounts and captures initialStep, clear the hint so the next
   // manual navigation to workspace doesn't jump to the same step again.
@@ -277,8 +278,9 @@ export default function App() {
   const [customers, setCustomers] = useState<Customer[]>([])
   const [quotes, setQuotes] = useState<Quote[]>([])
   const [shipments, setShipments] = useState<Shipment[]>([])
-  const [bookings, setBookings] = useState<Booking[]>([])
-  const [activityLog, setActivityLog] = useState<ActivityEntry[]>([])
+  const [bookings, setBookings] = useState<Booking[]>(MOCK_BOOKINGS)
+  const [vesselSchedules, setVesselSchedules] = useState<VesselSchedule[]>([])
+  const [activityLog, setActivityLog] = useState<ActivityEntry[]>(MOCK_ACTIVITY)
   // Reference data — fetched once at startup and cached for the session
   const [clientList, setClientList] = useState<ClientRecord[]>([])
   const contactPersonList: ContactPersonRecord[] = []  // disabled until backend provides bulk endpoint
@@ -290,18 +292,70 @@ export default function App() {
   const [rateCheckContext, setRateCheckContext] = useState<{ inquiry: Inquiry; container?: ContainerLine; variant: 'procurement' | 'cs-sales' } | null>(null)
   const [toast, setToast] = useState<{ message: string; action?: { label: string; onClick: () => void } } | null>(null)
 
-  // ---- Initialise app state ----
+  // ---- SSO: handle callback and bootstrap from tokens ----
   useEffect(() => {
-    // Only load data on startup if user is already logged in (valid session).
-    // If not logged in, Login screen is shown and handleLogin will call loadAppData after switch-user.
-    if (!loggedInEmployeeId) {
-      setInitState('ready')
-      return
+    const bootstrap = async () => {
+      // 1. Check for SSO callback tokens in URL
+      const params = new URLSearchParams(window.location.search)
+      const urlAccess = params.get('access_token')
+      const urlRefresh = params.get('refresh_token')
+      if (urlAccess && urlRefresh) {
+        setTokens(urlAccess, urlRefresh)
+        window.history.replaceState(null, '', '/')
+      }
+
+      // 2. Try to restore session from localStorage tokens
+      let token = getAccessToken()
+      if (!token) {
+        setInitState('ready')
+        return
+      }
+
+      // 3. If access token expired, try refresh
+      if (isTokenExpired(token)) {
+        const rt = getRefreshToken()
+        if (rt) {
+          try {
+            const result = await apiRefreshToken(rt)
+            setTokens(result.access_token, result.refresh_token)
+            token = result.access_token
+          } catch {
+            clearTokens()
+            setInitState('ready')
+            return
+          }
+        } else {
+          clearTokens()
+          setInitState('ready')
+          return
+        }
+      }
+
+      // 4. Create Employee from JWT and load app data
+      const emp = employeeFromToken(token)
+      setSsoUser(emp)
+      loadAppData()
     }
-    apiSwitchUser(loggedInEmployeeId)
-      .catch(() => console.warn('[startup] switch-user failed'))
-      .then(() => loadAppData())
+    bootstrap()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Schedule proactive token refresh
+  useEffect(() => {
+    if (!ssoUser) return
+    const doRefresh = async () => {
+      const rt = getRefreshToken()
+      if (!rt) return
+      try {
+        const result = await apiRefreshToken(rt)
+        setTokens(result.access_token, result.refresh_token)
+        setSsoUser(employeeFromToken(result.access_token))
+      } catch {
+        clearTokens()
+        setSsoUser(null)
+      }
+    }
+    return scheduleTokenRefresh(doRefresh)
+  }, [ssoUser]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const refreshData = () => {
     apiFetchAllInquiries()
@@ -365,7 +419,7 @@ export default function App() {
       customer_name: customerName,
       note: newFup.note,
       completion_flag: completionFlag,
-      employee_id: activeEmployeeId,
+      employee_id: activeEmployee.id,
     }).then(created => {
       setFollowups(prev => prev.map(f => f.id === newFup.id ? created : f))
     }).catch(err => console.error('Create followup failed:', err))
@@ -487,7 +541,7 @@ export default function App() {
       customer_name: customerName,
       task: taskText,
       due_date: dueDate,
-      employee_id: activeEmployeeId,
+      employee_id: activeEmployee.id,
     }).then(created => {
       setTasks(prev => prev.map(t => t.id === newTask.id ? created : t))
     }).catch(err => console.error('Create task failed:', err))
@@ -519,20 +573,102 @@ export default function App() {
   }
 
   const confirmBooking = (bookingId: string, vesselName: string, voyageNumber: string) => {
-    setBookings(prev => prev.map(b =>
-      b.id === bookingId
-        ? { ...b, status: 'Liner Confirmed' as const, vessel_name: vesselName, voyage_number: voyageNumber, confirmed_by: 1, confirmed_at: nowStamp() }
-        : b
-    ))
+    setBookings(prev => {
+      const bkg = prev.find(b => b.id === bookingId)
+      if (bkg?.booking_id) {
+        apiConfirmBookingRequest(bkg.booking_id)
+          .catch(err => console.error('[confirmBooking] API failed:', err))
+      }
+      return prev.map(b =>
+        b.id === bookingId
+          ? { ...b, status: 'Liner Confirmed' as const, vessel_name: vesselName, voyage_number: voyageNumber, confirmed_by: 1, confirmed_at: nowStamp() }
+          : b
+      )
+    })
     flash(`${bookingId} → Liner Confirmed`)
   }
 
+  const markRaAssigned = (bookingId: string, raNumber: string, vessel: string, carrier: string) => {
+    setBookings(prev => {
+      const bkg = prev.find(b => b.id === bookingId)
+      if (bkg?.booking_id) {
+        apiReviewBookingRequest(bkg.booking_id, {
+          ra_number: raNumber || undefined,
+          vessel: vessel || undefined,
+        }).catch(err => console.error('[markRaAssigned] API failed:', err))
+      }
+      return prev.map(b =>
+        b.id === bookingId
+          ? { ...b, status: 'RA Assigned' as const, voyage_number: raNumber, vessel_name: vessel, shipping_line: carrier || b.shipping_line, ra_number: raNumber }
+          : b
+      )
+    })
+  }
+
+  const revertBookingRequest = (bookingId: string) => {
+    setBookings(prev => {
+      const bkg = prev.find(b => b.id === bookingId)
+      if (bkg?.booking_id) {
+        // No dedicated revert endpoint — clear fields via PATCH
+        apiPatchBookingRequest(bkg.booking_id, { ra_number: '', vessel: '' } as any)
+          .catch(err => console.error('[revertBookingRequest] API failed:', err))
+      }
+      return prev.map(b =>
+        b.id === bookingId
+          ? { ...b, status: 'Pending Liner' as const, voyage_number: '', vessel_name: '' }
+          : b
+      )
+    })
+  }
+
+  const attachReleaseOrder = (bookingId: string, fields: ReleaseOrderFields) => {
+    setBookings(prev => {
+      const bkg = prev.find(b => b.id === bookingId)
+      if (bkg?.booking_id && bkg?.inq_id && bkg?.cli_id) {
+        const roPayload: BackendReleaseOrderPayload = {
+          inq_id: bkg.inq_id,
+          booking_id: bkg.booking_id,
+          cli_id: bkg.cli_id,
+          liner_ref: fields.reference_nbr || undefined,
+          empty_pickup: fields.pickup_empty_date || undefined,
+          validity_exp: fields.validity_expiration_date || undefined,
+          depot_name: fields.pickup_depot || undefined,
+          depot_addr: fields.pickup_depot_address || undefined,
+          vessel_cutoff: fields.cut_off_date || undefined,
+          etd: fields.etd || undefined,
+          eta_destination: fields.eta || undefined,
+          next_port: fields.next_port_of_discharge || undefined,
+          remark: [fields.transport_mode, fields.transport_carrier].filter(Boolean).join(' / ') || undefined,
+          cargo_weight: fields.cargo_weight ? parseFloat(fields.cargo_weight) : undefined,
+          cargo_desc: fields.cargo_description || undefined,
+        }
+        apiCreateReleaseOrder(roPayload)
+          .then((result: any) => {
+            if (result.ro_id) {
+              setBookings(p => p.map(b => b.id === bookingId ? { ...b, ro_id: result.ro_id } : b))
+            }
+          })
+          .catch(err => console.error('[attachReleaseOrder] API failed:', err))
+      }
+      return prev.map(b =>
+        b.id === bookingId ? { ...b, release_order_attached: true, release_order_fields: fields } : b
+      )
+    })
+  }
+
   const releaseBooking = (bookingId: string, note: string) => {
-    setBookings(prev => prev.map(b =>
-      b.id === bookingId
-        ? { ...b, status: 'Released' as const, released_by: 1, released_at: nowStamp(), notes: note || b.notes }
-        : b
-    ))
+    setBookings(prev => {
+      const bkg = prev.find(b => b.id === bookingId)
+      if (bkg?.ro_id && note) {
+        apiPatchReleaseOrder(bkg.ro_id, { remark: note })
+          .catch(err => console.error('[releaseBooking] RO patch failed:', err))
+      }
+      return prev.map(b =>
+        b.id === bookingId
+          ? { ...b, status: 'Released' as const, released_by: 1, released_at: nowStamp(), notes: note || b.notes }
+          : b
+      )
+    })
     flash(`${bookingId} → Released`)
   }
 
@@ -561,15 +697,38 @@ export default function App() {
     ))
   }
 
+  const setBookingVgmCutoff = (bookingId: string, date: string) => {
+    setBookings(prev => prev.map(b =>
+      b.id === bookingId ? { ...b, vgm_cutoff_date: date } : b
+    ))
+  }
+
+  const setBookingFilingCutoff = (bookingId: string, date: string) => {
+    setBookings(prev => prev.map(b =>
+      b.id === bookingId ? { ...b, filing_cutoff_date: date } : b
+    ))
+  }
+
   const markSiSubmitted = (bookingId: string) => {
     setBookings(prev => prev.map(b =>
       b.id === bookingId ? { ...b, si_submitted: true } : b
     ))
   }
 
+  const addVesselSchedule = (vs: Omit<VesselSchedule, 'id'>) => {
+    const id = `VS-${Date.now()}`
+    setVesselSchedules(prev => [...prev, { ...vs, id }])
+  }
+
   const markDraftBlSent = (bookingId: string) => {
     setBookings(prev => prev.map(b =>
       b.id === bookingId ? { ...b, draft_bl_sent: true } : b
+    ))
+  }
+
+  const markPreAdviceSent = (bookingId: string) => {
+    setBookings(prev => prev.map(b =>
+      b.id === bookingId ? { ...b, pre_advice_sent: true } : b
     ))
   }
 
@@ -595,6 +754,13 @@ export default function App() {
     customer_name: string; quote_id: string; shipping_line: string;
     container_type: string; quantity: number; origin: string; destination: string;
     is_urgent: boolean; booked_by: number; notes: string; delivery_type?: 'port-to-port' | 'door-to-door';
+    // Backend integration fields (internal, never shown to user)
+    inq_id?: number; cli_id?: number; lin_id?: number; commodity_id?: number;
+    vessel_etd?: string; agreed_rate?: number; delivery_term?: string;
+    hs_code?: string; bl_type?: string; cargo_ready_date?: string;
+    contract_no?: string; ra_number?: string; specific_routing?: string;
+    booking_type?: string; reefer_temp?: string; delivery_agent?: string;
+    vessel?: string; voyage?: string; rate_remark?: string;
   }) => {
     const newId = `BKG-${uuid()}`
     const stamp = nowStamp()
@@ -605,8 +771,8 @@ export default function App() {
       origin: payload.origin,
       destination: payload.destination,
       shipping_line: payload.shipping_line,
-      vessel_name: '',
-      voyage_number: '',
+      vessel_name: payload.vessel || '',
+      voyage_number: payload.voyage || '',
       container_type: payload.container_type,
       quantity: payload.quantity,
       status: 'Pending Liner',
@@ -620,9 +786,67 @@ export default function App() {
       procurement_notified: false,
       notes: payload.notes,
       delivery_type: payload.delivery_type,
+      // Store backend IDs for subsequent API calls
+      inq_id: payload.inq_id,
+      cli_id: payload.cli_id,
+      lin_id: payload.lin_id,
+      commodity_id: payload.commodity_id,
+      vessel_etd: payload.vessel_etd,
+      agreed_rate: payload.agreed_rate,
+      delivery_term: payload.delivery_term,
+      contract_no: payload.contract_no,
+      hs_code: payload.hs_code,
+      bl_type: payload.bl_type,
+      cargo_ready_date: payload.cargo_ready_date,
+      ra_number: payload.ra_number,
+      specific_routing: payload.specific_routing,
+      booking_type: payload.booking_type,
+      reefer_temp: payload.reefer_temp,
+      delivery_agent: payload.delivery_agent,
     }
     setBookings(prev => [newBooking, ...prev])
     flash(`Booking created for ${payload.customer_name}`)
+
+    // Background API call — gated on having required backend IDs
+    if (payload.inq_id && payload.cli_id && payload.lin_id) {
+      const deliveryTypeMap: Record<string, string> = {
+        'port-to-port': 'PORT_TO_PORT', 'door-to-door': 'DOOR_TO_DOOR',
+        'port-to-door': 'PORT_TO_DOOR', 'door-to-port': 'DOOR_TO_PORT',
+      }
+      apiCreateBookingRequest({
+        inq_id: payload.inq_id,
+        cli_id: payload.cli_id,
+        lin_id: payload.lin_id,
+        origin: payload.origin,
+        destination: payload.destination,
+        vessel: payload.vessel || '',
+        vessel_etd: payload.vessel_etd || new Date().toISOString(),
+        voyage: payload.voyage || '',
+        cargo_ready_date: payload.cargo_ready_date || new Date().toISOString().slice(0, 10),
+        delivery_type: deliveryTypeMap[payload.delivery_type || 'port-to-port'] || 'PORT_TO_PORT',
+        agreed_rate: payload.agreed_rate || 0,
+        delivery_term: payload.delivery_term || 'FOB',
+        commodity: payload.commodity_id || 0,
+        hs_code: payload.hs_code || '',
+        bl_type: payload.bl_type === 'Seaway Bill' ? 'SEAWAY_BILL' : 'OBL',
+        notes: payload.notes,
+        rate_remark: payload.rate_remark,
+        contract_no: payload.contract_no,
+        ra_number: payload.ra_number,
+        specific_routing: payload.specific_routing,
+        booking_type: payload.booking_type,
+        reefer_temp: payload.reefer_temp,
+        delivery_agent: payload.delivery_agent,
+      }).then(result => {
+        setBookings(prev => prev.map(b =>
+          b.id === newId ? { ...b, booking_id: result.booking_id } : b
+        ))
+      }).catch(err => {
+        console.error('[createBooking] API failed:', err)
+        flash(`Warning: booking saved locally but backend sync failed`)
+      })
+    }
+
     return newId
   }
 
@@ -636,7 +860,7 @@ export default function App() {
       status: 'pending',
       created_at: stamp,
       workflow_stage: 'rate-check',   // backend auto-creates workflow at rate_check_in_progress
-      recorded_by: activeEmployeeId,
+      recorded_by: activeEmployee.id,
     }
     setInquiries(prev => [tempInq, ...prev])
     // Route to the correct create endpoint based on client / contact identity.
@@ -820,6 +1044,8 @@ export default function App() {
         )
       case 'rate-list':
         return <RateList />
+      case 'booking-list':
+        return <BookingList bookings={bookings} activityLog={activityLog} />
       case 'followups':
         return (
           <Followups
@@ -848,14 +1074,22 @@ export default function App() {
             onGoTo={navigateTo}
             onAdvanceWorkflow={advanceWorkflow}
             onConfirmBooking={confirmBooking}
+            onMarkRaAssigned={markRaAssigned}
+            onRevertBookingRequest={revertBookingRequest}
+            onAttachReleaseOrder={attachReleaseOrder}
             onReleaseBooking={releaseBooking}
             onAcknowledgeProcurement={acknowledgeProcurement}
             onCreateBooking={createBooking}
             onSetBookingSiCutoff={setBookingSiCutoff}
-            onMarkSiRequested={markSiRequested}
             onSetBookingBlCutoff={setBookingBlCutoff}
+            onSetBookingVgmCutoff={setBookingVgmCutoff}
+            onSetBookingFilingCutoff={setBookingFilingCutoff}
+            onMarkSiRequested={markSiRequested}
             onMarkSiSubmitted={markSiSubmitted}
+            vesselSchedules={vesselSchedules}
+            onAddVesselSchedule={addVesselSchedule}
             onMarkDraftBlSent={markDraftBlSent}
+            onMarkPreAdviceSent={markPreAdviceSent}
             onSetBlStatus={setBlStatus}
             onRecordMasterBl={recordMasterBl}
             onCreateHouseBl={createHouseBl}
@@ -959,8 +1193,8 @@ export default function App() {
     canAccessPage,
   }
 
-  if (!loggedInEmployeeId) {
-    return <Login onLogin={handleLogin} />
+  if (!ssoUser) {
+    return <Login />
   }
 
   return (

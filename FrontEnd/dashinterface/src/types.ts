@@ -9,6 +9,7 @@ export type PageId =
   | 'rate-check'
   | 'inquiry-list'
   | 'rate-list'
+  | 'booking-list'
   | 'quotations'
   | 'shipments'
   | 'followups'
@@ -26,6 +27,7 @@ export const PAGE_LABELS: Record<PageId, string> = {
   'rate-check': 'Rate Check',
   'inquiry-list': 'Inquiry List',
   'rate-list': 'Rate List',
+  'booking-list': 'Booking List',
   quotations: 'Quotations',
   shipments: 'Shipments',
   followups: 'Operations',
@@ -55,11 +57,11 @@ export const ROLE_COLORS: Record<UserRole, string> = {
 }
 
 export const ROLE_PAGE_ACCESS: Record<UserRole, PageId[]> = {
-  CS:          ['dashboard', 'chat', 'workspace', 'new-inquiry', 'rfq-new', 'inquiry-list', 'rate-list', 'followups', 'customers', 'kyc', 'profile'],
+  CS:          ['dashboard', 'chat', 'workspace', 'new-inquiry', 'rfq-new', 'inquiry-list', 'rate-list', 'booking-list', 'followups', 'customers', 'kyc', 'profile'],
   Sales:       ['dashboard', 'chat', 'workspace', 'new-inquiry', 'rfq-new', 'inquiry-list', 'rate-list', 'followups', 'customers', 'profile'],
   Finance:     ['dashboard', 'chat', 'workspace', 'customers', 'kyc', 'profile'],
-  Procurement: ['dashboard', 'chat', 'workspace', 'inquiry-list', 'record-rate', 'rate-check', 'rate-list', 'followups', 'profile'],
-  Admin:       ['dashboard', 'chat', 'workspace', 'new-inquiry', 'rfq-new', 'record-rate', 'rate-check', 'inquiry-list', 'rate-list', 'shipments', 'followups', 'customers', 'kyc', 'profile'],
+  Procurement: ['dashboard', 'chat', 'workspace', 'inquiry-list', 'record-rate', 'rate-check', 'rate-list', 'booking-list', 'followups', 'profile'],
+  Admin:       ['dashboard', 'chat', 'workspace', 'new-inquiry', 'rfq-new', 'record-rate', 'rate-check', 'inquiry-list', 'rate-list', 'booking-list', 'shipments', 'followups', 'customers', 'kyc', 'profile'],
 }
 
 export const ROLE_QUICK_COMMANDS: Record<UserRole, string[]> = {
@@ -134,14 +136,6 @@ export const ROLE_ACTIONS: Record<UserRole, ActionId[]> = {
     'kyc:send', 'kyc:verify',
     'booking:create', 'booking:confirm', 'booking:release', 'booking:view',
   ],
-}
-
-export const EMPLOYEE_ROLE_MAP: Record<number, UserRole> = {
-  5: 'Procurement',
-  6: 'Finance',
-  7: 'CS',
-  8: 'Sales',
-  9: 'Admin',
 }
 
 // ==================== WORKFLOW STAGES ====================
@@ -374,14 +368,19 @@ export interface Employee {
   id: number
   name: string
   role: string
+  dept?: string
+  email?: string
 }
 
+// UI-only employee directory for name lookups, dropdowns, and dashboard KPIs.
+// Not used for authentication (SSO handles that via JWT).
+// TODO: replace with dynamic data from GET /employees once all components are refactored.
 export const EMPLOYEES: Employee[] = [
-  { id: 5, name: 'procu-test',         role: 'Procurement' },
-  { id: 6, name: 'fin-test',           role: 'Finance' },
-  { id: 7, name: 'cs-test',            role: 'Customer Service' },
-  { id: 8, name: 'sales-test',         role: 'Sales Executive' },
-  { id: 9, name: 'IT-AD',              role: 'Admin (All Access)' },
+  { id: 5, name: 'procu-test',         role: 'Procurement',         dept: 'procurement' },
+  { id: 6, name: 'fin-test',           role: 'Finance',             dept: 'finance' },
+  { id: 7, name: 'cs-test',            role: 'Customer Service',    dept: 'customer-service' },
+  { id: 8, name: 'sales-test',         role: 'Sales Executive',     dept: 'sales' },
+  { id: 9, name: 'IT-AD',              role: 'Admin (All Access)',   dept: 'IT' },
 ]
 
 // ==================== TASKS ====================
@@ -692,7 +691,31 @@ export interface Shipment {
 }
 
 // ==================== BOOKINGS ====================
-export type BookingStatus = 'Pending Liner' | 'Liner Confirmed' | 'Released' | 'Cancelled'
+export type BookingStatus = 'Pending Liner' | 'RA Assigned' | 'Liner Confirmed' | 'Released' | 'Cancelled'
+
+// Backend booking status enum — matches the API exactly
+export type BackendBookingStatus =
+  | 'request_initiated'
+  | 'request_reviewed'
+  | 'request_booking_success'
+  | 'request_booking_failure'
+  | 'release_order_received'
+
+export const FE_TO_BE_BOOKING_STATUS: Record<BookingStatus, BackendBookingStatus> = {
+  'Pending Liner':    'request_initiated',
+  'RA Assigned':      'request_reviewed',
+  'Liner Confirmed':  'request_booking_success',
+  'Released':         'release_order_received',
+  'Cancelled':        'request_initiated',
+}
+
+export const BE_TO_FE_BOOKING_STATUS: Record<BackendBookingStatus, BookingStatus> = {
+  request_initiated:        'Pending Liner',
+  request_reviewed:         'RA Assigned',
+  request_booking_success:  'Liner Confirmed',
+  request_booking_failure:  'Pending Liner',
+  release_order_received:   'Released',
+}
 
 export interface Booking {
   id: string
@@ -716,8 +739,10 @@ export interface Booking {
   procurement_notified: boolean
   notes: string
   si_cutoff_date?: string
-  si_requested?: boolean
   bl_cutoff_date?: string
+  vgm_cutoff_date?: string
+  filing_cutoff_date?: string
+  si_requested?: boolean
   si_submitted?: boolean
   draft_bl_sent?: boolean
   bl_status?: 'pending' | 'approved' | 'changes-requested'
@@ -730,6 +755,83 @@ export interface Booking {
   house_bl_shipper?: string
   house_bl_consignee?: string
   house_bl_created?: boolean
+  pre_advice_sent?: boolean         // true after CS sends pre-advice to door agent (door-to-door / port-to-door)
+  release_order_attached?: boolean  // true after Procurement attaches release order and sends to CS
+  release_order_fields?: ReleaseOrderFields
+  // --- Backend integration IDs (internal, never rendered in UI) ---
+  booking_id?: number       // Backend PK from POST /booking-requests
+  inq_id?: number           // Inquiry PK — needed for booking & release-order API calls
+  cli_id?: number           // Client PK — needed for booking & release-order API calls
+  lin_id?: number           // Liner PK — resolved from LinerRecord by shipping_line name
+  ro_id?: number            // Release order PK — set after POST /booking-requests/release-orders
+  commodity_id?: number     // Commodity com_id — needed for POST /booking-requests
+  // --- Structured fields stored alongside notes for API payloads ---
+  vessel_etd?: string
+  agreed_rate?: number
+  delivery_term?: string
+  contract_no?: string
+  hs_code?: string
+  bl_type?: string
+  booking_type?: string
+  ra_number?: string
+  specific_routing?: string
+  reefer_temp?: string
+  delivery_agent?: string
+  cargo_ready_date?: string
+}
+
+// ==================== VESSEL SCHEDULES ====================
+export interface VesselSchedule {
+  id: string
+  vessel_name: string
+  voyage_number: string
+  schedule_type: 'FCL' | 'CONSOL' | 'BOTH'
+  pol: string
+  eta_pol: string
+  etd_pol: string
+  routing_type: 'DIRECT' | 'TRANSSHIPMENT'
+  final_pod: string
+  eta_fpod: string
+  remarks: string
+  agent: string
+  created_at: string
+  created_by: number
+}
+
+// ==================== RELEASE ORDER ====================
+export interface ReleaseOrderFields {
+  reference_nbr: string
+  pickup_empty_date: string
+  validity_expiration_date: string
+  pickup_depot: string
+  pickup_depot_address: string
+  cargo_description: string
+  cargo_weight: string
+  cut_off_date: string
+  etd: string
+  eta: string
+  next_port_of_discharge?: string
+  transport_mode?: string
+  transport_carrier?: string
+}
+
+// Maps frontend ReleaseOrderFields → backend POST /booking-requests/release-orders body
+export interface BackendReleaseOrderPayload {
+  inq_id: number
+  booking_id: number
+  cli_id: number
+  liner_ref?: string         // ← reference_nbr
+  empty_pickup?: string      // ← pickup_empty_date
+  validity_exp?: string      // ← validity_expiration_date
+  depot_name?: string        // ← pickup_depot
+  depot_addr?: string        // ← pickup_depot_address
+  vessel_cutoff?: string     // ← cut_off_date
+  etd?: string               // ← etd
+  eta_destination?: string   // ← eta
+  next_port?: string         // ← next_port_of_discharge
+  remark?: string            // ← transport_mode + transport_carrier concatenated
+  cargo_weight?: number      // ← parseFloat(cargo_weight)
+  cargo_desc?: string        // ← cargo_description
 }
 
 // ==================== ACTIVITY LOG ====================
@@ -742,7 +844,7 @@ export interface ActivityEntry {
   ref_type: 'inquiry' | 'quote' | 'booking'
   ref_id: string
   customer_name: string
-  pushed_to: UserRole
+  pushed_to: string
   notes: string
 }
 

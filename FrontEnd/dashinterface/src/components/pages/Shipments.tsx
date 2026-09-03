@@ -37,6 +37,7 @@ const LEG_STATUS_COLOR: Record<ShipmentLeg['status'], string> = {
 
 const BOOKING_STATUS_BADGE: Record<BookingStatus, string> = {
   'Pending Liner':  'db-badge warning',
+  'RA Assigned':    'db-badge info',
   'Liner Confirmed':'db-badge accent',
   'Released':       'db-badge success',
   'Cancelled':      'db-badge danger',

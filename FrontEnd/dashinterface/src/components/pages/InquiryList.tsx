@@ -1,7 +1,7 @@
 import { useMemo, useState, useRef, useEffect } from 'react'
 import { Eye, CheckCircle2, MessageSquarePlus, X, Edit3, Send, Trash2, Check } from 'lucide-react'
 import {
-  EMPLOYEES, SBUS, INQUIRY_PRIORITIES, COMMODITY_TYPES, CONTAINER_TYPES, WORKFLOW_STAGES, ROLE_LABELS, ROLE_COLORS, stageRoleLabel, stageRoleColor, findCustomer,
+  EMPLOYEES, SBUS, INQUIRY_PRIORITIES, COMMODITY_TYPES, CONTAINER_TYPES, WORKFLOW_STAGES, stageRoleLabel, stageRoleColor, findCustomer,
   type Inquiry, type InquiryStatus, type Followup, type Customer, type SBU, type CustomerTier,
   type Quote, type QuoteStatus, type WorkflowStage, type InquiryPriority, type ContainerLine,
   type LinerRecord,

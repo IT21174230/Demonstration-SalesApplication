@@ -243,7 +243,7 @@ export default function RateCheck({
   useEffect(() => {
     const remark = `${isProcurement ? 'Procurement' : 'CS/Sales'} rate check initiated for ${inquiry.id}: ${inquiry.origin} → ${dest ?? ''}, ${containerLabel}. Customer: ${inquiry.customer_name}.`
     apiCreateRateRequest({
-      inq_id: inquiry.inq_id,
+      inq_id: inquiry.inq_id!,
       emp_id_requested: activeEmployee.id,
       is_given: false,
       remark,
@@ -475,7 +475,7 @@ export default function RateCheck({
       apiPatchRateRequest(rateRequestId, { is_given: true, remark: briefRemark })
         .catch(err => console.error('[RateCheck] rate request patch failed:', err))
     } else {
-      apiCreateRateRequest({ inq_id: inquiry.inq_id, emp_id_requested: activeEmployee.id, is_given: true, remark: briefRemark })
+      apiCreateRateRequest({ inq_id: inquiry.inq_id!, emp_id_requested: activeEmployee.id, is_given: true, remark: briefRemark })
         .catch(err => console.error('[RateCheck] rate request create (fallback) failed:', err))
     }
 

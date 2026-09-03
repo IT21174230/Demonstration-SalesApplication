@@ -10,67 +10,115 @@ import type {
   QuoteStatus, CustomerTier, PaymentTerms, SBU, QuoteLine, ActivityEntry, KycStatus, RateRecord,
   DeliveryType, UnifiedRate, PortRecord, ServiceScope, RateSourceType,
   LinerRecord, TradeLaneRecord, ContactPersonRecord, EmployeeRecord, ClientRecord,
-  ContainerLine,
+  ContainerLine, BackendReleaseOrderPayload,
 } from './types'
+import { getAccessToken, getRefreshToken, setTokens, clearTokens } from './auth'
 
 const BASE = import.meta.env.VITE_API_BASE || '/api'
 
-// --- TEMPORARY dev auth -----------------------------------------------------
-// The Azure AD SSO flow is not wired up yet. Until it is, paste a token into
-// the browser console:   localStorage.setItem('devToken', '<token>')
-// Remove this block once /auth/login -> /auth/callback is implemented.
+// ---------------------------------------------------------------------------
+// Helpers (with Bearer token + 401 auto-refresh)
+// ---------------------------------------------------------------------------
+
+// Deduplication: only one refresh call at a time
+let refreshPromise: Promise<boolean> | null = null
+
+async function tryRefresh(): Promise<boolean> {
+  const rt = getRefreshToken()
+  if (!rt) return false
+  try {
+    const res = await fetch(`${BASE}/auth/refresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: rt }),
+    })
+    if (!res.ok) return false
+    const data = await res.json()
+    setTokens(data.access_token, data.refresh_token)
+    return true
+  } catch {
+    return false
+  }
+}
+
 function authHeaders(): Record<string, string> {
-  const t = localStorage.getItem('devToken')
-  return t ? { Authorization: `Bearer ${t}` } : {}
-}
-// -----------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-async function get<T>(path: string): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, { headers: { ...authHeaders() } })
-  if (!res.ok) throw new Error(`GET ${path} failed: ${res.status}`)
-  return res.json()
+  const token = getAccessToken()
+  return token ? { Authorization: `Bearer ${token}` } : {}
 }
 
-async function post<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...authHeaders() },
-    body: JSON.stringify(body),
-  })
+async function handleResponse<T>(res: Response, method: string, path: string, retryFn: () => Promise<T>): Promise<T> {
+  if (res.status === 401) {
+    if (!refreshPromise) refreshPromise = tryRefresh().finally(() => { refreshPromise = null })
+    const ok = await refreshPromise
+    if (ok) return retryFn()
+    clearTokens()
+    window.location.href = '/'
+    throw new Error('Session expired')
+  }
   if (!res.ok) {
-    const detail = await res.json().catch(() => null)
-    console.error(`POST ${path} failed ${res.status}:`, detail)
-    // Surface FastAPI validation detail in the error message
-    let msg = `POST ${path} failed: ${res.status}`
-    if (detail) {
-      msg += ' — ' + JSON.stringify(detail)
+    if (method === 'POST') {
+      const detail = await res.json().catch(() => null)
+      console.error(`POST ${path} failed ${res.status}:`, detail)
+      let msg = `POST ${path} failed: ${res.status}`
+      if (detail) msg += ' — ' + JSON.stringify(detail)
+      throw new Error(msg)
     }
-    throw new Error(msg)
+    throw new Error(`${method} ${path} failed: ${res.status}`)
   }
   return res.json()
 }
 
+async function get<T>(path: string): Promise<T> {
+  const doFetch = () => fetch(`${BASE}${path}`, { headers: authHeaders() })
+  const res = await doFetch()
+  return handleResponse<T>(res, 'GET', path, async () => {
+    const r = await doFetch()
+    if (!r.ok) throw new Error(`GET ${path} failed: ${r.status}`)
+    return r.json()
+  })
+}
+
+async function post<T>(path: string, body: unknown): Promise<T> {
+  const doFetch = () => fetch(`${BASE}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify(body),
+  })
+  const res = await doFetch()
+  return handleResponse<T>(res, 'POST', path, async () => {
+    const r = await doFetch()
+    if (!r.ok) {
+      const detail = await r.json().catch(() => null)
+      let msg = `POST ${path} failed: ${r.status}`
+      if (detail) msg += ' — ' + JSON.stringify(detail)
+      throw new Error(msg)
+    }
+    return r.json()
+  })
+}
+
 async function patch<T>(path: string, body?: unknown): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
+  const doFetch = () => fetch(`${BASE}${path}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', ...authHeaders() },
     body: body ? JSON.stringify(body) : undefined,
   })
-  if (!res.ok) throw new Error(`PATCH ${path} failed: ${res.status}`)
-  return res.json()
+  const res = await doFetch()
+  return handleResponse<T>(res, 'PATCH', path, async () => {
+    const r = await doFetch()
+    if (!r.ok) throw new Error(`PATCH ${path} failed: ${r.status}`)
+    return r.json()
+  })
 }
 
 async function del<T>(path: string): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
-    method: 'DELETE',
-    headers: { ...authHeaders() },
+  const doFetch = () => fetch(`${BASE}${path}`, { method: 'DELETE', headers: authHeaders() })
+  const res = await doFetch()
+  return handleResponse<T>(res, 'DELETE', path, async () => {
+    const r = await doFetch()
+    if (!r.ok) throw new Error(`DELETE ${path} failed: ${r.status}`)
+    return r.json()
   })
-  if (!res.ok) throw new Error(`DELETE ${path} failed: ${res.status}`)
-  return res.json()
 }
 
 async function postFile<T>(path: string, file: File): Promise<T> {
@@ -90,11 +138,34 @@ async function postFile<T>(path: string, file: File): Promise<T> {
 
 
 // ---------------------------------------------------------------------------
-// Authentication
+// Authentication (SSO)
 // ---------------------------------------------------------------------------
 
-export function apiSwitchUser(empId: number): Promise<Employee> {
-  return post<Employee>(`/auth/switch-user/${empId}`, {})
+export function apiGetLoginUrl(): Promise<{ auth_url: string }> {
+  return get<{ auth_url: string }>('/auth/login')
+}
+
+/** Refresh tokens — bypasses Bearer header (uses direct fetch since access token is expired). */
+export async function apiRefreshToken(refreshToken: string): Promise<{ access_token: string; refresh_token: string; expires_in: number }> {
+  const res = await fetch(`${BASE}/auth/refresh`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ refresh_token: refreshToken }),
+  })
+  if (!res.ok) throw new Error(`Token refresh failed: ${res.status}`)
+  return res.json()
+}
+
+export function apiGetMe(): Promise<{ emp_id: number; name: string; dept: string; desig: string; mail_id: string }> {
+  return get<{ emp_id: number; name: string; dept: string; desig: string; mail_id: string }>('/auth/me')
+}
+
+export async function apiLogout(refreshToken: string | null): Promise<void> {
+  await fetch(`${BASE}/auth/logout`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ refresh_token: refreshToken }),
+  }).catch(() => {})
 }
 
 // ---------------------------------------------------------------------------
@@ -1199,9 +1270,6 @@ export function apiCreateActivity(_data: {
   return Promise.resolve({} as ActivityEntry)
 }
 
-
-
-
 // ---------------------------------------------------------------------------
 // RFQ — bulk inquiry creation
 // ---------------------------------------------------------------------------
@@ -1229,8 +1297,6 @@ export function apiCreateRfq(data: {
   return post<RfqCreateResult>('/inquiries/rfq', data)
 }
 
-
-
 export interface RfqPreviewRow {
   row: number
   origin: string
@@ -1240,7 +1306,6 @@ export interface RfqPreviewRow {
   country: string
   known_port: boolean
 }
-
 
 export interface RfqPreviewResult {
   destination: string | null
@@ -1253,3 +1318,86 @@ export function apiPreviewRfq(file: File): Promise<RfqPreviewResult> {
   return postFile<RfqPreviewResult>('/inquiries/rfq/preview', file)
 }
 
+// ---------------------------------------------------------------------------
+// Booking Requests
+// ---------------------------------------------------------------------------
+
+export interface BookingRequestPayload {
+  inq_id: number
+  cli_id: number
+  lin_id: number
+  origin: string
+  destination: string
+  vessel: string
+  vessel_etd: string
+  voyage: string
+  cargo_ready_date: string
+  delivery_type: string
+  agreed_rate: number
+  delivery_term: string
+  commodity: number
+  hs_code: string
+  bl_type: string
+  notes: string
+  rate_remark?: string
+  contract_no?: string
+  ra_number?: string
+  specific_routing?: string
+  booking_type?: string
+  reefer_temp?: string
+  delivery_agent?: string
+}
+
+/** Create a booking request. Auto-sets workflow → booking_request. */
+export function apiCreateBookingRequest(
+  data: BookingRequestPayload
+): Promise<{ booking_id: number }> {
+  return post<{ booking_id: number }>('/booking-requests', data)
+}
+
+/** Partial update of booking request fields (no status side-effect). */
+export function apiPatchBookingRequest(
+  bookingId: number,
+  data: Partial<BookingRequestPayload>
+): Promise<Record<string, unknown>> {
+  return patch<Record<string, unknown>>(`/booking-requests/${bookingId}`, data)
+}
+
+/** Mark booking as reviewed (status → request_reviewed). */
+export function apiReviewBookingRequest(
+  bookingId: number,
+  data?: Partial<BookingRequestPayload>
+): Promise<Record<string, unknown>> {
+  return patch<Record<string, unknown>>(`/booking-requests/${bookingId}/review`, data)
+}
+
+/** Confirm booking with liner (status → request_booking_success, workflow → completed). */
+export function apiConfirmBookingRequest(
+  bookingId: number
+): Promise<Record<string, unknown>> {
+  return patch<Record<string, unknown>>(`/booking-requests/${bookingId}/confirm`)
+}
+
+// ---------------------------------------------------------------------------
+// Release Orders
+// ---------------------------------------------------------------------------
+
+/** Create a release order for a confirmed booking. Auto-sets workflow → booking_confirmed. */
+export function apiCreateReleaseOrder(
+  data: BackendReleaseOrderPayload
+): Promise<Record<string, unknown>> {
+  return post<Record<string, unknown>>('/booking-requests/release-orders', data)
+}
+
+/** Update release order fields. */
+export function apiPatchReleaseOrder(
+  roId: number,
+  data: Partial<BackendReleaseOrderPayload>
+): Promise<Record<string, unknown>> {
+  return patch<Record<string, unknown>>(`/booking-requests/release-orders/${roId}`, data)
+}
+
+/** Fetch pending release orders for the current user. */
+export function apiFetchPendingReleaseOrders(): Promise<Record<string, unknown>[]> {
+  return get<Record<string, unknown>[]>('/booking-requests/release-orders')
+}

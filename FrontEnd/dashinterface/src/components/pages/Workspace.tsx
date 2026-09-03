@@ -2,15 +2,16 @@ import React, { useState, useMemo, useEffect } from 'react'
 import {
   Inbox, ChevronRight, AlertTriangle, Check, Paperclip, ClipboardPaste,
   FileText, Ship, ShieldCheck, X, User, Mail, Loader2,
-  Globe, MessageCircle, Edit3, Copy, ClipboardCheck,
+  Globe, MessageCircle, Edit3, Copy, ClipboardCheck, Send, Clock,
 } from 'lucide-react'
 import {
-  EMPLOYEES, WORKFLOW_STAGES, ROLE_LABELS, ROLE_COLORS, stageRoleLabel, stageRoleColor,
+  EMPLOYEES, WORKFLOW_STAGES, ROLE_LABELS, ROLE_COLORS, stageRoleLabel,
   isSpotInquiry, daysUntil,
   type Inquiry, type Booking, type Quote, type Customer,
   type ActivityEntry, type WorkflowStage,
   type QuoteStatus, type KycStatus,
   type ContainerLine, type LinerRecord, type ClientRecord,
+  type ReleaseOrderFields,
 } from '../../types'
 import { useRole } from '../../RoleContext'
 import { apiGetLiners, apiCreateKycRequest, apiCreateQuotation, apiPatchQuotation, apiMarkQuotationSent, apiFetchQuotation, apiRecordQuotationResponse, apiUpdateKycStage, type KycPendingClient, type KycRequestRecord, type QuotationOptionRow } from '../../api'
@@ -29,18 +30,32 @@ interface WorkspaceProps {
   onGoTo: (page: import('../../types').PageId) => void
   onAdvanceWorkflow: (inquiryId: string, nextStage: WorkflowStage, skipApi?: boolean) => void
   onConfirmBooking: (bookingId: string, vesselName: string, voyageNumber: string) => void
+  onMarkRaAssigned: (bookingId: string, raNumber: string, vessel: string, carrier: string) => void
+  onRevertBookingRequest: (bookingId: string) => void
+  onAttachReleaseOrder: (bookingId: string, fields: ReleaseOrderFields) => void
   onReleaseBooking: (bookingId: string, note: string) => void
   onAcknowledgeProcurement: (bookingId: string) => void
   onCreateBooking: (payload: {
     customer_name: string; quote_id: string; shipping_line: string;
     container_type: string; quantity: number; origin: string; destination: string;
     is_urgent: boolean; booked_by: number; notes: string; delivery_type?: 'port-to-port' | 'door-to-door';
+    inq_id?: number; cli_id?: number; lin_id?: number; commodity_id?: number;
+    vessel_etd?: string; agreed_rate?: number; delivery_term?: string;
+    hs_code?: string; bl_type?: string; cargo_ready_date?: string;
+    contract_no?: string; ra_number?: string; specific_routing?: string;
+    booking_type?: string; reefer_temp?: string; delivery_agent?: string;
+    vessel?: string; voyage?: string; rate_remark?: string;
   }) => string
   onSetBookingSiCutoff: (bookingId: string, date: string) => void
-  onMarkSiRequested: (bookingId: string) => void
   onSetBookingBlCutoff: (bookingId: string, date: string) => void
+  onSetBookingVgmCutoff: (bookingId: string, date: string) => void
+  onSetBookingFilingCutoff: (bookingId: string, date: string) => void
+  onMarkSiRequested: (bookingId: string) => void
   onMarkSiSubmitted: (bookingId: string) => void
+  vesselSchedules: import('../../types').VesselSchedule[]
+  onAddVesselSchedule: (vs: Omit<import('../../types').VesselSchedule, 'id'>) => void
   onMarkDraftBlSent: (bookingId: string) => void
+  onMarkPreAdviceSent: (bookingId: string) => void
   onSetBlStatus: (bookingId: string, status: 'pending' | 'approved' | 'changes-requested') => void
   onRecordMasterBl: (bookingId: string, data: { master_bl_number: string; shipper: string; consignee: string }) => void
   onCreateHouseBl: (bookingId: string, data: { house_bl_number: string; shipper: string; consignee: string }) => void
@@ -100,6 +115,7 @@ interface StepDef {
   label: string
   actionKinds: string[]
   stepNumber: number
+  group?: string
 }
 
 const CS_STEPS: StepDef[] = [
@@ -110,12 +126,13 @@ const CS_STEPS: StepDef[] = [
   { key: 'cs-send-quote', label: 'Send Quote',  actionKinds: ['send-to-customer'],   stepNumber: 5 },
   { key: 'cs-response',   label: 'Response',    actionKinds: ['customer-response'],  stepNumber: 6 },
   { key: 'cs-booking',    label: 'Booking',     actionKinds: ['booking-request'],    stepNumber: 7 },
-  // Steps 8–14 hidden from CS step bar (comment back in to re-enable)
-  // { key: 'cs-release',    label: 'Release',     actionKinds: ['release-booking'],    stepNumber: 7 },
-  // { key: 'cs-cutoff',     label: 'Cutoff',      actionKinds: ['record-cutoff'],      stepNumber: 8 },
-  // { key: 'cs-si',         label: 'SI Reminder', actionKinds: ['request-si'],         stepNumber: 9 },
-  // { key: 'cs-submit-si',  label: 'Submit SI',   actionKinds: ['submit-si'],          stepNumber: 10 },
-  // { key: 'cs-draft-bl',   label: 'Draft BL',    actionKinds: ['send-draft-bl'],      stepNumber: 11 },
+  { key: 'cs-release',    label: 'Release Order', actionKinds: ['release-booking'],  stepNumber: 8 },
+  { key: 'cs-cutoff',     label: 'Cut Offs',          actionKinds: ['record-cutoff'],   stepNumber: 9 },
+  { key: 'cs-si',         label: 'Cut Off Reminders', actionKinds: ['request-si'],    stepNumber: 10, group: 'post-cutoff' },
+  { key: 'cs-submit-si',  label: 'Submit SI',         actionKinds: ['submit-si'],     stepNumber: 10, group: 'post-cutoff' },
+  { key: 'cs-draft-bl',   label: 'Draft BL',          actionKinds: ['send-draft-bl'], stepNumber: 10, group: 'post-cutoff' },
+  { key: 'cs-pre-advice', label: 'Pre-Advice',       actionKinds: ['send-pre-advice'], stepNumber: 11 },
+  // Steps hidden from CS step bar (comment back in to re-enable)
   // { key: 'cs-master-bl',  label: 'Master BL',   actionKinds: ['record-master-bl'],   stepNumber: 12 },
   // { key: 'cs-house-bl',   label: 'House BL',    actionKinds: ['create-house-bl'],    stepNumber: 13 },
   // { key: 'cs-bl-approval',label: 'BL Approval', actionKinds: ['bl-approval'],        stepNumber: 14 },
@@ -127,9 +144,11 @@ const FINANCE_STEPS: StepDef[] = [
 ]
 
 const PROCUREMENT_STEPS: StepDef[] = [
-  { key: 'proc-rates',    label: 'Rate Check',  actionKinds: ['check-inttra-rates'],       stepNumber: 1 },
-  // { key: 'proc-book',     label: 'Book Liner',  actionKinds: ['confirm-booking'],          stepNumber: 2 },
-  // { key: 'proc-urgent',   label: 'Urgent',      actionKinds: ['acknowledge-procurement'],  stepNumber: 3 },
+  { key: 'proc-rates',        label: 'Rate Check',       actionKinds: ['check-inttra-rates'],         stepNumber: 1 },
+  { key: 'proc-booking-req',  label: 'Booking Request',  actionKinds: ['review-booking-request'],     stepNumber: 2 },
+  { key: 'proc-booking',      label: 'Booking',          actionKinds: ['confirm-liner-booking'],      stepNumber: 3 },
+  { key: 'proc-release',      label: 'Release Order',    actionKinds: ['attach-release-order'],       stepNumber: 4 },
+  // { key: 'proc-urgent',   label: 'Urgent',      actionKinds: ['acknowledge-procurement'],  stepNumber: 4 },
 ]
 
 const SALES_STEPS: StepDef[] = [
@@ -154,15 +173,17 @@ const ADMIN_STEPS: StepDef[] = [
   { key: 'adm-response',    label: 'Response',     actionKinds: ['customer-response'],       stepNumber: 9 },
   { key: 'adm-booking',     label: 'Booking',      actionKinds: ['booking-request'],         stepNumber: 10 },
   { key: 'adm-book-liner',  label: 'Book Liner',   actionKinds: ['confirm-booking'],         stepNumber: 11 },
-  { key: 'adm-urgent',      label: 'Urgent',       actionKinds: ['acknowledge-procurement'], stepNumber: 12 },
-  { key: 'adm-release',     label: 'Release',      actionKinds: ['release-booking'],         stepNumber: 13 },
+  { key: 'adm-proc-release',label: 'Release Order',actionKinds: ['attach-release-order'],    stepNumber: 12 },
+  { key: 'adm-urgent',      label: 'Urgent',       actionKinds: ['acknowledge-procurement'], stepNumber: 13 },
+  { key: 'adm-release',     label: 'Release',      actionKinds: ['release-booking'],         stepNumber: 14 },
   { key: 'adm-cutoff',      label: 'Cutoff',       actionKinds: ['record-cutoff'],           stepNumber: 14 },
-  { key: 'adm-si',          label: 'SI Reminder',  actionKinds: ['request-si'],              stepNumber: 15 },
-  { key: 'adm-submit-si',   label: 'Submit SI',    actionKinds: ['submit-si'],               stepNumber: 16 },
-  { key: 'adm-draft-bl',    label: 'Draft BL',     actionKinds: ['send-draft-bl'],           stepNumber: 17 },
-  { key: 'adm-master-bl',   label: 'Master BL',    actionKinds: ['record-master-bl'],        stepNumber: 18 },
-  { key: 'adm-house-bl',    label: 'House BL',     actionKinds: ['create-house-bl'],         stepNumber: 19 },
-  { key: 'adm-bl-approval', label: 'BL Approval',  actionKinds: ['bl-approval'],             stepNumber: 20 },
+  { key: 'adm-si',          label: 'Cut Off Reminders',  actionKinds: ['request-si'],    stepNumber: 15, group: 'post-cutoff' },
+  { key: 'adm-submit-si',   label: 'Submit SI',    actionKinds: ['submit-si'],         stepNumber: 15, group: 'post-cutoff' },
+  { key: 'adm-draft-bl',    label: 'Draft BL',     actionKinds: ['send-draft-bl'],     stepNumber: 15, group: 'post-cutoff' },
+  { key: 'adm-pre-advice',  label: 'Pre-Advice',   actionKinds: ['send-pre-advice'],   stepNumber: 16 },
+  { key: 'adm-master-bl',   label: 'Master BL',    actionKinds: ['record-master-bl'],        stepNumber: 17 },
+  { key: 'adm-house-bl',    label: 'House BL',     actionKinds: ['create-house-bl'],         stepNumber: 18 },
+  { key: 'adm-bl-approval', label: 'BL Approval',  actionKinds: ['bl-approval'],             stepNumber: 19 },
 ]
 
 const ROLE_STEP_MAP: Record<string, StepDef[]> = {
@@ -179,9 +200,10 @@ const ROLE_STEP_MAP: Record<string, StepDef[]> = {
 
 export default function Workspace({
   inquiries, bookings, quotes, customers, clientList, activityLog,
-  onGoTo, onAdvanceWorkflow, onConfirmBooking, onReleaseBooking,
-  onAcknowledgeProcurement, onCreateBooking, onSetBookingSiCutoff, onMarkSiRequested,
-  onSetBookingBlCutoff, onMarkSiSubmitted, onMarkDraftBlSent, onSetBlStatus,
+  onGoTo, onAdvanceWorkflow, onConfirmBooking, onMarkRaAssigned, onRevertBookingRequest, onAttachReleaseOrder, onReleaseBooking,
+  onAcknowledgeProcurement, onCreateBooking,
+  onSetBookingSiCutoff, onSetBookingBlCutoff, onSetBookingVgmCutoff, onSetBookingFilingCutoff,
+  onMarkSiRequested, onMarkSiSubmitted, vesselSchedules, onAddVesselSchedule, onMarkDraftBlSent, onMarkPreAdviceSent, onSetBlStatus,
   onRecordMasterBl, onCreateHouseBl,
   onSetQuoteStatus, onUpdateCustomerKyc,
   onLogActivity, onFlash, onStartRateCheck,
@@ -227,6 +249,7 @@ export default function Workspace({
   // Quotation prep state (Sales edits document)
   const [quotationContent, setQuotationContent] = useState('')
   const [quoteCopied, setQuoteCopied] = useState(false)
+  const [paCopied, setPaCopied] = useState(false)
   // Send-to-customer state (CS sends via Email or WhatsApp)
   const [sendMethod, setSendMethod] = useState<'email' | 'whatsapp'>('email')
   const [waConfirmed, setWaConfirmed] = useState(false)
@@ -235,6 +258,8 @@ export default function Workspace({
   const [quotationSending, setQuotationSending] = useState(false)
   // Customer response state (accept / reject)
   const [customerDecision, setCustomerDecision] = useState<'accepted' | 'rejected'>('accepted')
+  // Liner booking confirmation state (Procurement Booking step)
+  const [linerBooked, setLinerBooked] = useState<'yes' | 'no' | ''>('')
   // Backend quotation ID — set in prepare-quotation, used in customer-response
   const [lastQuotationId, setLastQuotationId] = useState<number | null>(null)
   // Quotation options loaded from backend for the customer-response modal
@@ -242,12 +267,38 @@ export default function Workspace({
   const [selectedOptionRateId, setSelectedOptionRateId] = useState<number | null>(null)
   const [quotationOptionsLoading, setQuotationOptionsLoading] = useState(false)
   // Booking request form state
-  const [bkShippingLine, setBkShippingLine] = useState('')
+  const [bkShippingLine, setBkShippingLine] = useState('')       // Carrier
   const [bkContainerType, setBkContainerType] = useState("20'GP")
-  const [bkQuantity, setBkQuantity] = useState(1)
-  const [bkIsUrgent, setBkIsUrgent] = useState(false)
-  const [bkAttachmentName, setBkAttachmentName] = useState('')
-  const [_bkAttachmentData, setBkAttachmentData] = useState('')
+  const [_bkQuantity, setBkQuantity] = useState(1)
+  // Dynamic container list (prefilled from inquiry, editable)
+  const [bkContainers, setBkContainers] = useState<{ type: string; qty: number }[]>([{ type: "20'GP", qty: 1 }])
+  const [bkCommodity, setBkCommodity] = useState('')
+  const [bkCargoReadyDate, setBkCargoReadyDate] = useState('')
+  const [bkVessel, setBkVessel] = useState('')                   // Vessel name
+  const [bkVesselEtd, setBkVesselEtd] = useState('')             // Vessel ETD (required by backend)
+  const [bkVoyage, setBkVoyage] = useState('')                   // Voyage number
+  const [bkPod, setBkPod] = useState('')                        // Port of Discharge
+  const [bkContractNo, setBkContractNo] = useState('')
+  const [bkAgreedRate, setBkAgreedRate] = useState('')
+  const [bkRateRemark, setBkRateRemark] = useState('')
+  const [bkDeliveryTerm, setBkDeliveryTerm] = useState('')
+  const [bkHsCode, setBkHsCode] = useState('')
+  const [bkBlType, setBkBlType] = useState<'OBL' | 'Seaway Bill' | ''>('')
+  const [bkBookingType, setBkBookingType] = useState<'Spot' | 'FAK' | ''>('')
+  const [bkReeferTemp, setBkReeferTemp] = useState('')
+  const [bkDeliveryAgent, setBkDeliveryAgent] = useState('')
+  const [bkSpecificRouting, setBkSpecificRouting] = useState('')
+  const [bkRaNumber, setBkRaNumber] = useState('')        // RA number — added by Procurement
+
+  // Release order attachment state (Procurement Release Order step)
+  const [roFields, setRoFields] = useState<ReleaseOrderFields>({
+    reference_nbr: '', pickup_empty_date: '', validity_expiration_date: '',
+    pickup_depot: '', pickup_depot_address: '', cargo_description: '',
+    cargo_weight: '', cut_off_date: '', etd: '', eta: '',
+    next_port_of_discharge: '', transport_mode: '', transport_carrier: '',
+  })
+  // CS Release Order send step
+  const [releaseDraft, setReleaseDraft] = useState('')
 
   // Vessel cutoff schedule panel state
   // cutoffPanelOpen removed — cutoff is now a workflow step modal
@@ -263,15 +314,37 @@ export default function Workspace({
   const [cutoffNotes, setCutoffNotes] = useState('')
   const [cutoffSiDate, setCutoffSiDate] = useState('')
   const [cutoffBlDate, setCutoffBlDate] = useState('')
+  const [cutoffVgmDate, setCutoffVgmDate] = useState('')
+  const [cutoffFilingDate, setCutoffFilingDate] = useState('')
   // Submit SI to liner state
   const [siContent, setSiContent] = useState('')
   const [siFileName, setSiFileName] = useState('')
   const [siMode, setSiMode] = useState<'paste' | 'upload'>('paste')
   const [inttraSiLoading, setInttraSiLoading] = useState(false)
+  // VGM certificate upload
+  const [vgmCertFileName, setVgmCertFileName] = useState('')
+  const [_vgmCertContent, setVgmCertContent] = useState('')
   // Draft BL state
   const [draftBlContent, setDraftBlContent] = useState('')
   const [draftBlFileName, setDraftBlFileName] = useState('')
   const [draftBlMode, setDraftBlMode] = useState<'paste' | 'upload'>('paste')
+  // Draft BL — Phase 1 vessel / Phase 2 booking / Phase 3 send
+  const [draftBlPhase, setDraftBlPhase] = useState<1 | 2 | 3>(1)
+  const [vesselScheduleType, setVesselScheduleType] = useState<'FCL' | 'CONSOL' | 'BOTH'>('FCL')
+  const [vesselPol, setVesselPol] = useState('')
+  const [vesselEtaPol, setVesselEtaPol] = useState('')
+  const [vesselEtdPol, setVesselEtdPol] = useState('')
+  const [vesselRoutingType, setVesselRoutingType] = useState<'DIRECT' | 'TRANSSHIPMENT'>('DIRECT')
+  const [vesselFinalPod, setVesselFinalPod] = useState('')
+  const [vesselEtaFpod, setVesselEtaFpod] = useState('')
+  const [vesselRemarks, setVesselRemarks] = useState('')
+  const [vesselAgent, setVesselAgent] = useState('')
+  const [selectedReleaseOrderId, setSelectedReleaseOrderId] = useState('')
+  const [showVesselSuggestions, setShowVesselSuggestions] = useState(false)
+  // Draft BL — Phase 2 booking form (Gensoft fields)
+  const [bkgForm, setBkgForm] = useState<Record<string, string>>({})
+  const bkgField = (key: string) => bkgForm[key] ?? ''
+  const setBkgField = (key: string, value: string) => setBkgForm(prev => ({ ...prev, [key]: value }))
   // BL Approval state
   const [blDecision, setBlDecision] = useState<'approved' | 'changes-requested'>('approved')
   // Master BL state
@@ -282,12 +355,81 @@ export default function Workspace({
   const [houseBlNumber, setHouseBlNumber] = useState('')
   const [houseBlShipper, setHouseBlShipper] = useState('')
   const [houseBlConsignee, setHouseBlConsignee] = useState('')
+  // Pre-Advice state
+  const [paForm, setPaForm] = useState<Record<string, string>>({})
+  const paField = (key: string) => paForm[key] ?? ''
+  const setPaField = (key: string, value: string) => setPaForm(prev => ({ ...prev, [key]: value }))
 
   // Step navigation state — initialStep lets the parent jump directly to a specific step on mount
   const [activeStep, setActiveStep] = useState<string | null>(initialStep ?? null)
   useEffect(() => { setActiveStep(null) }, [activeRole])
 
   const empName = (id: number) => EMPLOYEES.find(e => e.id === id)?.name ?? `EMP-${id}`
+
+  const generateReleaseOrderDraft = (bkg: Booking, method: 'email' | 'whatsapp'): string => {
+    const ro = bkg.release_order_fields
+    const agentName = empName(activeEmployee.id)
+    if (method === 'email') {
+      return [
+        `Subject: Release Order — ${bkg.id} — ${bkg.customer_name} — ${bkg.origin} → ${bkg.destination}`,
+        '',
+        `Dear ${bkg.customer_name},`,
+        '',
+        'Please find below your release order details for the above-referenced shipment.',
+        '',
+        '── RELEASE ORDER ──────────────────────────',
+        ro?.reference_nbr   ? `Reference:     ${ro.reference_nbr}`           : '',
+        ro?.pickup_depot    ? `Pick Up Depot: ${ro.pickup_depot}`             : '',
+        ro?.pickup_depot_address ? `Depot Address: ${ro.pickup_depot_address}` : '',
+        ro?.pickup_empty_date        ? `Pick Up Date:  ${ro.pickup_empty_date}`        : '',
+        ro?.validity_expiration_date ? `Valid Until:   ${ro.validity_expiration_date}` : '',
+        '',
+        '── SHIPMENT DETAILS ────────────────────────',
+        `Customer:      ${bkg.customer_name}`,
+        `Origin:        ${bkg.origin}`,
+        `Destination:   ${bkg.destination}`,
+        `Container:     ${bkg.quantity}x ${bkg.container_type}`,
+        ro?.cargo_description ? `Cargo:         ${ro.cargo_description}` : '',
+        ro?.cargo_weight      ? `Weight:        ${ro.cargo_weight} kg`   : '',
+        '',
+        '── VESSEL SCHEDULE ─────────────────────────',
+        `Carrier:       ${bkg.shipping_line}`,
+        `Vessel:        ${bkg.vessel_name}`,
+        `Voyage:        ${bkg.voyage_number}`,
+        ro?.cut_off_date ? `Cut-Off:       ${ro.cut_off_date}` : '',
+        ro?.etd          ? `ETD:           ${ro.etd}`           : '',
+        ro?.eta          ? `ETA:           ${ro.eta}`           : '',
+        '',
+        'Please arrange to collect the empty containers from the depot before the cut-off date.',
+        '',
+        'Should you require any further assistance, please do not hesitate to contact us.',
+        '',
+        'Kind regards,',
+        agentName,
+        'Neuball Freight Services',
+      ].filter(l => l !== null && l !== undefined).join('\n')
+    } else {
+      return [
+        `*Release Order — ${bkg.customer_name}*`,
+        `_${bkg.origin} → ${bkg.destination}_`,
+        '',
+        ro?.reference_nbr            ? `📋 *Reference:* ${ro.reference_nbr}`               : '',
+        ro?.pickup_depot             ? `🏭 *Pick Up Depot:* ${ro.pickup_depot}`             : '',
+        ro?.pickup_depot_address     ? `📍 *Address:* ${ro.pickup_depot_address}`           : '',
+        ro?.pickup_empty_date        ? `📅 *Pick Up Date:* ${ro.pickup_empty_date}`         : '',
+        ro?.validity_expiration_date ? `✅ *Valid Until:* ${ro.validity_expiration_date}`   : '',
+        '',
+        `🚢 *Vessel:* ${bkg.vessel_name}  |  *Voyage:* ${bkg.voyage_number}`,
+        `📦 *Container:* ${bkg.quantity}x ${bkg.container_type}`,
+        ro?.cut_off_date ? `⏰ *Cut-Off:* ${ro.cut_off_date}` : '',
+        ro?.etd          ? `🛫 *ETD:* ${ro.etd}`               : '',
+        ro?.eta          ? `🛬 *ETA:* ${ro.eta}`               : '',
+        '',
+        'Please arrange container pick-up before the cut-off date.',
+        'Contact us if you need any assistance.',
+      ].filter(l => l !== null && l !== undefined).join('\n')
+    }
+  }
 
   const findContext = (refId: string): ActivityEntry | null =>
     activityLog.find(a => a.ref_id === refId) ?? null
@@ -404,18 +546,50 @@ export default function Workspace({
           type: 'booking',
           refId: bkg.id,
           customerName: bkg.customer_name,
-          title: `Confirm liner space for ${bkg.customer_name}`,
-          subtitle: `${bkg.quantity}x ${bkg.container_type} · ${bkg.origin} → ${bkg.destination} · ${bkg.shipping_line}`,
+          title: `Booking request from CS — ${bkg.customer_name}`,
+          subtitle: `${bkg.quantity}x ${bkg.container_type} · ${bkg.origin} → ${bkg.destination} · ${bkg.shipping_line || 'Any carrier'}`,
           urgentFlag: bkg.is_urgent,
           createdAt: bkg.created_at,
           previousContext: findContext(bkg.id),
-          actionLabel: 'Confirm Liner',
-          actionKind: 'confirm-booking',
+          actionLabel: 'Review & Process',
+          actionKind: 'review-booking-request',
           sourceData: { booking: bkg },
         })
       }
 
-      if (bkg.status === 'Liner Confirmed' && !bkg.released_by && (!role || role === 'CS')) {
+      if (bkg.status === 'RA Assigned' && (!role || role === 'Procurement')) {
+        pending.push({
+          type: 'booking',
+          refId: bkg.id,
+          customerName: bkg.customer_name,
+          title: `Confirm liner booking — ${bkg.customer_name}`,
+          subtitle: `${bkg.quantity}x ${bkg.container_type} · ${bkg.shipping_line} · RA# ${bkg.voyage_number || 'pending'}`,
+          urgentFlag: bkg.is_urgent,
+          createdAt: bkg.created_at,
+          previousContext: findContext(bkg.id),
+          actionLabel: 'Confirm Booking',
+          actionKind: 'confirm-liner-booking',
+          sourceData: { booking: bkg },
+        })
+      }
+
+      if (bkg.status === 'Liner Confirmed' && !bkg.release_order_attached && (!role || role === 'Procurement')) {
+        pending.push({
+          type: 'booking',
+          refId: bkg.id,
+          customerName: bkg.customer_name,
+          title: `Attach release order — ${bkg.customer_name}`,
+          subtitle: `${bkg.quantity}x ${bkg.container_type} · ${bkg.shipping_line} · ${bkg.vessel_name}${bkg.voyage_number ? ` / ${bkg.voyage_number}` : ''}`,
+          urgentFlag: bkg.is_urgent,
+          createdAt: bkg.created_at,
+          previousContext: findContext(bkg.id),
+          actionLabel: 'Attach Release Order',
+          actionKind: 'attach-release-order',
+          sourceData: { booking: bkg },
+        })
+      }
+
+      if (bkg.status === 'Liner Confirmed' && !bkg.released_by && bkg.release_order_attached && (!role || role === 'CS')) {
         pending.push({
           type: 'booking',
           refId: bkg.id,
@@ -488,8 +662,8 @@ export default function Workspace({
         type: 'booking',
         refId: bkg.id,
         customerName: bkg.customer_name,
-        title: `Send SI reminder to ${bkg.customer_name}`,
-        subtitle: `${bkg.quantity}x ${bkg.container_type} · ${bkg.origin} → ${bkg.destination} · BL cutoff: ${cutoffDate} (${urgencyText})`,
+        title: `Send cutoff reminder to ${bkg.customer_name}`,
+        subtitle: `${bkg.quantity}x ${bkg.container_type} · ${bkg.origin} → ${bkg.destination} · SI/BL cutoff: ${cutoffDate} (${urgencyText})`,
         urgentFlag: isOvd || dLeft <= 2,
         createdAt: bkg.created_at,
         previousContext: findContext(bkg.id),
@@ -503,14 +677,17 @@ export default function Workspace({
     // Helper: build cutoff date suffix for subtitles
     const cutoffSuffix = (bkg: Booking) => {
       const parts: string[] = []
-      if (bkg.si_cutoff_date) parts.push(`SI: ${bkg.si_cutoff_date}`)
-      if (bkg.bl_cutoff_date) parts.push(`BL: ${bkg.bl_cutoff_date}`)
+      const sibl = bkg.si_cutoff_date || bkg.bl_cutoff_date
+      if (sibl) parts.push(`SI/BL: ${sibl}`)
+      if (bkg.vgm_cutoff_date) parts.push(`VGM: ${bkg.vgm_cutoff_date}`)
       return parts.length ? ` · ${parts.join(' · ')}` : ''
     }
 
-    // --- From Bookings (submit SI to liner) ---
+    // --- From Bookings (submit SI to liner) — parallel with reminders & Draft BL ---
     for (const bkg of bookings) {
-      if (!bkg.si_requested || bkg.si_submitted) continue
+      if (bkg.si_submitted) continue
+      const hasCutoffDates = bkg.si_cutoff_date || bkg.bl_cutoff_date || bkg.vgm_cutoff_date
+      if (!hasCutoffDates) continue
       if (bkg.status !== 'Liner Confirmed' && bkg.status !== 'Released') continue
       if (role && role !== 'CS') continue
 
@@ -529,10 +706,12 @@ export default function Workspace({
       })
     }
 
-    // --- From Bookings (record Draft BL + send to customer) ---
+    // --- From Bookings (record Draft BL + send to customer) — parallel with reminders & SI ---
     for (const bkg of bookings) {
       if (bkg.delivery_type === 'door-to-door') continue // door-to-door skips Draft BL
-      if (!bkg.si_submitted || bkg.draft_bl_sent) continue
+      if (bkg.draft_bl_sent) continue
+      const hasCutoffDates = bkg.si_cutoff_date || bkg.bl_cutoff_date || bkg.vgm_cutoff_date
+      if (!hasCutoffDates) continue
       if (bkg.status !== 'Liner Confirmed' && bkg.status !== 'Released') continue
       if (role && role !== 'CS') continue
 
@@ -551,11 +730,12 @@ export default function Workspace({
       })
     }
 
-    // --- Master BL (door-to-door only, after SI submitted) ---
+    // --- Master BL (door-to-door only) — parallel with reminders & SI ---
     for (const bkg of bookings) {
       if (bkg.delivery_type !== 'door-to-door') continue
-      if (!bkg.si_submitted) continue
       if (bkg.master_bl_recorded) continue
+      const hasCutoffDates = bkg.si_cutoff_date || bkg.bl_cutoff_date || bkg.vgm_cutoff_date
+      if (!hasCutoffDates) continue
       if (bkg.status !== 'Liner Confirmed' && bkg.status !== 'Released') continue
       if (role && role !== 'CS') continue
 
@@ -593,6 +773,35 @@ export default function Workspace({
         previousContext: findContext(bkg.id),
         actionLabel: 'Create & Send House BL',
         actionKind: 'create-house-bl',
+        sourceData: { booking: bkg },
+      })
+    }
+
+    // --- Pre-Advice (door-to-door / port-to-door only, after BOTH Draft BL sent AND SI submitted) ---
+    for (const bkg of bookings) {
+      if (bkg.delivery_type !== 'door-to-door' && bkg.delivery_type !== 'port-to-door') continue
+      if (!bkg.draft_bl_sent || !bkg.si_submitted) continue
+      if (bkg.pre_advice_sent) continue
+      if (bkg.status !== 'Liner Confirmed' && bkg.status !== 'Released') continue
+      if (role && role !== 'CS') continue
+
+      const blCutoff = bkg.bl_cutoff_date || bkg.si_cutoff_date
+      const urgencyText = blCutoff ? (() => {
+        const dl = daysUntil(blCutoff)
+        return dl < 0 ? `OVERDUE by ${Math.abs(dl)} day(s)` : dl === 0 ? 'Due TODAY' : `${dl} day(s) to BL cutoff`
+      })() : ''
+
+      pending.push({
+        type: 'booking',
+        refId: bkg.id,
+        customerName: bkg.customer_name,
+        title: `Send Pre-Advice to door agent for ${bkg.customer_name}`,
+        subtitle: `${bkg.quantity}x ${bkg.container_type} · ${bkg.origin} → ${bkg.destination}${blCutoff ? ` · BL cutoff: ${blCutoff} (${urgencyText})` : ''}`,
+        urgentFlag: blCutoff ? daysUntil(blCutoff) <= 1 : false,
+        createdAt: bkg.created_at,
+        previousContext: findContext(bkg.id),
+        actionLabel: 'Send Pre-Advice',
+        actionKind: 'send-pre-advice',
         sourceData: { booking: bkg },
       })
     }
@@ -723,6 +932,18 @@ export default function Workspace({
     return counts
   }, [pendingItems, roleSteps])
 
+  // For parallel groups: a group is "available" if ANY step in it has items
+  const groupHasItems = useMemo(() => {
+    const result: Record<string, boolean> = {}
+    for (const step of roleSteps) {
+      if (step.group) {
+        if (!result[step.group]) result[step.group] = false
+        if ((stepCounts[step.key] ?? 0) > 0) result[step.group] = true
+      }
+    }
+    return result
+  }, [roleSteps, stepCounts])
+
   const effectiveStep = useMemo(() => {
     if (activeStep && roleSteps.some(s => s.key === activeStep)) return activeStep
     const firstWithItems = roleSteps.find(s => (stepCounts[s.key] ?? 0) > 0)
@@ -786,9 +1007,9 @@ export default function Workspace({
         const destActionKind = stageActionMap[resolvedNext]
         const destStep = destActionKind ? roleSteps.find(s => s.actionKinds.includes(destActionKind)) : null
         const csOrSales = (r: string) => r === 'CS' || r === 'Sales'
-        const crossDept = activeRole !== 'Admin' && nextStageObj.role !== activeRole &&
-                          !(csOrSales(activeRole) && csOrSales(nextStageObj.role))
-        onFlash(`${inquiry.id} pushed to ${ROLE_LABELS[nextStageObj.role]}`,
+        const crossDept = activeRole !== 'Admin' && !nextStageObj.roles.includes(activeRole) &&
+                          !(csOrSales(activeRole) && nextStageObj.roles.some(csOrSales))
+        onFlash(`${inquiry.id} pushed to ${ROLE_LABELS[nextStageObj.roles[0]]}`,
           !crossDept && destStep ? { label: `Go to ${destStep.label}`, onClick: () => setActiveStep(destStep.key) } : undefined)
         break
       }
@@ -922,8 +1143,6 @@ ABC Logistics (Pvt) Ltd`
         // Pre-fill from inquiry data + activity log rate context
         const { inquiry: brInq } = item.sourceData
         setFormNote('')
-        setBkAttachmentName('')
-        setBkAttachmentData('')
 
         // Scan all activity log entries for this inquiry to extract rate/liner data
         const allCtx = activityLog.filter(a => a.ref_id === brInq.id)
@@ -953,7 +1172,90 @@ ABC Logistics (Pvt) Ltd`
         setBkShippingLine(liner)
         setBkContainerType(container || "20'GP")
         setBkQuantity(parseInt(qty, 10) || 1)
-        setBkIsUrgent(false)
+        // Prefill container list from inquiry containers
+        const ctFmt = (ct: string) => ct.replace(/\s+/g, '').replace(/(\d{2})(.*)/,(_, sz, tp) => `${sz}'${tp}`)
+        if (brInq.containers && brInq.containers.length > 0) {
+          setBkContainers(brInq.containers.map((c: { containerType: string; quantity: number }) => ({ type: ctFmt(c.containerType), qty: c.quantity })))
+        } else {
+          setBkContainers([{ type: container || "20'GP", qty: parseInt(qty, 10) || 1 }])
+        }
+        setBkCommodity('')
+        setBkCargoReadyDate('')
+        setBkVessel('')
+        setBkVesselEtd('')
+        setBkVoyage('')
+        setBkPod(brInq.destination ?? '')
+        setBkContractNo('')
+        setBkAgreedRate('')
+        setBkRateRemark('')
+        setBkDeliveryTerm('')
+        setBkHsCode('')
+        setBkBlType('')
+        setBkBookingType('')
+        setBkReeferTemp('')
+        setBkDeliveryAgent('')
+        setBkSpecificRouting('')
+        setActionModal(item)
+        break
+      }
+      case 'review-booking-request': {
+        // Pre-fill all form fields by parsing the booking's stored notes
+        const { booking: rbBkg } = item.sourceData
+        const noteParts = (rbBkg.notes ?? '').split(' | ')
+        const getNote = (prefix: string) =>
+          noteParts.find((p: string) => p.startsWith(prefix + ':'))?.slice(prefix.length + 1).trim() ?? ''
+        setBkShippingLine(rbBkg.shipping_line ?? '')
+        setBkContainerType(rbBkg.container_type ?? "20'GP")
+        setBkQuantity(rbBkg.quantity ?? 1)
+        // Parse containers from notes: "Containers: 2x20'GP, 1x40'HC"
+        const ctnNote = getNote('Containers')
+        if (ctnNote) {
+          const parsed = ctnNote.split(',').map((s: string) => s.trim()).map((s: string) => {
+            const m = s.match(/(\d+)\s*x\s*(.+)/)
+            return m ? { type: m[2].trim(), qty: parseInt(m[1], 10) || 1 } : null
+          }).filter(Boolean) as { type: string; qty: number }[]
+          setBkContainers(parsed.length > 0 ? parsed : [{ type: rbBkg.container_type ?? "20'GP", qty: rbBkg.quantity ?? 1 }])
+        } else {
+          setBkContainers([{ type: rbBkg.container_type ?? "20'GP", qty: rbBkg.quantity ?? 1 }])
+        }
+        setBkCommodity(getNote('Commodity'))
+        setBkCargoReadyDate(getNote('Cargo Ready'))
+        setBkVessel(getNote('Vessel'))
+        setBkVesselEtd(rbBkg.vessel_etd ?? '')
+        setBkVoyage(getNote('Voyage'))
+        setBkPod(rbBkg.destination ?? '')
+        setBkContractNo(getNote('Contract'))
+        setBkAgreedRate(getNote('Rate'))
+        setBkRateRemark(getNote('Rate Remark'))
+        setBkDeliveryTerm(getNote('Term'))
+        setBkHsCode(getNote('HS'))
+        setBkBlType((getNote('BL') as 'OBL' | 'Seaway Bill' | '') || '')
+        setBkBookingType(
+          noteParts.includes('Spot Booking') ? 'Spot' :
+          noteParts.includes('FAK Booking')  ? 'FAK' : ''
+        )
+        setBkReeferTemp(getNote('Reefer/PTI'))
+        setBkDeliveryAgent(getNote('Agent'))
+        setBkSpecificRouting(getNote('Routing'))
+        setBkRaNumber('')
+        setFormNote('')
+        setActionModal(item)
+        break
+      }
+      case 'attach-release-order': {
+        setRoFields({
+          reference_nbr: '', pickup_empty_date: '', validity_expiration_date: '',
+          pickup_depot: '', pickup_depot_address: '', cargo_description: '',
+          cargo_weight: '', cut_off_date: '', etd: '', eta: '',
+          next_port_of_discharge: '', transport_mode: '', transport_carrier: '',
+        })
+        setFormNote('')
+        setActionModal(item)
+        break
+      }
+      case 'confirm-liner-booking': {
+        setLinerBooked('')
+        setFormNote('')
         setActionModal(item)
         break
       }
@@ -965,13 +1267,14 @@ ABC Logistics (Pvt) Ltd`
         break
       }
       case 'release-booking': {
-        // Pre-fill with booking confirmation details from activity log
         setFormNote('')
         const sendCust = customers.find(c => c.name.toLowerCase() === item.customerName.toLowerCase())
         setCustomerContactEmail(sendCust?.contact_email ?? '')
         setCustomerContactPhone(sendCust?.contact_phone ?? '')
-        setSendMethod(sendCust?.contact_email ? 'email' : 'whatsapp')
+        const initMethod: 'email' | 'whatsapp' = sendCust?.contact_email ? 'email' : 'whatsapp'
+        setSendMethod(initMethod)
         setWaConfirmed(false)
+        setReleaseDraft(generateReleaseOrderDraft(item.sourceData.booking as Booking, initMethod))
         setActionModal(item)
         break
       }
@@ -985,11 +1288,15 @@ ABC Logistics (Pvt) Ltd`
         setCutoffNotes('')
         setCutoffSiDate('')
         setCutoffBlDate('')
+        setCutoffVgmDate('')
+        setCutoffFilingDate('')
         setActionModal(item)
         break
       }
       case 'request-si': {
         setFormNote('')
+        setVgmCertFileName('')
+        setVgmCertContent('')
         const siCust = customers.find(c => c.name.toLowerCase() === item.customerName.toLowerCase())
         setCustomerContactEmail(siCust?.contact_email ?? '')
         setCustomerContactPhone(siCust?.contact_phone ?? '')
@@ -1003,19 +1310,179 @@ ABC Logistics (Pvt) Ltd`
         setSiFileName('')
         setSiMode('paste')
         setInttraSiLoading(false)
+        setVgmCertFileName('')
+        setVgmCertContent('')
         setFormNote('')
         setActionModal(item)
         break
       }
       case 'send-draft-bl': {
+        const blBkgInit = item.sourceData.booking as Booking
+        // Phase 1 vessel form (CS only; Admin skips to phase 2)
+        setDraftBlPhase(activeRole === 'CS' ? 1 : 2)
+        setVesselScheduleType('FCL')
+        setFormVessel(blBkgInit.vessel_name || '')
+        setFormVoyage(blBkgInit.voyage_number || '')
+        setVesselPol(blBkgInit.origin || '')
+        setVesselEtaPol('')
+        setVesselEtdPol('')
+        setVesselRoutingType('DIRECT')
+        setVesselFinalPod(blBkgInit.destination || '')
+        setVesselEtaFpod('')
+        setVesselRemarks('')
+        setVesselAgent('')
+        setSelectedReleaseOrderId('')
+        setShowVesselSuggestions(false)
+        // Phase 2 booking form — prefill from booking + customer
+        const blCust = customers.find(c => c.name.toLowerCase() === item.customerName.toLowerCase())
+        // Look up the related inquiry by customer name for commodity / weight / incoterm
+        const blInq = inquiries.find(i => i.customer_name.toLowerCase() === item.customerName.toLowerCase())
+        const blCommodity = blInq?.containers?.[0]?.commodityName || blInq?.commodity_type || ''
+        const blGoodsDesc = blInq?.containers?.[0]?.commodityName || ''
+        const blPackageType = blInq?.containers?.[0]?.containerType || blBkgInit.container_type || ''
+        // Map delivery_type → Gensoft CY/CY notation
+        const deliveryTypeToBkg = (dt?: string) => {
+          if (dt === 'door-to-door') return 'CY/DR'
+          if (dt === 'port-to-door') return 'CY/DR'
+          if (dt === 'door-to-port') return 'DR/CY'
+          return 'CY/CY'
+        }
+        // Map customer tier → Gensoft customer category
+        const tierToCategory = (tier?: string) => {
+          if (tier === 'Key Account') return 'KEY ACCOUNT'
+          return 'DIRECT'
+        }
+        setBkgForm({
+          customer_category: tierToCategory(blCust?.tier),
+          business_type: 'SALES NOMINATION',
+          revenue_type: 'FREIGHT FORWARDING',
+          customer: blBkgInit.customer_name || '',
+          billing_party: blBkgInit.customer_name || '',
+          sales_person: activeEmployee.name || '',
+          cs_executive: '',
+          documentation_by: '',
+          inquiry_ref: blInq?.id || blBkgInit.id || '',
+          quotation_ref: blBkgInit.quote_id || '',
+          fcl_cutoff_date: blBkgInit.si_cutoff_date || '',
+          lcl_cutoff_date: '',
+          shipper_name: blBkgInit.customer_name || '',
+          shipper_address: blCust?.location || '',
+          actual_shipper: blBkgInit.customer_name || '',
+          contact_person: blCust?.contact_person || '',
+          telephone: blCust?.contact_phone || '',
+          email_address: blCust?.contact_email || '',
+          consignee: '',
+          consignee_address: '',
+          notify: blBkgInit.customer_name || '',
+          notify_address: blCust?.location || '',
+          commodity: blCommodity,
+          receiving_terminal: blBkgInit.origin || '',   // vessel POL will override on Phase 1 → 2
+          final_destination: blBkgInit.destination || '',
+          transit_days: '',                              // computed on Phase 1 → 2
+          eta_final_destination: '',                     // filled on Phase 1 → 2
+          place_of_delivery: blBkgInit.destination || '',
+          eta_place_of_delivery: '',                     // filled on Phase 1 → 2
+          carrier: blBkgInit.shipping_line || '',
+          booking_carrier_ref: '',
+          intra_booking_no: '',
+          po_no: '',
+          email_ref: '',
+          cargo_type: blInq?.commodity_type?.toLowerCase().includes('refrigerated') ? 'REEFER'
+            : blInq?.commodity_type?.toLowerCase().includes('hazardous') ? 'HAZMAT'
+            : 'GENERAL',
+          freight_term: 'PREPAID',
+          mbl_term: 'PREPAID',
+          no_of_packages: blInq?.container_qty ? String(blInq.container_qty) : String(blBkgInit.quantity || ''),
+          package_type: blPackageType,
+          gross_weight: blInq?.cargo_weight ? String(blInq.cargo_weight) : '',
+          volume_cbm: '',
+          weight_measurement_ratio: '',
+          container_size: blBkgInit.container_type || '',
+          container_count: String(blBkgInit.quantity || 1),
+          delivery_type_bkg: deliveryTypeToBkg(blBkgInit.delivery_type),
+          incoterm: blInq?.incoterm || '',
+          pickup_type: '',
+          inland_haulage_type: '',
+          bl_issue_type: 'OWN',
+          hbl_issue_term: '',
+          mbl_issue_term: '',
+          bl_format: '',
+          bl_number: blBkgInit.master_bl_number || '',
+          shipping_bill_no: '',
+          bl_cutoff_date: blBkgInit.bl_cutoff_date || '',
+          bl_cutoff_time: '',
+          vgm_cutoff_date: blBkgInit.vgm_cutoff_date || '',
+          vgm_cutoff_time: '',
+          destination_charges: 'COLLECT',
+          permit_no: '',
+          sob_date: '',                                  // filled on Phase 1 → 2 (ETD POL)
+          marks_and_numbers: blInq?.remark || '',
+          description_of_goods: blGoodsDesc,
+          bl_instructions: '',
+          remarks_customer: '',
+          remarks_internal: blBkgInit.notes || '',
+        })
         setDraftBlContent('')
         setDraftBlFileName('')
         setDraftBlMode('paste')
         setFormNote('')
-        const blCust = customers.find(c => c.name.toLowerCase() === item.customerName.toLowerCase())
         setCustomerContactEmail(blCust?.contact_email ?? '')
         setCustomerContactPhone(blCust?.contact_phone ?? '')
         setSendMethod(blCust?.contact_email ? 'email' : 'whatsapp')
+        setWaConfirmed(false)
+        setActionModal(item)
+        break
+      }
+      case 'send-pre-advice': {
+        const paBkg = item.sourceData.booking as Booking
+        const paCust = customers.find(c => c.name.toLowerCase() === item.customerName.toLowerCase())
+        const paInq = inquiries.find(i => i.customer_name.toLowerCase() === item.customerName.toLowerCase())
+        const paVessel = vesselSchedules
+          .filter(vs => vs.vessel_name === paBkg.vessel_name && vs.voyage_number === paBkg.voyage_number)
+          .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0]
+        const paConsignee = paBkg.master_bl_consignee || paBkg.house_bl_consignee || ''
+        setPaForm({
+          door_agent: '',
+          door_agent_address: '',
+          door_agent_contact: '',
+          door_agent_email: '',
+          bl_number: paBkg.master_bl_number || paBkg.house_bl_number || '',
+          booking_ref: paBkg.id || '',
+          shipper: paBkg.master_bl_shipper || paBkg.house_bl_shipper || paBkg.customer_name || '',
+          shipper_address: paCust?.location || '',
+          consignee: paConsignee,
+          consignee_address: '',
+          notify_party: paConsignee || paBkg.customer_name || '',
+          notify_address: '',
+          vessel: paBkg.vessel_name || '',
+          voyage: paBkg.voyage_number || '',
+          carrier: paBkg.shipping_line || '',
+          pol: paVessel?.pol || paBkg.origin || '',
+          pod: paVessel?.final_pod || paBkg.destination || '',
+          final_destination: paVessel?.final_pod || paBkg.destination || '',
+          eta_destination: paVessel?.eta_fpod || '',
+          container_no: '',
+          container_size: paBkg.container_type || '',
+          container_count: String(paBkg.quantity || 1),
+          seal_no: '',
+          cargo_description: paInq?.containers?.[0]?.commodityName || paInq?.commodity_type || '',
+          hs_code: '',
+          no_of_packages: paInq?.container_qty ? String(paInq.container_qty) : String(paBkg.quantity || ''),
+          package_type: paInq?.containers?.[0]?.containerType || paBkg.container_type || '',
+          gross_weight: paInq?.cargo_weight ? String(paInq.cargo_weight) : '',
+          net_weight: '',
+          volume_cbm: '',
+          freight_terms: 'PREPAID',
+          delivery_address: paBkg.release_order_fields?.pickup_depot_address || '',
+          delivery_contact: paCust?.contact_person || '',
+          delivery_phone: paCust?.contact_phone || '',
+          special_instructions: paInq?.remark || '',
+          remarks: paBkg.notes || '',
+        })
+        setFormNote('')
+        setCustomerContactEmail(paCust?.contact_email ?? '')
+        setCustomerContactPhone(paCust?.contact_phone ?? '')
+        setSendMethod(paCust?.contact_email ? 'email' : 'whatsapp')
         setWaConfirmed(false)
         setActionModal(item)
         break
@@ -1091,20 +1558,22 @@ ABC Logistics (Pvt) Ltd`
   }
 
   const handleModalSubmit = async () => {
-    if (!actionModal) return
+    // attach-release-order renders inline without requiring actionModal — allow it through
+    const effectiveKind = actionModal?.actionKind ?? (selectedItem?.actionKind === 'attach-release-order' ? 'attach-release-order' : null)
+    if (!effectiveKind) return
     // Compute next-step action for interactive toast navigation
     // Skip for actions that push work to a different department (unless Admin who sees all)
     // prepare-quotation is handled entirely within Sales (no email/WA sending) so it stays in-dept for toast navigation
     const crossDeptActions = new Set(['send-kyc', 'verify-kyc', 'check-rates', 'check-inttra-rates', 'booking-request'])
     const nextStepAction = (() => {
-      if (activeRole !== 'Admin' && crossDeptActions.has(actionModal.actionKind)) return undefined
-      const cur = roleSteps.find(s => s.actionKinds.includes(actionModal.actionKind))
+      if (activeRole !== 'Admin' && crossDeptActions.has(effectiveKind)) return undefined
+      const cur = roleSteps.find(s => s.actionKinds.includes(effectiveKind))
       const nxt = cur ? roleSteps.find(s => s.stepNumber === cur.stepNumber + 1) : null
       return nxt ? { label: `Go to ${nxt.label}`, onClick: () => setActiveStep(nxt.key) } : undefined
     })()
-    switch (actionModal.actionKind) {
+    switch (effectiveKind) {
       case 'send-kyc': {
-        const { customer, inquiry: kycInquiry, kycClient: pendingKycClient } = actionModal.sourceData
+        const { customer, inquiry: kycInquiry, kycClient: pendingKycClient } = actionModal!.sourceData
         // Resolve backend cli_id: prefer kycClient.cli_id, fall back to clientList name lookup
         let cli_id: number | undefined
         if (pendingKycClient?.cli_id) {
@@ -1160,9 +1629,9 @@ ABC Logistics (Pvt) Ltd`
           } catch (err) { console.error('[Workspace] KYC request failed:', err) }
           setKycSending(false)
         } else {
-          console.warn('[Workspace] KYC submit skipped — cli_id is undefined. sourceData:', actionModal.sourceData)
+          console.warn('[Workspace] KYC submit skipped — cli_id is undefined. sourceData:', actionModal!.sourceData)
         }
-        const customerName = pendingKycClient?.name ?? customer?.name ?? actionModal.customerName
+        const customerName = pendingKycClient?.name ?? customer?.name ?? actionModal!.customerName
         if (!pendingKycClient) {
           // Legacy flow: update local customer record and advance inquiry
           if (customer) onUpdateCustomerKyc(customer.name, 'pending_customer')
@@ -1182,9 +1651,9 @@ ABC Logistics (Pvt) Ltd`
         break
       }
       case 'verify-kyc': {
-        const { kycRequest } = actionModal.sourceData
+        const { kycRequest } = actionModal!.sourceData
         const kycCliId = kycRequest?.cli_id
-        const kycCustomerName = kycRequest?.name ?? actionModal.customerName
+        const kycCustomerName = kycRequest?.name ?? actionModal!.customerName
         const approved = formDecision === 'approve'
         if (approved) {
           // Mark KYC completed in backend
@@ -1235,7 +1704,7 @@ ABC Logistics (Pvt) Ltd`
         break
       }
       case 'prepare-quotation': {
-        const { inquiry } = actionModal.sourceData
+        const { inquiry } = actionModal!.sourceData
         // Create quotation record in backend (status = in_prep).
         // Do NOT mark as sent here — that happens in the send-to-customer step.
         if (inquiry.inq_id) {
@@ -1273,7 +1742,7 @@ ABC Logistics (Pvt) Ltd`
         break
       }
       case 'send-to-customer': {
-        const { inquiry } = actionModal.sourceData
+        const { inquiry } = actionModal!.sourceData
         // Update sent_via on the quotation record, then mark as sent.
         // PATCH must happen before marking sent (backend blocks PATCH once status = 'sent').
         const sendQuoteId = lastQuotationId ?? inquiry.quotation_id
@@ -1306,7 +1775,7 @@ ABC Logistics (Pvt) Ltd`
         break
       }
       case 'customer-response': {
-        const { inquiry } = actionModal.sourceData
+        const { inquiry } = actionModal!.sourceData
         // Record customer response in backend quotation record
         // Backend auto-advances workflow to customer_response; we then advance further below
         const quoteId = lastQuotationId ?? inquiry.quotation_id
@@ -1344,37 +1813,183 @@ ABC Logistics (Pvt) Ltd`
         break
       }
       case 'booking-request': {
-        const { inquiry } = actionModal.sourceData
+        const { inquiry } = actionModal!.sourceData
+        const ctnSummary = bkContainers.map(c => `${c.qty}x${c.type}`).join(', ')
+        // Resolve liner ID from name for backend API
+        const resolvedLinId = linerList.find(l => l.name === bkShippingLine)?.lin_id
+        const resolvedCommodityId = inquiry.com_ids?.[0]
+
         const bookingId = onCreateBooking({
           customer_name: inquiry.customer_name,
           quote_id: inquiry.id,
           shipping_line: bkShippingLine,
-          container_type: bkContainerType,
-          quantity: bkQuantity,
+          container_type: bkContainers[0]?.type ?? bkContainerType,
+          quantity: bkContainers.reduce((s, c) => s + c.qty, 0),
           origin: inquiry.origin,
-          destination: inquiry.destination,
-          is_urgent: bkIsUrgent,
-          booked_by: 1,
-          notes: formNote || `Booking for ${inquiry.customer_name}: ${inquiry.request}`,
+          destination: bkPod || inquiry.destination,
+          is_urgent: false,
+          booked_by: activeEmployee.id,
+          notes: [
+            `Containers: ${ctnSummary}`,
+            bkCommodity && `Commodity: ${bkCommodity}`,
+            bkContractNo && `Contract: ${bkContractNo}`,
+            bkAgreedRate && `Agreed Rate: ${bkAgreedRate}`,
+            bkRateRemark && `Rate Remark: ${bkRateRemark}`,
+            bkDeliveryTerm && `Delivery Term: ${bkDeliveryTerm}`,
+            bkHsCode && `HS Code: ${bkHsCode}`,
+            bkBlType && `BL Type: ${bkBlType}`,
+            bkBookingType && `Booking Type: ${bkBookingType}`,
+            bkSpecificRouting && `Routing: ${bkSpecificRouting}`,
+            bkReeferTemp && `Reefer/PTI: ${bkReeferTemp}`,
+            bkDeliveryAgent && `Delivery Agent: ${bkDeliveryAgent}`,
+            bkCargoReadyDate && `Cargo Ready: ${bkCargoReadyDate}`,
+            bkVessel && `Vessel: ${bkVessel}`,
+            bkVoyage && `Voyage: ${bkVoyage}`,
+            bkRaNumber && `RA No: ${bkRaNumber}`,
+          ].filter(Boolean).join(' | ') || `Booking for ${inquiry.customer_name}: ${inquiry.request}`,
           delivery_type: inquiry.delivery_type,
+          // Backend integration fields
+          inq_id: inquiry.inq_id,
+          cli_id: inquiry.cli_id,
+          lin_id: resolvedLinId,
+          commodity_id: resolvedCommodityId,
+          vessel_etd: bkVesselEtd || undefined,
+          agreed_rate: bkAgreedRate ? parseFloat(bkAgreedRate) : undefined,
+          delivery_term: bkDeliveryTerm || undefined,
+          hs_code: bkHsCode || undefined,
+          bl_type: bkBlType || undefined,
+          cargo_ready_date: bkCargoReadyDate || inquiry.cargo_ready_date || undefined,
+          contract_no: bkContractNo || undefined,
+          ra_number: bkRaNumber || undefined,
+          specific_routing: bkSpecificRouting || undefined,
+          booking_type: bkBookingType || undefined,
+          reefer_temp: bkReeferTemp || undefined,
+          delivery_agent: bkDeliveryAgent || undefined,
+          vessel: bkVessel || undefined,
+          voyage: bkVoyage || undefined,
+          rate_remark: bkRateRemark || undefined,
         })
-        onAdvanceWorkflow(inquiry.id, 'completed')
-        const attachInfo = bkAttachmentName ? ` | Attachment: ${bkAttachmentName}` : ''
+        // Workflow auto-advances via POST /booking-requests; skip manual API call if backend IDs present
+        onAdvanceWorkflow(inquiry.id, 'completed', !!(inquiry.inq_id && resolvedLinId))
+        const noteParts = [
+          ctnSummary,
+          bkShippingLine || 'Any carrier',
+          `${inquiry.origin} → ${bkPod || inquiry.destination}`,
+          bkCommodity && `Commodity: ${bkCommodity}`,
+          bkContractNo && `Contract: ${bkContractNo}`,
+          bkAgreedRate && `Rate: $${bkAgreedRate}`,
+          bkRateRemark && `Rate Remark: ${bkRateRemark}`,
+          bkDeliveryTerm && `Term: ${bkDeliveryTerm}`,
+          bkHsCode && `HS: ${bkHsCode}`,
+          bkBlType && `BL: ${bkBlType}`,
+          bkBookingType && `${bkBookingType} Booking`,
+          bkReeferTemp && `Reefer/PTI: ${bkReeferTemp}`,
+          bkDeliveryAgent && `Agent: ${bkDeliveryAgent}`,
+          bkCargoReadyDate && `Cargo Ready: ${bkCargoReadyDate}`,
+          bkVessel && `Vessel: ${bkVessel}`,
+          bkVoyage && `Voyage: ${bkVoyage}`,
+          bkRaNumber && `RA No: ${bkRaNumber}`,
+        ].filter(Boolean).join(' | ')
         onLogActivity({
           actor_role: activeRole,
           actor_id: activeEmployee.id,
-          action: `Booking request ${bookingId} created and sent to Procurement.${bkAttachmentName ? ` Excel attached: ${bkAttachmentName}` : ''}`,
+          action: `Booking request ${bookingId} created and sent to Procurement.`,
           ref_type: 'inquiry',
           ref_id: inquiry.id,
           customer_name: inquiry.customer_name,
           pushed_to: 'Procurement',
-          notes: `Booking: ${bkQuantity}x ${bkContainerType} | ${bkShippingLine || 'Any liner'} | ${inquiry.origin} → ${inquiry.destination}${bkIsUrgent ? ' | URGENT' : ''}${attachInfo}${formNote ? ` | ${formNote}` : ''}`,
+          notes: noteParts,
         })
         onFlash(`${inquiry.id} → Booking request sent to Procurement`, nextStepAction)
         break
       }
+      case 'review-booking-request': {
+        const { booking: rbBkg } = actionModal!.sourceData
+        // Assign the RA number — booking moves to proc-booking step for liner confirmation
+        onMarkRaAssigned(rbBkg.id, bkRaNumber, [bkVessel, bkVoyage].filter(Boolean).join(' / ') || '', bkShippingLine)
+        const rbNoteParts = [
+          bkContainers.map(c => `${c.qty}x${c.type}`).join(', '),
+          bkShippingLine && `Carrier: ${bkShippingLine}`,
+          `${rbBkg.origin} → ${bkPod || rbBkg.destination}`,
+          bkCommodity && `Commodity: ${bkCommodity}`,
+          bkContractNo && `Contract: ${bkContractNo}`,
+          bkAgreedRate && `Rate: $${bkAgreedRate}`,
+          bkRateRemark && `Rate Remark: ${bkRateRemark}`,
+          bkDeliveryTerm && `Term: ${bkDeliveryTerm}`,
+          bkHsCode && `HS: ${bkHsCode}`,
+          bkBlType && `BL: ${bkBlType}`,
+          bkBookingType && `${bkBookingType} Booking`,
+          bkReeferTemp && `Reefer/PTI: ${bkReeferTemp}`,
+          bkDeliveryAgent && `Agent: ${bkDeliveryAgent}`,
+          bkSpecificRouting && `Routing: ${bkSpecificRouting}`,
+          bkCargoReadyDate && `Cargo Ready: ${bkCargoReadyDate}`,
+          bkVessel && `Vessel: ${bkVessel}`,
+          bkVoyage && `Voyage: ${bkVoyage}`,
+          bkRaNumber && `RA#: ${bkRaNumber}`,
+        ].filter(Boolean).join(' | ')
+        onLogActivity({
+          actor_role: activeRole,
+          actor_id: activeEmployee.id,
+          action: `RA# assigned for ${rbBkg.customer_name}.${bkRaNumber ? ` RA#: ${bkRaNumber}` : ''} Moved to Procurement Booking step.`,
+          ref_type: 'booking',
+          ref_id: rbBkg.id,
+          customer_name: rbBkg.customer_name,
+          pushed_to: 'Procurement',
+          notes: rbNoteParts,
+        })
+        onFlash(`RA# assigned — ${rbBkg.customer_name} moved to Booking step`, nextStepAction)
+        break
+      }
+      case 'attach-release-order': {
+        const roBkg = (actionModal?.sourceData?.booking ?? selectedItem?.sourceData?.booking) as Booking
+        if (!roBkg) break
+        onAttachReleaseOrder(roBkg.id, roFields)
+        onLogActivity({
+          actor_role: activeRole,
+          actor_id: activeEmployee.id,
+          action: `Release order prepared for ${roBkg.customer_name} and sent to CS. Ref: ${roFields.reference_nbr || 'N/A'}.`,
+          ref_type: 'booking',
+          ref_id: roBkg.id,
+          customer_name: roBkg.customer_name,
+          pushed_to: 'CS',
+          notes: `Release order sent to CS.${formNote ? ` | ${formNote}` : ''}`,
+        })
+        onFlash(`Release order sent to CS — ${roBkg.customer_name}`, nextStepAction)
+        break
+      }
+      case 'confirm-liner-booking': {
+        const { booking: cbBkg } = actionModal!.sourceData
+        if (linerBooked === 'yes') {
+          onConfirmBooking(cbBkg.id, cbBkg.vessel_name, cbBkg.voyage_number)
+          onLogActivity({
+            actor_role: activeRole,
+            actor_id: activeEmployee.id,
+            action: `Liner booking confirmed for ${cbBkg.customer_name}. RA#: ${cbBkg.voyage_number || 'N/A'}.`,
+            ref_type: 'booking',
+            ref_id: cbBkg.id,
+            customer_name: cbBkg.customer_name,
+            pushed_to: 'CS',
+            notes: `Liner confirmed. RA#: ${cbBkg.voyage_number || 'N/A'}${formNote ? ` | ${formNote}` : ''}`,
+          })
+          onFlash(`Liner confirmed — ${cbBkg.customer_name}`, nextStepAction)
+        } else if (linerBooked === 'no') {
+          onRevertBookingRequest(cbBkg.id)
+          onLogActivity({
+            actor_role: activeRole,
+            actor_id: activeEmployee.id,
+            action: `Liner booking failed for ${cbBkg.customer_name}. Booking reverted to Pending Liner.`,
+            ref_type: 'booking',
+            ref_id: cbBkg.id,
+            customer_name: cbBkg.customer_name,
+            pushed_to: 'Procurement',
+            notes: `Booking failed. Reason: ${formNote || 'Not specified'}`,
+          })
+          onFlash(`Booking reverted — ${cbBkg.customer_name} (reason logged)`, nextStepAction)
+        }
+        break
+      }
       case 'confirm-booking': {
-        const { booking } = actionModal.sourceData
+        const { booking } = actionModal!.sourceData
         onConfirmBooking(booking.id, formVessel, formVoyage)
         const confirmNotes = [
           `Vessel: ${formVessel || 'TBD'}, Voyage: ${formVoyage || 'TBD'}`,
@@ -1393,7 +2008,7 @@ ABC Logistics (Pvt) Ltd`
         break
       }
       case 'release-booking': {
-        const { booking } = actionModal.sourceData
+        const { booking } = actionModal!.sourceData
         onReleaseBooking(booking.id, formNote)
         const sendVia = sendMethod === 'email'
           ? `via Email to ${customerContactEmail}`
@@ -1412,13 +2027,16 @@ ABC Logistics (Pvt) Ltd`
         break
       }
       case 'record-cutoff': {
-        const { booking } = actionModal.sourceData
-        if (cutoffSiDate) onSetBookingSiCutoff(booking.id, cutoffSiDate)
-        if (cutoffBlDate) onSetBookingBlCutoff(booking.id, cutoffBlDate)
-        const cutoffSummary = cutoffContent
-          ? `Cutoff schedule recorded (${cutoffMode === 'upload' ? cutoffFileName : 'pasted text'})`
-          : 'Cutoff schedule recorded (no document attached)'
-        const dateNotes = [cutoffSiDate && `SI cutoff: ${cutoffSiDate}`, cutoffBlDate && `BL cutoff: ${cutoffBlDate}`].filter(Boolean).join(' | ')
+        const { booking } = actionModal!.sourceData
+        if (cutoffSiDate)     onSetBookingSiCutoff(booking.id, cutoffSiDate)
+        if (cutoffBlDate)     onSetBookingBlCutoff(booking.id, cutoffBlDate)
+        if (cutoffVgmDate)    onSetBookingVgmCutoff(booking.id, cutoffVgmDate)
+        if (cutoffFilingDate) onSetBookingFilingCutoff(booking.id, cutoffFilingDate)
+        const dateNotes = [
+          cutoffSiDate     && `SI/BL: ${cutoffSiDate}`,
+          cutoffVgmDate    && `VGM: ${cutoffVgmDate}`,
+          cutoffFilingDate && `Filing: ${cutoffFilingDate}`,
+        ].filter(Boolean).join(' | ')
         onLogActivity({
           actor_role: activeRole,
           actor_id: activeEmployee.id,
@@ -1427,49 +2045,50 @@ ABC Logistics (Pvt) Ltd`
           ref_id: booking.id,
           customer_name: booking.customer_name,
           pushed_to: 'CS',
-          notes: `${cutoffSummary}${cutoffNotes ? ` | ${cutoffNotes}` : ''}${dateNotes ? ` | ${dateNotes}` : ''}`,
+          notes: `Cutoff dates recorded.${cutoffNotes ? ` | ${cutoffNotes}` : ''}${dateNotes ? ` | ${dateNotes}` : ''}`,
         })
-        onFlash(`${booking.id} → Vessel cutoff recorded for ${booking.customer_name}`, nextStepAction)
+        onFlash(`${booking.id} → Cut off dates saved for ${booking.customer_name}`, nextStepAction)
         break
       }
       case 'request-si': {
-        const { booking } = actionModal.sourceData
+        const { booking } = actionModal!.sourceData
         onMarkSiRequested(booking.id)
         const sendVia = sendMethod === 'email'
           ? `via Email to ${customerContactEmail}`
           : `via WhatsApp to ${customerContactPhone || 'customer'}`
+        const siblCutoff = booking.si_cutoff_date || booking.bl_cutoff_date
         onLogActivity({
           actor_role: activeRole,
           actor_id: activeEmployee.id,
-          action: `SI requested from ${booking.customer_name} ${sendVia}. SI cutoff: ${booking.si_cutoff_date}.`,
+          action: `Cutoff reminder sent to ${booking.customer_name} ${sendVia}. SI/BL cutoff: ${siblCutoff || 'N/A'}.${vgmCertFileName ? ` VGM certificate attached.` : ''}`,
           ref_type: 'booking',
           ref_id: booking.id,
           customer_name: booking.customer_name,
           pushed_to: 'CS',
-          notes: `SI follow-up sent ${sendVia}. Cutoff: ${booking.si_cutoff_date}${formNote ? ` | ${formNote}` : ''}`,
+          notes: `Cutoff reminder sent ${sendVia}. SI/BL: ${siblCutoff || 'N/A'}${vgmCertFileName ? ` | VGM cert: ${vgmCertFileName}` : ''}${formNote ? ` | ${formNote}` : ''}`,
         })
-        onFlash(`${booking.id} → SI requested from ${booking.customer_name} ${sendVia}`, nextStepAction)
+        onFlash(`${booking.id} → Cutoff reminder sent to ${booking.customer_name} ${sendVia}`, nextStepAction)
         break
       }
       case 'submit-si': {
-        const { booking } = actionModal.sourceData
+        const { booking } = actionModal!.sourceData
         onMarkSiSubmitted(booking.id)
         const method = 'manually'
         onLogActivity({
           actor_role: activeRole,
           actor_id: activeEmployee.id,
-          action: `SI submitted to ${booking.shipping_line || 'liner'} for ${booking.customer_name} ${method}.`,
+          action: `SI submitted to ${booking.shipping_line || 'liner'} for ${booking.customer_name} ${method}.${vgmCertFileName ? ` VGM document attached: ${vgmCertFileName}` : ''}`,
           ref_type: 'booking',
           ref_id: booking.id,
           customer_name: booking.customer_name,
           pushed_to: 'CS',
-          notes: `SI submitted ${method}${siContent ? ` | Document attached` : ''}${formNote ? ` | ${formNote}` : ''}`,
+          notes: `SI submitted ${method}${siContent ? ` | SI document attached` : ''}${vgmCertFileName ? ` | VGM: ${vgmCertFileName}` : ''}${formNote ? ` | ${formNote}` : ''}`,
         })
-        onFlash(`${booking.id} → SI submitted to ${booking.shipping_line || 'liner'} ${method}`, nextStepAction)
+        onFlash(`${booking.id} → SI submitted to ${booking.shipping_line || 'liner'} ${method}${vgmCertFileName ? ' (VGM attached)' : ''}`, nextStepAction)
         break
       }
       case 'send-draft-bl': {
-        const { booking } = actionModal.sourceData
+        const { booking } = actionModal!.sourceData
         onMarkDraftBlSent(booking.id)
         const sendVia = sendMethod === 'email'
           ? `via Email to ${customerContactEmail}`
@@ -1487,8 +2106,27 @@ ABC Logistics (Pvt) Ltd`
         onFlash(`${booking.id} → Draft BL sent to ${booking.customer_name} ${sendVia}`, nextStepAction)
         break
       }
+      case 'send-pre-advice': {
+        const { booking } = actionModal!.sourceData
+        onMarkPreAdviceSent(booking.id)
+        const sendVia = sendMethod === 'email'
+          ? `via Email to ${paField('door_agent_email')}`
+          : `via WhatsApp`
+        onLogActivity({
+          actor_role: activeRole,
+          actor_id: activeEmployee.id,
+          action: `Pre-Advice sent to door agent ${paField('door_agent')} for ${booking.customer_name} ${sendVia}.`,
+          ref_type: 'booking',
+          ref_id: booking.id,
+          customer_name: booking.customer_name,
+          pushed_to: 'CS',
+          notes: `Pre-Advice → ${paField('door_agent')} | ${booking.origin} → ${booking.destination} | B/L: ${paField('bl_number') || 'N/A'}${formNote ? ` | ${formNote}` : ''}`,
+        })
+        onFlash(`${booking.id} → Pre-Advice sent to ${paField('door_agent')} ${sendVia}`, nextStepAction)
+        break
+      }
       case 'bl-approval': {
-        const { booking } = actionModal.sourceData
+        const { booking } = actionModal!.sourceData
         const approved = blDecision === 'approved'
         const baBlType = booking.delivery_type === 'door-to-door' ? 'House BL' : 'Draft BL'
         onSetBlStatus(booking.id, blDecision)
@@ -1513,7 +2151,7 @@ ABC Logistics (Pvt) Ltd`
         break
       }
       case 'record-master-bl': {
-        const { booking } = actionModal.sourceData
+        const { booking } = actionModal!.sourceData
         onRecordMasterBl(booking.id, { master_bl_number: masterBlNumber, shipper: masterBlShipper, consignee: masterBlConsignee })
         onLogActivity({
           actor_role: activeRole,
@@ -1529,7 +2167,7 @@ ABC Logistics (Pvt) Ltd`
         break
       }
       case 'create-house-bl': {
-        const { booking } = actionModal.sourceData
+        const { booking } = actionModal!.sourceData
         onCreateHouseBl(booking.id, { house_bl_number: houseBlNumber, shipper: houseBlShipper, consignee: houseBlConsignee })
         const hbSendVia = sendMethod === 'email'
           ? `via Email to ${customerContactEmail}`
@@ -1548,7 +2186,7 @@ ABC Logistics (Pvt) Ltd`
         break
       }
       case 'approve-quote': {
-        const { quote } = actionModal.sourceData
+        const { quote } = actionModal!.sourceData
         const approved = formDecision === 'approve'
         onSetQuoteStatus(quote.id, approved ? 'Approved' : 'Lost')
         onLogActivity({
@@ -1633,7 +2271,12 @@ ABC Logistics (Pvt) Ltd`
               return (
                 <div
                   key={key}
-                  onClick={() => setSelectedItemId(key)}
+                  onClick={() => {
+                    setSelectedItemId(key)
+                    if (item.actionKind === 'booking-request' || item.actionKind === 'review-booking-request' || item.actionKind === 'confirm-liner-booking' || item.actionKind === 'attach-release-order' || item.actionKind === 'release-booking' || item.actionKind === 'send-draft-bl' || item.actionKind === 'record-cutoff' || item.actionKind === 'request-si' || item.actionKind === 'submit-si' || item.actionKind === 'send-pre-advice') {
+                      handleAction(item)
+                    }
+                  }}
                   className={`ws-list-item ${isSelected ? 'active' : ''}`}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
@@ -1692,19 +2335,1804 @@ ABC Logistics (Pvt) Ltd`
 
             {/* Complete this step */}
             <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '0.05em', color: '#94a3b8', marginBottom: 14 }}>Complete this step</div>
-            <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 14, padding: 24, boxShadow: '0 1px 2px rgba(15,23,42,0.03)' }}>
-              <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 18, color: 'var(--text)' }}>{selectedItem.actionLabel}</div>
-              <div style={{ fontSize: 13, color: '#64748b', marginBottom: 18 }}>{selectedItem.subtitle}</div>
-              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', paddingTop: 18, borderTop: '1px solid #eef2f6' }}>
-                <button
-                  className="db-btn primary"
-                  style={{ display: 'flex', alignItems: 'center', gap: 6 }}
-                  onClick={() => handleAction(selectedItem)}
-                >
-                  {selectedItem.actionLabel} <ChevronRight size={13} />
+
+            {selectedItem.actionKind === 'record-cutoff' && actionModal ? (() => {
+              const coBkg = actionModal!.sourceData.booking as Booking
+              return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                  {/* Booking summary */}
+                  <div style={{ padding: '10px 14px', background: 'rgba(15,143,168,0.06)', border: '1px solid rgba(15,143,168,0.15)', borderRadius: 8, fontSize: 12 }}>
+                    <strong>{coBkg.customer_name}</strong> — {coBkg.origin} → {coBkg.destination}
+                    <div style={{ color: 'var(--text-muted)', marginTop: 2 }}>
+                      {coBkg.quantity}x {coBkg.container_type} · {coBkg.shipping_line || 'No liner'}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="lt-label">Shipping Line / Liner</label>
+                    <input list="ws-cut-liners-inline" className="lt-input" style={{ width: '100%' }} value={cutoffLiner}
+                      onChange={e => setCutoffLiner(e.target.value)}
+                      placeholder="e.g. Maersk, MSC, Hapag-Lloyd" />
+                    <datalist id="ws-cut-liners-inline">
+                      {linerList.map(l => <option key={l.lin_id} value={l.name} />)}
+                    </datalist>
+                  </div>
+
+                  {/* Paste / Upload toggle */}
+                  <div>
+                    <label className="lt-label">Cutoff Schedule</label>
+                    <div style={{ display: 'flex', gap: 8, marginTop: 4, marginBottom: 8 }}>
+                      <button className={`db-btn ${cutoffMode === 'paste' ? 'primary' : ''}`}
+                        style={cutoffMode !== 'paste' ? { background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-secondary)' } : {}}
+                        onClick={() => setCutoffMode('paste')}><ClipboardPaste size={13} style={{ marginRight: 4 }} /> Paste</button>
+                      <button className={`db-btn ${cutoffMode === 'upload' ? 'primary' : ''}`}
+                        style={cutoffMode !== 'upload' ? { background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-secondary)' } : {}}
+                        onClick={() => setCutoffMode('upload')}><Paperclip size={13} style={{ marginRight: 4 }} /> Upload</button>
+                    </div>
+                    {cutoffMode === 'paste' && (
+                      <textarea className="lt-input" style={{ width: '100%', minHeight: 90, fontFamily: 'monospace', fontSize: 11, lineHeight: 1.5, resize: 'vertical' as const }}
+                        value={cutoffContent} onChange={e => setCutoffContent(e.target.value)}
+                        placeholder="Paste vessel cutoff schedule here..." />
+                    )}
+                    {cutoffMode === 'upload' && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <label className="db-btn" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, cursor: 'pointer', background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}>
+                          <Paperclip size={13} />
+                          {cutoffFileName ? 'Replace file' : 'Choose file'}
+                          <input type="file" accept=".pdf,.xlsx,.xls,.csv,.png,.jpg,.jpeg,.txt" style={{ display: 'none' }}
+                            onChange={e => {
+                              const file = e.target.files?.[0]
+                              if (!file) return
+                              setCutoffFileName(file.name)
+                              const reader = new FileReader()
+                              reader.onload = () => setCutoffContent(reader.result as string)
+                              reader.readAsDataURL(file)
+                              e.target.value = ''
+                            }} />
+                        </label>
+                        {cutoffFileName && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+                            <FileText size={13} style={{ color: '#16a34a' }} />
+                            <span style={{ fontWeight: 600 }}>{cutoffFileName}</span>
+                            <button style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, color: 'var(--text-muted)' }}
+                              onClick={() => { setCutoffFileName(''); setCutoffContent('') }}><X size={12} /></button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: 0.4, color: 'var(--text-muted)', marginBottom: 10 }}>Cutoff Dates from Liner</div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                      <div>
+                        <label className="lt-label">SI/BL Cutoff Date</label>
+                        <input className="lt-input" style={{ width: '100%' }} type="date"
+                          value={cutoffSiDate} onChange={e => { setCutoffSiDate(e.target.value); setCutoffBlDate(e.target.value) }} />
+                      </div>
+                      <div>
+                        <label className="lt-label">VGM Cutoff Date</label>
+                        <input className="lt-input" style={{ width: '100%' }} type="date"
+                          value={cutoffVgmDate} onChange={e => setCutoffVgmDate(e.target.value)} />
+                      </div>
+                      <div>
+                        <label className="lt-label">Filing Cutoff Date</label>
+                        <input className="lt-input" style={{ width: '100%' }} type="date"
+                          value={cutoffFilingDate} onChange={e => setCutoffFilingDate(e.target.value)} />
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                    SI/BL cutoff dates trigger downstream follow-up tasks and reminders.
+                  </div>
+
+                  <div>
+                    <label className="lt-label">Notes (optional)</label>
+                    <input className="lt-input" style={{ width: '100%' }} value={cutoffNotes}
+                      onChange={e => setCutoffNotes(e.target.value)}
+                      placeholder="Any notes about vessel cutoff schedule..." />
+                  </div>
+
+                  {/* Submit button */}
+                  <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                    <button className="db-btn primary"
+                      style={{ background: '#0891b2', borderColor: '#0891b2' }}
+                      onClick={handleModalSubmit}>
+                      <Ship size={12} style={{ marginRight: 6 }} /> Record Cutoff & Push
+                    </button>
+                  </div>
+                </div>
+              )
+            })() : selectedItem.actionKind === 'request-si' && actionModal ? (() => {
+              const siBkg = actionModal!.sourceData.booking as Booking
+              const ctx = actionModal.previousContext
+              const siblCutoff = siBkg.si_cutoff_date || siBkg.bl_cutoff_date
+              const dLeft = siblCutoff ? daysUntil(siblCutoff) : 999
+              const isOvd = dLeft < 0
+              const urgencyColor = isOvd ? '#dc2626' : dLeft === 0 ? '#d97706' : '#0891b2'
+              const urgencyText = isOvd
+                ? `OVERDUE by ${Math.abs(dLeft)} day(s)`
+                : dLeft === 0 ? 'Due TODAY' : `${dLeft} day(s) remaining`
+              const canSend = sendMethod === 'email'
+                ? customerContactEmail.trim() !== '' && customerContactEmail.includes('@')
+                : waConfirmed
+              return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                  {/* Context card */}
+                  {ctx && (
+                    <div className="ws-context-card" style={{ marginTop: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                        <User size={11} style={{ color: 'var(--text-muted)' }} />
+                        <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)' }}>
+                          {empName(ctx.actor_id)} ({ROLE_LABELS[ctx.actor_role]})
+                        </span>
+                      </div>
+                      <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{ctx.action}</div>
+                    </div>
+                  )}
+
+                  {/* Cutoff dates card */}
+                  <div style={{ padding: '14px 16px', background: urgencyColor + '0a', border: `1px solid ${urgencyColor}30`, borderRadius: 8 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                      <AlertTriangle size={14} style={{ color: urgencyColor }} />
+                      <span style={{ fontSize: 13, fontWeight: 700, color: urgencyColor }}>Cutoff Dates</span>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: urgencyColor, marginLeft: 'auto', padding: '2px 8px', background: urgencyColor + '15', borderRadius: 10 }}>
+                        {urgencyText}
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, marginBottom: 8 }}>
+                      {siblCutoff && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ width: 100, color: 'var(--text-muted)', fontWeight: 600, fontSize: 11 }}>SI/BL Cutoff</span>
+                          <span style={{ fontWeight: 700 }}>{siblCutoff}</span>
+                          <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>({dLeft < 0 ? `${Math.abs(dLeft)}d overdue` : `${dLeft}d left`})</span>
+                        </div>
+                      )}
+                      {siBkg.vgm_cutoff_date && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ width: 100, color: 'var(--text-muted)', fontWeight: 600, fontSize: 11 }}>VGM Cutoff</span>
+                          <span style={{ fontWeight: 700 }}>{siBkg.vgm_cutoff_date}</span>
+                          <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>({daysUntil(siBkg.vgm_cutoff_date) < 0 ? `${Math.abs(daysUntil(siBkg.vgm_cutoff_date))}d overdue` : `${daysUntil(siBkg.vgm_cutoff_date)}d left`})</span>
+                        </div>
+                      )}
+                      {siBkg.filing_cutoff_date && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ width: 100, color: 'var(--text-muted)', fontWeight: 600, fontSize: 11 }}>Filing Cutoff</span>
+                          <span style={{ fontWeight: 700 }}>{siBkg.filing_cutoff_date}</span>
+                          <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>({daysUntil(siBkg.filing_cutoff_date) < 0 ? `${Math.abs(daysUntil(siBkg.filing_cutoff_date))}d overdue` : `${daysUntil(siBkg.filing_cutoff_date)}d left`})</span>
+                        </div>
+                      )}
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 16px', fontSize: 12 }}>
+                      <div><span style={{ color: 'var(--text-muted)' }}>Customer:</span> <strong>{siBkg.customer_name}</strong></div>
+                      <div><span style={{ color: 'var(--text-muted)' }}>Route:</span> {siBkg.origin} → {siBkg.destination}</div>
+                      <div><span style={{ color: 'var(--text-muted)' }}>Vessel:</span> {siBkg.vessel_name || 'TBD'}</div>
+                      <div><span style={{ color: 'var(--text-muted)' }}>Voyage:</span> {siBkg.voyage_number || 'TBD'}</div>
+                      <div><span style={{ color: 'var(--text-muted)' }}>Container:</span> {siBkg.quantity}x {siBkg.container_type}</div>
+                      <div><span style={{ color: 'var(--text-muted)' }}>Liner:</span> {siBkg.shipping_line || 'N/A'}</div>
+                    </div>
+                  </div>
+
+                  {/* Send method toggle */}
+                  <div>
+                    <label className="lt-label">Contact Customer via</label>
+                    <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                      <button className={`db-btn ${sendMethod === 'email' ? 'primary' : ''}`}
+                        style={sendMethod !== 'email' ? { background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-secondary)' } : {}}
+                        onClick={() => setSendMethod('email')}><Mail size={13} style={{ marginRight: 4 }} /> Email</button>
+                      <button className={`db-btn ${sendMethod === 'whatsapp' ? 'primary' : ''}`}
+                        style={sendMethod === 'whatsapp' ? { background: '#25d366', borderColor: '#25d366' } : { background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}
+                        onClick={() => setSendMethod('whatsapp')}><MessageCircle size={13} style={{ marginRight: 4 }} /> WhatsApp</button>
+                    </div>
+                  </div>
+
+                  {sendMethod === 'email' && (
+                    <div>
+                      <label className="lt-label">Customer Email <span style={{ color: '#dc2626' }}>*</span></label>
+                      <input className="lt-input" style={{ width: '100%' }} type="email"
+                        value={customerContactEmail} onChange={e => setCustomerContactEmail(e.target.value)}
+                        placeholder="customer@example.com" />
+                    </div>
+                  )}
+
+                  {sendMethod === 'whatsapp' && (
+                    <>
+                      <div>
+                        <label className="lt-label">Customer WhatsApp Number</label>
+                        <input className="lt-input" style={{ width: '100%' }}
+                          value={customerContactPhone} onChange={e => setCustomerContactPhone(e.target.value)}
+                          placeholder="+94 7X XXX XXXX" />
+                      </div>
+                      <div style={{ padding: '10px 14px', background: 'rgba(37,211,102,0.06)', border: '1px solid rgba(37,211,102,0.2)', borderRadius: 8 }}>
+                        <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer', fontSize: 12, color: 'var(--text-secondary)' }}>
+                          <input type="checkbox" checked={waConfirmed} onChange={e => setWaConfirmed(e.target.checked)} style={{ marginTop: 2 }} />
+                          <span>I confirm that I have sent the cutoff reminder to the customer via WhatsApp.
+                            <span style={{ display: 'block', fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>No WhatsApp integration — manual confirmation.</span>
+                          </span>
+                        </label>
+                      </div>
+                    </>
+                  )}
+
+                  {/* VGM Certificate upload */}
+                  {siBkg.vgm_cutoff_date && (
+                    <div>
+                      <label className="lt-label">VGM Certificate (optional)</label>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+                        <label className="db-btn"
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, cursor: 'pointer', background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}>
+                          <Paperclip size={13} />
+                          {vgmCertFileName ? 'Replace file' : 'Attach VGM certificate'}
+                          <input type="file" accept=".pdf,.xlsx,.xls,.csv,.png,.jpg,.jpeg,.doc,.docx" style={{ display: 'none' }}
+                            onChange={e => {
+                              const f = e.target.files?.[0]
+                              if (!f) return
+                              setVgmCertFileName(f.name)
+                              const r = new FileReader()
+                              r.onload = () => setVgmCertContent(r.result as string)
+                              r.readAsDataURL(f)
+                              e.target.value = ''
+                            }} />
+                        </label>
+                        {vgmCertFileName && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+                            <FileText size={13} style={{ color: '#16a34a' }} />
+                            <span style={{ fontWeight: 600 }}>{vgmCertFileName}</span>
+                            <button style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, color: 'var(--text-muted)' }}
+                              onClick={() => { setVgmCertFileName(''); setVgmCertContent('') }}><X size={12} /></button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="lt-label">Notes (optional)</label>
+                    <input className="lt-input" style={{ width: '100%' }} value={formNote}
+                      onChange={e => setFormNote(e.target.value)}
+                      placeholder="Any instructions or reminders for the customer..." />
+                  </div>
+
+                  {/* Submit button */}
+                  <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                    <button className="db-btn primary"
+                      disabled={!canSend}
+                      style={
+                        !canSend ? { opacity: 0.4, cursor: 'not-allowed' }
+                          : sendMethod === 'whatsapp' ? { background: '#25d366', borderColor: '#25d366' } : {}
+                      }
+                      onClick={handleModalSubmit}>
+                      {sendMethod === 'email' ? <><Mail size={12} style={{ marginRight: 6 }} /> Send Reminder via Email</> : <><MessageCircle size={12} style={{ marginRight: 6 }} /> Confirm Reminder Sent</>}
+                    </button>
+                  </div>
+                </div>
+              )
+            })() : selectedItem.actionKind === 'send-draft-bl' && actionModal ? (() => {
+              const blBkg = actionModal!.sourceData.booking as Booking
+              // bookings that have release order fields (for pre-fill selector)
+              const roBookings = bookings.filter(b => b.release_order_fields)
+              const applyReleaseOrder = (roId: string) => {
+                setSelectedReleaseOrderId(roId)
+                const ro = bookings.find(b => b.id === roId)
+                if (!ro) return
+                setFormVessel(ro.vessel_name || '')
+                setFormVoyage(ro.voyage_number || '')
+                setVesselPol(ro.origin || '')
+                setVesselFinalPod(ro.destination || '')
+                if (ro.release_order_fields) {
+                  setVesselEtdPol(ro.release_order_fields.etd || '')
+                  setVesselEtaFpod(ro.release_order_fields.eta || '')
+                }
+              }
+              // Recent vessel schedules matching typed name (within 2 weeks)
+              const twoWeeksAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString()
+              const vesselMatches = formVessel.trim().length >= 2
+                ? vesselSchedules
+                    .filter(vs => vs.created_at >= twoWeeksAgo && vs.vessel_name.toLowerCase().includes(formVessel.trim().toLowerCase()))
+                    // deduplicate by vessel+voyage (keep latest)
+                    .reduce<typeof vesselSchedules>((acc, vs) => {
+                      const key = `${vs.vessel_name.toLowerCase()}|${vs.voyage_number.toLowerCase()}`
+                      const existing = acc.findIndex(v => `${v.vessel_name.toLowerCase()}|${v.voyage_number.toLowerCase()}` === key)
+                      if (existing >= 0) {
+                        if (vs.created_at > acc[existing].created_at) acc[existing] = vs
+                      } else acc.push(vs)
+                      return acc
+                    }, [])
+                    .sort((a, b) => b.created_at.localeCompare(a.created_at))
+                    .slice(0, 5)
+                : []
+              const applyVesselSchedule = (vs: typeof vesselSchedules[number]) => {
+                setFormVessel(vs.vessel_name)
+                setFormVoyage(vs.voyage_number)
+                setVesselScheduleType(vs.schedule_type)
+                setVesselPol(vs.pol)
+                setVesselEtaPol(vs.eta_pol)
+                setVesselEtdPol(vs.etd_pol)
+                setVesselRoutingType(vs.routing_type)
+                setVesselFinalPod(vs.final_pod)
+                setVesselEtaFpod(vs.eta_fpod)
+                setVesselRemarks(vs.remarks)
+                setVesselAgent(vs.agent)
+                setShowVesselSuggestions(false)
+              }
+              const tabBtn = (label: string, val: typeof vesselScheduleType) => (
+                <button key={val}
+                  onClick={() => setVesselScheduleType(val)}
+                  style={{
+                    flex: 1, padding: '7px 0', fontSize: 12, fontWeight: 700,
+                    border: '1px solid var(--border)', cursor: 'pointer',
+                    borderRadius: 0,
+                    background: vesselScheduleType === val ? '#0891b2' : 'var(--bg-card)',
+                    color: vesselScheduleType === val ? '#fff' : 'var(--text-secondary)',
+                  }}>
+                  {label}
                 </button>
+              )
+              if (draftBlPhase === 1) return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                  {/* Step header */}
+                  <div style={{ padding: '8px 14px', background: '#0891b2', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: '#fff', letterSpacing: 0.5 }}>VESSEL SCHEDULE</span>
+                    <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.75)' }}>Step 1 of 3</span>
+                  </div>
+
+                  {/* Release order pre-fill selector */}
+                  {roBookings.length > 0 && (
+                    <div>
+                      <label className="lt-label">Pre-fill from Release Order (optional)</label>
+                      <select className="lt-input" style={{ width: '100%' }}
+                        value={selectedReleaseOrderId}
+                        onChange={e => applyReleaseOrder(e.target.value)}>
+                        <option value="">— Select a release order —</option>
+                        {roBookings.map(b => (
+                          <option key={b.id} value={b.id}>
+                            {b.customer_name} · {b.vessel_name} / {b.voyage_number} ({b.origin} → {b.destination})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  {/* Schedule type tabs */}
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 6 }}>Vessel Schedule Type</div>
+                    <div style={{ display: 'flex', borderRadius: 6, overflow: 'hidden', border: '1px solid var(--border)' }}>
+                      {tabBtn('FCL', 'FCL')}
+                      {tabBtn('CONSOL', 'CONSOL')}
+                      {tabBtn('BOTH', 'BOTH')}
+                    </div>
+                  </div>
+
+                  {/* Two-column grid */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                    <div style={{ position: 'relative' }}>
+                      <label className="lt-label">Vessel</label>
+                      <input className="lt-input" style={{ width: '100%' }} value={formVessel}
+                        onChange={e => { setFormVessel(e.target.value); setShowVesselSuggestions(true) }}
+                        onFocus={() => setShowVesselSuggestions(true)}
+                        onBlur={() => setTimeout(() => setShowVesselSuggestions(false), 200)}
+                        placeholder="e.g. MSC America" autoComplete="off" />
+                      {showVesselSuggestions && vesselMatches.length > 0 && (
+                        <div style={{
+                          position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 20,
+                          background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8,
+                          boxShadow: '0 4px 16px rgba(0,0,0,0.12)', maxHeight: 220, overflowY: 'auto', marginTop: 2,
+                        }}>
+                          <div style={{ padding: '6px 10px', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '1px solid var(--border)' }}>
+                            Recent vessels (last 2 weeks)
+                          </div>
+                          {vesselMatches.map(vs => (
+                            <button key={vs.id}
+                              onMouseDown={e => { e.preventDefault(); applyVesselSchedule(vs) }}
+                              style={{
+                                display: 'block', width: '100%', padding: '8px 10px', border: 'none',
+                                background: 'none', cursor: 'pointer', textAlign: 'left', fontSize: 12,
+                                borderBottom: '1px solid var(--border)',
+                              }}
+                              onMouseEnter={e => (e.currentTarget.style.background = 'rgba(8,145,178,0.06)')}
+                              onMouseLeave={e => (e.currentTarget.style.background = 'none')}
+                            >
+                              <div style={{ fontWeight: 600, color: 'var(--text)' }}>{vs.vessel_name} / {vs.voyage_number}</div>
+                              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                                {vs.pol}{vs.final_pod ? ` → ${vs.final_pod}` : ''}{vs.etd_pol ? ` · ETD ${vs.etd_pol}` : ''} · {vs.schedule_type}
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <div>
+                      <label className="lt-label">Voyage</label>
+                      <input className="lt-input" style={{ width: '100%' }} value={formVoyage}
+                        onChange={e => setFormVoyage(e.target.value)} placeholder="e.g. QB614W" />
+                    </div>
+                    <div>
+                      <label className="lt-label">Port of Loading</label>
+                      <input className="lt-input" style={{ width: '100%' }} value={vesselPol}
+                        onChange={e => setVesselPol(e.target.value)} placeholder="e.g. Colombo" />
+                    </div>
+                    <div>
+                      <label className="lt-label">ETD POL</label>
+                      <div style={{ display: 'flex', gap: 4 }}>
+                        <input type="date" className="lt-input" style={{ flex: 1 }} value={vesselEtdPol}
+                          onChange={e => setVesselEtdPol(e.target.value)} />
+                        {vesselEtdPol && <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '0 4px' }} onClick={() => setVesselEtdPol('')}><X size={13} /></button>}
+                      </div>
+                    </div>
+                    <div>
+                      <label className="lt-label">ETA POL</label>
+                      <div style={{ display: 'flex', gap: 4 }}>
+                        <input type="date" className="lt-input" style={{ flex: 1 }} value={vesselEtaPol}
+                          onChange={e => setVesselEtaPol(e.target.value)} />
+                        {vesselEtaPol && <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '0 4px' }} onClick={() => setVesselEtaPol('')}><X size={13} /></button>}
+                      </div>
+                    </div>
+                    <div>
+                      <label className="lt-label">Routing Type</label>
+                      <select className="lt-input" style={{ width: '100%' }} value={vesselRoutingType}
+                        onChange={e => setVesselRoutingType(e.target.value as 'DIRECT' | 'TRANSSHIPMENT')}>
+                        <option value="DIRECT">Direct</option>
+                        <option value="TRANSSHIPMENT">Transshipment</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="lt-label">Final Port of Discharge</label>
+                      <input className="lt-input" style={{ width: '100%' }} value={vesselFinalPod}
+                        onChange={e => setVesselFinalPod(e.target.value)} placeholder="e.g. Felixstowe" />
+                    </div>
+                    <div>
+                      <label className="lt-label">ETA FPOD</label>
+                      <div style={{ display: 'flex', gap: 4 }}>
+                        <input type="date" className="lt-input" style={{ flex: 1 }} value={vesselEtaFpod}
+                          onChange={e => setVesselEtaFpod(e.target.value)} />
+                        {vesselEtaFpod && <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '0 4px' }} onClick={() => setVesselEtaFpod('')}><X size={13} /></button>}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Full-width fields */}
+                  <div>
+                    <label className="lt-label">Remarks</label>
+                    <textarea className="lt-input" rows={2} style={{ width: '100%', resize: 'vertical' as const, fontSize: 13 }}
+                      value={vesselRemarks} onChange={e => setVesselRemarks(e.target.value)}
+                      placeholder="Any remarks about the vessel schedule..." />
+                  </div>
+                  <div>
+                    <label className="lt-label">Agent</label>
+                    <textarea className="lt-input" rows={2} style={{ width: '100%', resize: 'vertical' as const, fontSize: 13 }}
+                      value={vesselAgent} onChange={e => setVesselAgent(e.target.value)}
+                      placeholder="Agent details..." />
+                  </div>
+
+                  {/* Next button */}
+                  <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                    <button className="db-btn primary"
+                      disabled={!formVessel.trim() || !formVoyage.trim()}
+                      style={!formVessel.trim() || !formVoyage.trim() ? { opacity: 0.4, cursor: 'not-allowed' } : { background: '#0891b2', borderColor: '#0891b2' }}
+                      onClick={() => {
+                        onAddVesselSchedule({
+                          vessel_name: formVessel.trim(),
+                          voyage_number: formVoyage.trim(),
+                          schedule_type: vesselScheduleType,
+                          pol: vesselPol.trim(),
+                          eta_pol: vesselEtaPol,
+                          etd_pol: vesselEtdPol,
+                          routing_type: vesselRoutingType,
+                          final_pod: vesselFinalPod.trim(),
+                          eta_fpod: vesselEtaFpod,
+                          remarks: vesselRemarks.trim(),
+                          agent: vesselAgent.trim(),
+                          created_at: new Date().toISOString(),
+                          created_by: activeEmployee.id,
+                        })
+                        // Push vessel schedule fields into the booking form
+                        const transitDays = (() => {
+                          if (!vesselEtdPol || !vesselEtaFpod) return ''
+                          const diff = Math.round((new Date(vesselEtaFpod).getTime() - new Date(vesselEtdPol).getTime()) / 86_400_000)
+                          return diff > 0 ? String(diff) : ''
+                        })()
+                        setBkgForm(prev => ({
+                          ...prev,
+                          receiving_terminal: vesselPol.trim() || prev.receiving_terminal,
+                          sob_date: vesselEtdPol || prev.sob_date,
+                          eta_final_destination: vesselEtaFpod || prev.eta_final_destination,
+                          eta_place_of_delivery: vesselEtaFpod || prev.eta_place_of_delivery,
+                          transit_days: transitDays || prev.transit_days,
+                        }))
+                        setDraftBlPhase(2)
+                      }}>
+                      Next — Add Booking →
+                    </button>
+                  </div>
+                </div>
+              )
+              // Phase 2 — Booking Form (Gensoft fields)
+              if (draftBlPhase === 2) {
+                const sectionHeader = (title: string) => (
+                  <div style={{ padding: '6px 12px', background: 'rgba(8,145,178,0.08)', borderLeft: '3px solid #0891b2', borderRadius: '0 6px 6px 0', fontSize: 11, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '0.05em', color: '#0891b2', marginTop: 4 }}>{title}</div>
+                )
+                const formInput = (label: string, key: string, opts?: { type?: string; placeholder?: string; span2?: boolean; readOnly?: boolean }) => (
+                  <div style={opts?.span2 ? { gridColumn: '1 / -1' } : {}}>
+                    <label className="lt-label">{label}</label>
+                    <input className="lt-input" style={{ width: '100%', ...(opts?.readOnly ? { background: 'rgba(0,0,0,0.03)' } : {}) }}
+                      type={opts?.type || 'text'}
+                      value={bkgField(key)} onChange={e => setBkgField(key, e.target.value)}
+                      placeholder={opts?.placeholder || ''} readOnly={opts?.readOnly} />
+                  </div>
+                )
+                const formSelect = (label: string, key: string, options: string[]) => (
+                  <div>
+                    <label className="lt-label">{label}</label>
+                    <select className="lt-input" style={{ width: '100%' }} value={bkgField(key)} onChange={e => setBkgField(key, e.target.value)}>
+                      {options.map(o => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                  </div>
+                )
+                const formTextarea = (label: string, key: string, placeholder?: string) => (
+                  <div style={{ gridColumn: '1 / -1' }}>
+                    <label className="lt-label">{label}</label>
+                    <textarea className="lt-input" rows={2} style={{ width: '100%', resize: 'vertical' as const, fontSize: 12 }}
+                      value={bkgField(key)} onChange={e => setBkgField(key, e.target.value)}
+                      placeholder={placeholder || ''} />
+                  </div>
+                )
+                return (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                    {/* Step header */}
+                    <div style={{ padding: '8px 14px', background: '#0891b2', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: '#fff', letterSpacing: 0.5 }}>BOOKING</span>
+                      <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.75)' }}>Step 2 of 3</span>
+                    </div>
+                    {activeRole === 'CS' && <button style={{ alignSelf: 'flex-start', background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: '#0891b2', padding: 0 }} onClick={() => setDraftBlPhase(1)}>← Back to Vessel Schedule</button>}
+
+                    {/* Vessel summary strip */}
+                    {(formVessel || formVoyage) && (
+                      <div style={{ padding: '8px 12px', background: 'rgba(8,145,178,0.06)', border: '1px solid rgba(8,145,178,0.15)', borderRadius: 8, fontSize: 12, display: 'flex', flexWrap: 'wrap', gap: '4px 16px' }}>
+                        {formVessel && <span><span style={{ color: 'var(--text-muted)' }}>Vessel:</span> <strong>{formVessel}</strong></span>}
+                        {formVoyage && <span><span style={{ color: 'var(--text-muted)' }}>Voyage:</span> <strong>{formVoyage}</strong></span>}
+                        {vesselPol && <span><span style={{ color: 'var(--text-muted)' }}>POL:</span> {vesselPol}</span>}
+                        {vesselFinalPod && <span><span style={{ color: 'var(--text-muted)' }}>FPOD:</span> {vesselFinalPod}</span>}
+                        {vesselEtdPol && <span><span style={{ color: 'var(--text-muted)' }}>ETD:</span> {vesselEtdPol}</span>}
+                        {vesselEtaFpod && <span><span style={{ color: 'var(--text-muted)' }}>ETA:</span> {vesselEtaFpod}</span>}
+                      </div>
+                    )}
+
+                    {/* ── VESSEL DETAILS ── */}
+                    {sectionHeader('Vessel Details')}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                      <div><label className="lt-label">Vessel</label><input className="lt-input" style={{ width: '100%', background: 'rgba(0,0,0,0.03)' }} value={formVessel} readOnly /></div>
+                      <div><label className="lt-label">Voyage</label><input className="lt-input" style={{ width: '100%', background: 'rgba(0,0,0,0.03)' }} value={formVoyage} readOnly /></div>
+                      <div><label className="lt-label">Port of Loading</label><input className="lt-input" style={{ width: '100%', background: 'rgba(0,0,0,0.03)' }} value={vesselPol} readOnly /></div>
+                      <div><label className="lt-label">Port of Discharge</label><input className="lt-input" style={{ width: '100%', background: 'rgba(0,0,0,0.03)' }} value={vesselFinalPod} readOnly /></div>
+                      <div><label className="lt-label">ETD POL</label><input className="lt-input" style={{ width: '100%', background: 'rgba(0,0,0,0.03)' }} value={vesselEtdPol} readOnly /></div>
+                      <div><label className="lt-label">ETA FPOD</label><input className="lt-input" style={{ width: '100%', background: 'rgba(0,0,0,0.03)' }} value={vesselEtaFpod} readOnly /></div>
+                      {formInput('SOB Date', 'sob_date', { type: 'date' })}
+                      <div><label className="lt-label">Routing Type</label><input className="lt-input" style={{ width: '100%', background: 'rgba(0,0,0,0.03)' }} value={vesselRoutingType} readOnly /></div>
+                    </div>
+
+                    {/* ── BUSINESS DETAILS ── */}
+                    {sectionHeader('Business Details')}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                      {formInput('Inquiry Ref No', 'inquiry_ref')}
+                      {formInput('Quotation Ref No', 'quotation_ref')}
+                      {formSelect('Customer Category', 'customer_category', ['DIRECT', 'CONSOL', 'NVOCC'])}
+                      {formSelect('Business Type', 'business_type', ['SALES NOMINATION', 'CO-LOAD', 'BUYING AGENT', 'DIRECT'])}
+                      {formSelect('Revenue Type', 'revenue_type', ['FREIGHT FORWARDING', 'LINER AGENCY', 'NVOCC', 'CUSTOMS BROKERAGE'])}
+                      {formInput('Customer', 'customer')}
+                      {formInput('Billing Party', 'billing_party')}
+                      {formInput('Sales Person', 'sales_person')}
+                      {formInput('CS Executive', 'cs_executive')}
+                      {formInput('Documentation By', 'documentation_by')}
+                      {formInput('FCL Cutoff Date', 'fcl_cutoff_date', { type: 'date' })}
+                      {formInput('LCL Cutoff Date', 'lcl_cutoff_date', { type: 'date' })}
+                    </div>
+
+                    {/* ── SHIPPING DETAILS ── */}
+                    {sectionHeader('Shipping Details')}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                      {formInput('Shipper Name (Booking Party)', 'shipper_name', { span2: true })}
+                      {formTextarea('Shipper Address', 'shipper_address')}
+                      {formInput('Actual Shipper', 'actual_shipper', { span2: true })}
+                      {formInput('Contact Person', 'contact_person')}
+                      {formInput('Telephone', 'telephone')}
+                      {formInput('Email Address', 'email_address', { type: 'email', span2: true })}
+                      {formInput('Consignee', 'consignee', { span2: true })}
+                      {formTextarea('Consignee Address', 'consignee_address')}
+                      {formInput('Notify', 'notify', { span2: true })}
+                      {formTextarea('Notify Address', 'notify_address')}
+                    </div>
+
+                    {/* ── CARGO & CONTAINER ── */}
+                    {sectionHeader('Cargo & Container')}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                      {formInput('Commodity', 'commodity', { span2: true })}
+                      {formInput('Receiving Terminal', 'receiving_terminal')}
+                      {formInput('Final Destination', 'final_destination')}
+                      {formInput('Transit Days', 'transit_days', { type: 'number' })}
+                      {formInput('ETA Final Destination', 'eta_final_destination', { type: 'date' })}
+                      {formInput('Place of Delivery', 'place_of_delivery')}
+                      {formInput('ETA Place of Delivery', 'eta_place_of_delivery', { type: 'date' })}
+                      {formInput('Carrier', 'carrier')}
+                      {formInput('Booking Carrier Ref', 'booking_carrier_ref')}
+                      {formInput('INTRA Booking No', 'intra_booking_no')}
+                      {formInput('PO No', 'po_no')}
+                      {formInput('Email Ref', 'email_ref')}
+                      {formSelect('Cargo Type', 'cargo_type', ['GENERAL', 'HAZARDOUS', 'REEFER', 'OVERWEIGHT', 'OUT OF GAUGE'])}
+                      {formSelect('Freight Term', 'freight_term', ['PREPAID', 'COLLECT'])}
+                      {formSelect('MB/L Term', 'mbl_term', ['PREPAID', 'COLLECT'])}
+                      {formInput('No of Packages', 'no_of_packages', { type: 'number' })}
+                      {formInput('Package Type', 'package_type', { placeholder: 'e.g. Pallets, Cartons' })}
+                      {formInput('Gross Weight (KG)', 'gross_weight', { type: 'number' })}
+                      {formInput('Volume (CBM)', 'volume_cbm', { type: 'number' })}
+                      {formInput('Weight/Measurement Ratio', 'weight_measurement_ratio')}
+                    </div>
+
+                    {/* Container info strip */}
+                    <div style={{ padding: '8px 12px', background: 'rgba(217,119,6,0.06)', border: '1px solid rgba(217,119,6,0.15)', borderRadius: 8, fontSize: 12 }}>
+                      <strong>Container:</strong> {bkgField('container_count')}x {bkgField('container_size')}
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                      {formSelect('Delivery Type', 'delivery_type_bkg', ['CY/CY', 'CY/DOOR', 'DOOR/CY', 'DOOR/DOOR'])}
+                      {formInput('Incoterm', 'incoterm', { placeholder: 'e.g. FOB, CIF, EXW, DDP' })}
+                      {formInput('Pickup Type', 'pickup_type')}
+                      {formInput('Inland Haulage Type', 'inland_haulage_type')}
+                    </div>
+
+                    {/* ── B/L DETAILS ── */}
+                    {sectionHeader('B/L Details')}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                      {formSelect('B/L Issue Type', 'bl_issue_type', ['OWN', 'LINER'])}
+                      {formInput('HB/L Issue Term', 'hbl_issue_term')}
+                      {formInput('MB/L Issue Term', 'mbl_issue_term')}
+                      {formInput('B/L Format', 'bl_format')}
+                      {formInput('B/L Number', 'bl_number')}
+                      {formInput('Shipping Bill No', 'shipping_bill_no')}
+                      {formInput('B/L Cutoff Date', 'bl_cutoff_date', { type: 'date' })}
+                      {formInput('B/L Cutoff Time', 'bl_cutoff_time', { type: 'time' })}
+                      {formInput('VGM Cutoff Date', 'vgm_cutoff_date', { type: 'date' })}
+                      {formInput('VGM Cutoff Time', 'vgm_cutoff_time', { type: 'time' })}
+                      {formSelect('Destination Charges', 'destination_charges', ['COLLECT', 'PREPAID'])}
+                      {formInput('Permit No', 'permit_no')}
+                    </div>
+
+                    {/* ── REMARKS ── */}
+                    {sectionHeader('Remarks')}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 10 }}>
+                      {formTextarea('Marks and Numbers', 'marks_and_numbers', 'Marks, numbers, container numbers...')}
+                      {formTextarea('Description of Goods', 'description_of_goods', 'Goods description for B/L...')}
+                      {formTextarea('B/L Instructions', 'bl_instructions', 'Special B/L instructions...')}
+                      {formTextarea('Remarks (Customer)', 'remarks_customer', 'Customer-facing remarks...')}
+                      {formTextarea('Remarks (Internal)', 'remarks_internal', 'Internal notes...')}
+                    </div>
+
+                    {/* Action buttons */}
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 4 }}>
+                      <button className="db-btn"
+                        style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}
+                        onClick={() => {
+                          onFlash(`Booking saved for ${blBkg.customer_name}`)
+                        }}>
+                        Save Booking
+                      </button>
+                      <button className="db-btn primary"
+                        style={{ background: '#0891b2', borderColor: '#0891b2' }}
+                        onClick={() => setDraftBlPhase(3)}>
+                        Next — Send Draft BL →
+                      </button>
+                    </div>
+                  </div>
+                )
+              }
+              // Phase 3 — send Draft BL
+              return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                  {/* Step header */}
+                  <div style={{ padding: '8px 14px', background: '#0891b2', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: '#fff', letterSpacing: 0.5 }}>SEND DRAFT BL</span>
+                    <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.75)' }}>Step 3 of 3</span>
+                  </div>
+                  <button style={{ alignSelf: 'flex-start', background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: '#0891b2', padding: 0 }} onClick={() => setDraftBlPhase(2)}>← Back to Booking</button>
+                  {/* Vessel summary strip */}
+                  {(formVessel || formVoyage) && (
+                    <div style={{ padding: '8px 12px', background: 'rgba(8,145,178,0.06)', border: '1px solid rgba(8,145,178,0.15)', borderRadius: 8, fontSize: 12, display: 'flex', gap: 16 }}>
+                      {formVessel && <span><span style={{ color: 'var(--text-muted)' }}>Vessel:</span> <strong>{formVessel}</strong></span>}
+                      {formVoyage && <span><span style={{ color: 'var(--text-muted)' }}>Voyage:</span> <strong>{formVoyage}</strong></span>}
+                      {vesselPol && <span><span style={{ color: 'var(--text-muted)' }}>POL:</span> {vesselPol}</span>}
+                      {vesselFinalPod && <span><span style={{ color: 'var(--text-muted)' }}>FPOD:</span> {vesselFinalPod}</span>}
+                    </div>
+                  )}
+                  {/* Booking summary */}
+                  <div style={{ padding: '10px 14px', background: 'rgba(15,143,168,0.06)', border: '1px solid rgba(15,143,168,0.15)', borderRadius: 8, fontSize: 12 }}>
+                    <strong>{blBkg.customer_name}</strong> — {blBkg.origin} → {blBkg.destination}
+                    <div style={{ color: 'var(--text-muted)', marginTop: 2 }}>
+                      {blBkg.quantity}x {blBkg.container_type} · {blBkg.shipping_line || 'No liner'}
+                    </div>
+                  </div>
+                  {/* Cutoff dates */}
+                  {(blBkg.si_cutoff_date || blBkg.bl_cutoff_date) && (
+                    <div style={{ display: 'flex', gap: 12, fontSize: 11 }}>
+                      {blBkg.si_cutoff_date && <div style={{ flex: 1, padding: '6px 10px', background: 'rgba(8,145,178,0.06)', border: '1px solid rgba(8,145,178,0.15)', borderRadius: 6 }}><span style={{ color: 'var(--text-muted)' }}>SI Cutoff:</span> <strong>{blBkg.si_cutoff_date}</strong></div>}
+                      {blBkg.bl_cutoff_date && <div style={{ flex: 1, padding: '6px 10px', background: 'rgba(217,119,6,0.06)', border: '1px solid rgba(217,119,6,0.15)', borderRadius: 6 }}><span style={{ color: 'var(--text-muted)' }}>BL Cutoff:</span> <strong>{blBkg.bl_cutoff_date}</strong></div>}
+                    </div>
+                  )}
+                  {/* Draft BL document */}
+                  <div>
+                    <label className="lt-label">Draft BL Document</label>
+                    <div style={{ display: 'flex', gap: 8, marginTop: 4, marginBottom: 8 }}>
+                      {(['paste', 'upload'] as const).map(m => (
+                        <button key={m} onClick={() => setDraftBlMode(m)}
+                          className={`db-btn ${draftBlMode === m ? 'primary' : ''}`}
+                          style={draftBlMode !== m ? { background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-secondary)' } : {}}>
+                          {m === 'paste' ? <><ClipboardPaste size={13} style={{ marginRight: 4 }} />Paste</> : <><Paperclip size={13} style={{ marginRight: 4 }} />Upload</>}
+                        </button>
+                      ))}
+                    </div>
+                    {draftBlMode === 'paste' && (
+                      <textarea className="lt-input" style={{ width: '100%', minHeight: 90, fontFamily: 'monospace', fontSize: 11, lineHeight: 1.5, resize: 'vertical' as const }}
+                        value={draftBlContent} onChange={e => setDraftBlContent(e.target.value)}
+                        placeholder="Paste Draft BL content here..." />
+                    )}
+                    {draftBlMode === 'upload' && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <label className="db-btn" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, cursor: 'pointer', background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}>
+                          <Paperclip size={13} />
+                          {draftBlFileName ? 'Replace file' : 'Choose file'}
+                          <input type="file" accept=".pdf,.doc,.docx,.xlsx,.png,.jpg" style={{ display: 'none' }}
+                            onChange={e => {
+                              const f = e.target.files?.[0]
+                              if (!f) return
+                              setDraftBlFileName(f.name)
+                              const r = new FileReader()
+                              r.onload = () => setDraftBlContent(r.result as string)
+                              r.readAsDataURL(f)
+                              e.target.value = ''
+                            }} />
+                        </label>
+                        {draftBlFileName && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+                            <FileText size={13} style={{ color: '#16a34a' }} />
+                            <span style={{ fontWeight: 600 }}>{draftBlFileName}</span>
+                            <button style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, color: 'var(--text-muted)' }} onClick={() => { setDraftBlFileName(''); setDraftBlContent('') }}><X size={12} /></button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  {/* Send method */}
+                  <div>
+                    <label className="lt-label">Send Draft BL to Customer via</label>
+                    <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                      <button className={`db-btn ${sendMethod === 'email' ? 'primary' : ''}`}
+                        style={sendMethod !== 'email' ? { background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-secondary)' } : {}}
+                        onClick={() => setSendMethod('email')}><Mail size={13} style={{ marginRight: 4 }} /> Email</button>
+                      <button className={`db-btn ${sendMethod === 'whatsapp' ? 'primary' : ''}`}
+                        style={sendMethod === 'whatsapp' ? { background: '#25d366', borderColor: '#25d366' } : { background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}
+                        onClick={() => setSendMethod('whatsapp')}><MessageCircle size={13} style={{ marginRight: 4 }} /> WhatsApp</button>
+                    </div>
+                  </div>
+                  {sendMethod === 'email' && (
+                    <div>
+                      <label className="lt-label">Customer Email <span style={{ color: '#dc2626' }}>*</span></label>
+                      <input className="lt-input" style={{ width: '100%' }} type="email"
+                        value={customerContactEmail} onChange={e => setCustomerContactEmail(e.target.value)}
+                        placeholder="customer@example.com" />
+                    </div>
+                  )}
+                  {sendMethod === 'whatsapp' && (
+                    <>
+                      <div>
+                        <label className="lt-label">Customer WhatsApp Number</label>
+                        <input className="lt-input" style={{ width: '100%' }} value={customerContactPhone}
+                          onChange={e => setCustomerContactPhone(e.target.value)} placeholder="+94 7X XXX XXXX" />
+                      </div>
+                      <div style={{ padding: '10px 14px', background: 'rgba(37,211,102,0.06)', border: '1px solid rgba(37,211,102,0.2)', borderRadius: 8 }}>
+                        <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer', fontSize: 12, color: 'var(--text-secondary)' }}>
+                          <input type="checkbox" checked={waConfirmed} onChange={e => setWaConfirmed(e.target.checked)} style={{ marginTop: 2 }} />
+                          <span>I confirm that I have sent the Draft BL to the customer via WhatsApp.
+                            <span style={{ display: 'block', fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>No WhatsApp integration — manual confirmation.</span>
+                          </span>
+                        </label>
+                      </div>
+                    </>
+                  )}
+                  <div>
+                    <label className="lt-label">Notes (optional)</label>
+                    <input className="lt-input" style={{ width: '100%' }} value={formNote}
+                      onChange={e => setFormNote(e.target.value)} placeholder="Any notes for the customer..." />
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                    <button className="db-btn primary"
+                      disabled={sendMethod === 'email' ? !customerContactEmail.includes('@') : !waConfirmed}
+                      style={
+                        (sendMethod === 'email' && !customerContactEmail.includes('@')) || (sendMethod === 'whatsapp' && !waConfirmed)
+                          ? { opacity: 0.4, cursor: 'not-allowed' }
+                          : sendMethod === 'whatsapp' ? { background: '#25d366', borderColor: '#25d366' } : {}
+                      }
+                      onClick={handleModalSubmit}>
+                      {sendMethod === 'email' ? <><Mail size={12} style={{ marginRight: 6 }} /> Send Draft BL via Email</> : <><MessageCircle size={12} style={{ marginRight: 6 }} /> Confirm Draft BL Sent</>}
+                    </button>
+                  </div>
+                </div>
+              )
+            })() : selectedItem.actionKind === 'send-pre-advice' && actionModal ? (() => {
+              const paBkg = actionModal!.sourceData.booking as Booking
+              const blCutoff = paBkg.bl_cutoff_date || paBkg.si_cutoff_date
+
+              const paSectionHeader = (title: string) => (
+                <div style={{ fontSize: 11, fontWeight: 700, color: '#0891b2', textTransform: 'uppercase', letterSpacing: 0.5, padding: '12px 0 6px', borderBottom: '2px solid #0891b220' }}>{title}</div>
+              )
+              const paInput = (label: string, key: string, opts?: { readOnly?: boolean; span?: boolean }) => (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 3, gridColumn: opts?.span ? '1 / -1' : undefined }}>
+                  <label style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-muted)' }}>{label}</label>
+                  <input value={paField(key)} onChange={e => setPaField(key, e.target.value)} readOnly={opts?.readOnly}
+                    style={{ padding: '6px 8px', borderRadius: 6, border: '1px solid var(--border)', fontSize: 12, background: opts?.readOnly ? 'rgba(0,0,0,0.03)' : 'var(--bg-card)' }} />
+                </div>
+              )
+              const paTextarea = (label: string, key: string) => (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 3, gridColumn: '1 / -1' }}>
+                  <label style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-muted)' }}>{label}</label>
+                  <textarea value={paField(key)} onChange={e => setPaField(key, e.target.value)} rows={3}
+                    style={{ padding: '6px 8px', borderRadius: 6, border: '1px solid var(--border)', fontSize: 12, resize: 'vertical', fontFamily: 'inherit' }} />
+                </div>
+              )
+
+              return (
+                <div style={{ padding: 20, overflowY: 'auto', maxHeight: '100%' }}>
+                  {/* Header */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                    <FileText size={18} style={{ color: '#0891b2' }} />
+                    <span style={{ fontSize: 15, fontWeight: 700, color: '#0f172a' }}>Pre-Advice Notice</span>
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 6 }}>
+                    {paBkg.id} &middot; {paBkg.customer_name} &middot; {paBkg.origin} &rarr; {paBkg.destination}
+                  </div>
+                  {blCutoff && (
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 10px', borderRadius: 6, background: '#fef3c7', color: '#92400e', fontSize: 11, fontWeight: 600, marginBottom: 14 }}>
+                      <Clock size={12} /> BL Cutoff: {blCutoff}
+                    </div>
+                  )}
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 14px' }}>
+                    {/* Door Agent */}
+                    {paSectionHeader('Door Agent')}
+                    <div style={{ gridColumn: '1 / -1', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 14px' }}>
+                      {paInput('Agent Name', 'door_agent')}
+                      {paInput('Contact Person', 'door_agent_contact')}
+                      {paInput('Address', 'door_agent_address', { span: true })}
+                      {paInput('Email', 'door_agent_email')}
+                    </div>
+
+                    {/* Shipment Reference */}
+                    {paSectionHeader('Shipment Reference')}
+                    <div style={{ gridColumn: '1 / -1', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 14px' }}>
+                      {paInput('B/L Number', 'bl_number')}
+                      {paInput('Booking Ref', 'booking_ref', { readOnly: true })}
+                    </div>
+
+                    {/* Parties */}
+                    {paSectionHeader('Parties')}
+                    <div style={{ gridColumn: '1 / -1', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 14px' }}>
+                      {paInput('Shipper', 'shipper')}
+                      {paInput('Shipper Address', 'shipper_address')}
+                      {paInput('Consignee', 'consignee')}
+                      {paInput('Consignee Address', 'consignee_address')}
+                      {paInput('Notify Party', 'notify_party')}
+                      {paInput('Notify Address', 'notify_address')}
+                    </div>
+
+                    {/* Vessel & Route */}
+                    {paSectionHeader('Vessel & Route')}
+                    <div style={{ gridColumn: '1 / -1', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 14px' }}>
+                      {paInput('Vessel', 'vessel', { readOnly: true })}
+                      {paInput('Voyage', 'voyage', { readOnly: true })}
+                      {paInput('Carrier', 'carrier', { readOnly: true })}
+                      {paInput('Port of Loading', 'pol', { readOnly: true })}
+                      {paInput('Port of Discharge', 'pod', { readOnly: true })}
+                      {paInput('Final Destination', 'final_destination')}
+                      {paInput('ETA Destination', 'eta_destination')}
+                    </div>
+
+                    {/* Container Details */}
+                    {paSectionHeader('Container Details')}
+                    <div style={{ gridColumn: '1 / -1', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 14px' }}>
+                      {paInput('Container No.', 'container_no')}
+                      {paInput('Size / Type', 'container_size', { readOnly: true })}
+                      {paInput('Qty', 'container_count', { readOnly: true })}
+                      {paInput('Seal No.', 'seal_no')}
+                    </div>
+
+                    {/* Cargo Details */}
+                    {paSectionHeader('Cargo Details')}
+                    <div style={{ gridColumn: '1 / -1', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 14px' }}>
+                      {paTextarea('Description of Goods', 'cargo_description')}
+                      {paInput('HS Code', 'hs_code')}
+                      {paInput('No. of Packages', 'no_of_packages')}
+                      {paInput('Package Type', 'package_type')}
+                      {paInput('Gross Weight (kg)', 'gross_weight')}
+                      {paInput('Net Weight (kg)', 'net_weight')}
+                      {paInput('Volume (CBM)', 'volume_cbm')}
+                      {paInput('Freight Terms', 'freight_terms')}
+                    </div>
+
+                    {/* Door Delivery */}
+                    {paSectionHeader('Door Delivery')}
+                    <div style={{ gridColumn: '1 / -1', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 14px' }}>
+                      {paTextarea('Delivery Address', 'delivery_address')}
+                      {paInput('Contact at Delivery', 'delivery_contact')}
+                      {paInput('Phone', 'delivery_phone')}
+                      {paTextarea('Special Instructions', 'special_instructions')}
+                      {paTextarea('Remarks', 'remarks')}
+                    </div>
+                  </div>
+
+                  {/* Generated Email Body */}
+                  {(() => {
+                    const emailBody = [
+                      `Subject: PRE-ADVICE — ${paField('bl_number') || paBkg.id} — ${paField('vessel')} ${paField('voyage')} — ${paField('pol')} → ${paField('final_destination')}`,
+                      ``,
+                      `Dear ${paField('door_agent') || '[Door Agent]'},`,
+                      ``,
+                      `Please find below the pre-advice details for the following shipment. Kindly arrange door delivery accordingly.`,
+                      ``,
+                      `════════════════════════════════════════`,
+                      `  SHIPMENT REFERENCE`,
+                      `════════════════════════════════════════`,
+                      `B/L Number       : ${paField('bl_number') || 'N/A'}`,
+                      `Booking Ref      : ${paField('booking_ref')}`,
+                      `Carrier          : ${paField('carrier')}`,
+                      ``,
+                      `════════════════════════════════════════`,
+                      `  PARTIES`,
+                      `════════════════════════════════════════`,
+                      `Shipper          : ${paField('shipper')}`,
+                      ...(paField('shipper_address') ? [`                   ${paField('shipper_address')}`] : []),
+                      `Consignee        : ${paField('consignee') || 'N/A'}`,
+                      ...(paField('consignee_address') ? [`                   ${paField('consignee_address')}`] : []),
+                      `Notify Party     : ${paField('notify_party') || 'SAME AS CONSIGNEE'}`,
+                      ...(paField('notify_address') ? [`                   ${paField('notify_address')}`] : []),
+                      ``,
+                      `════════════════════════════════════════`,
+                      `  VESSEL & ROUTE`,
+                      `════════════════════════════════════════`,
+                      `Vessel / Voyage  : ${paField('vessel')} / ${paField('voyage')}`,
+                      `Port of Loading  : ${paField('pol')}`,
+                      `Port of Discharge: ${paField('pod')}`,
+                      `Final Destination: ${paField('final_destination')}`,
+                      `ETA Destination  : ${paField('eta_destination') || 'TBC'}`,
+                      ``,
+                      `════════════════════════════════════════`,
+                      `  CONTAINER DETAILS`,
+                      `════════════════════════════════════════`,
+                      `Container No.    : ${paField('container_no') || 'TBC'}`,
+                      `Size / Type      : ${paField('container_size')} × ${paField('container_count')}`,
+                      `Seal No.         : ${paField('seal_no') || 'TBC'}`,
+                      ``,
+                      `════════════════════════════════════════`,
+                      `  CARGO DETAILS`,
+                      `════════════════════════════════════════`,
+                      `Description      : ${paField('cargo_description') || 'N/A'}`,
+                      ...(paField('hs_code') ? [`HS Code          : ${paField('hs_code')}`] : []),
+                      `No. of Packages  : ${paField('no_of_packages') || 'N/A'} ${paField('package_type') || ''}`.trimEnd(),
+                      `Gross Weight     : ${paField('gross_weight') ? paField('gross_weight') + ' kg' : 'N/A'}`,
+                      ...(paField('net_weight') ? [`Net Weight       : ${paField('net_weight')} kg`] : []),
+                      `Volume           : ${paField('volume_cbm') ? paField('volume_cbm') + ' CBM' : 'N/A'}`,
+                      `Freight Terms    : ${paField('freight_terms')}`,
+                      ``,
+                      `════════════════════════════════════════`,
+                      `  DOOR DELIVERY`,
+                      `════════════════════════════════════════`,
+                      `Delivery Address : ${paField('delivery_address') || 'N/A'}`,
+                      ...(paField('delivery_contact') ? [`Contact Person   : ${paField('delivery_contact')}`] : []),
+                      ...(paField('delivery_phone') ? [`Phone            : ${paField('delivery_phone')}`] : []),
+                      ...(paField('special_instructions') ? [`\nSpecial Instructions:\n${paField('special_instructions')}`] : []),
+                      ...(paField('remarks') ? [`\nRemarks:\n${paField('remarks')}`] : []),
+                      ``,
+                      `════════════════════════════════════════`,
+                      ``,
+                      `Please confirm receipt of this pre-advice and arrange delivery as per the above details.`,
+                      ``,
+                      `Best regards,`,
+                      `${activeEmployee.name}`,
+                      `Synergy Shipping & Logistics`,
+                    ].join('\n')
+
+                    return (
+                      <>
+                        <div style={{ marginTop: 18 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                            <div style={{ fontSize: 11, fontWeight: 700, color: '#0891b2', textTransform: 'uppercase', letterSpacing: 0.5 }}>Generated Email</div>
+                            <button
+                              style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, background: paCopied ? '#dcfce7' : 'none', border: paCopied ? '1px solid #86efac' : 'none', cursor: 'pointer', color: paCopied ? '#16a34a' : 'var(--text-muted)', padding: '3px 8px', borderRadius: 5 }}
+                              onClick={() => { navigator.clipboard.writeText(emailBody); setPaCopied(true); setTimeout(() => setPaCopied(false), 2000) }}>
+                              {paCopied ? <><ClipboardCheck size={11} /> Copied!</> : <><Copy size={11} /> Copy to Clipboard</>}
+                            </button>
+                          </div>
+                          <textarea
+                            readOnly
+                            rows={22}
+                            value={emailBody}
+                            style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 11, fontFamily: 'ui-monospace, monospace', lineHeight: 1.6, resize: 'vertical', background: 'rgba(0,0,0,0.02)', color: 'var(--text)', boxSizing: 'border-box' }}
+                          />
+                        </div>
+
+                        {/* Send Method */}
+                        <div style={{ marginTop: 14, padding: '14px 16px', borderRadius: 10, background: 'rgba(8,145,178,0.04)', border: '1px solid rgba(8,145,178,0.12)' }}>
+                          <div style={{ fontSize: 11, fontWeight: 700, color: '#0891b2', marginBottom: 8 }}>SEND TO DOOR AGENT</div>
+                          <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+                            <button onClick={() => setSendMethod('email')}
+                              style={{ padding: '5px 14px', borderRadius: 6, border: sendMethod === 'email' ? '1.5px solid #0891b2' : '1px solid var(--border)', background: sendMethod === 'email' ? '#0891b210' : 'var(--bg-card)', fontSize: 11, fontWeight: 600, color: sendMethod === 'email' ? '#0891b2' : 'var(--text-secondary)', cursor: 'pointer' }}>
+                              <Mail size={11} style={{ marginRight: 4 }} /> Email
+                            </button>
+                            <button onClick={() => { setSendMethod('whatsapp'); setWaConfirmed(false) }}
+                              style={{ padding: '5px 14px', borderRadius: 6, border: sendMethod === 'whatsapp' ? '1.5px solid #25d366' : '1px solid var(--border)', background: sendMethod === 'whatsapp' ? '#25d36610' : 'var(--bg-card)', fontSize: 11, fontWeight: 600, color: sendMethod === 'whatsapp' ? '#25d366' : 'var(--text-secondary)', cursor: 'pointer' }}>
+                              <MessageCircle size={11} style={{ marginRight: 4 }} /> WhatsApp
+                            </button>
+                          </div>
+                          {sendMethod === 'email' ? (
+                            <input placeholder="Door agent email" value={paField('door_agent_email')} onChange={e => setPaField('door_agent_email', e.target.value)}
+                              style={{ width: '100%', padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border)', fontSize: 12, boxSizing: 'border-box' }} />
+                          ) : (
+                            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: waConfirmed ? '#16a34a' : 'var(--text-secondary)', cursor: 'pointer' }}>
+                              <input type="checkbox" checked={waConfirmed} onChange={e => setWaConfirmed(e.target.checked)} />
+                              I have sent the pre-advice via WhatsApp (copy message above first)
+                            </label>
+                          )}
+                        </div>
+
+                        {/* Notes */}
+                        <div style={{ marginTop: 12 }}>
+                          <label style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-muted)' }}>Internal Notes</label>
+                          <textarea value={formNote} onChange={e => setFormNote(e.target.value)} rows={2} placeholder="Optional notes..."
+                            style={{ width: '100%', padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border)', fontSize: 12, resize: 'vertical', fontFamily: 'inherit', marginTop: 4, boxSizing: 'border-box' }} />
+                        </div>
+
+                        {/* Submit */}
+                        <div style={{ marginTop: 16, display: 'flex', justifyContent: 'flex-end' }}>
+                          <button
+                            disabled={
+                              !paField('door_agent').trim() ||
+                              (sendMethod === 'email' && !paField('door_agent_email').includes('@')) ||
+                              (sendMethod === 'whatsapp' && !waConfirmed)
+                            }
+                            onClick={() => handleModalSubmit()}
+                            style={{
+                              padding: '8px 22px', borderRadius: 8, border: 'none', fontWeight: 700, fontSize: 12,
+                              background: '#0891b2', color: '#fff', cursor: 'pointer',
+                              opacity: (!paField('door_agent').trim() || (sendMethod === 'email' && !paField('door_agent_email').includes('@')) || (sendMethod === 'whatsapp' && !waConfirmed)) ? 0.4 : 1,
+                            }}>
+                            <FileText size={12} style={{ marginRight: 4 }} /> Send Pre-Advice
+                          </button>
+                        </div>
+                      </>
+                    )
+                  })()}
+                </div>
+              )
+            })() : selectedItem.actionKind === 'release-booking' && actionModal ? (() => {
+              const rbkg = actionModal!.sourceData.booking as Booking
+              const ro = rbkg.release_order_fields
+              const roRow = (label: string, value: string | undefined) =>
+                value ? (
+                  <div key={label} style={{ display: 'grid', gridTemplateColumns: '130px 1fr', borderBottom: '1px solid rgba(124,58,237,0.12)' }}>
+                    <div style={{ padding: '5px 10px', background: 'rgba(124,58,237,0.06)', fontSize: 10, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: 0.4, color: '#7c3aed', display: 'flex', alignItems: 'center', borderRight: '1px solid rgba(124,58,237,0.12)' }}>{label}</div>
+                    <div style={{ padding: '5px 10px', fontSize: 12, color: 'var(--text)' }}>{value}</div>
+                  </div>
+                ) : null
+              const switchMethod = (m: 'email' | 'whatsapp') => {
+                setSendMethod(m)
+                setReleaseDraft(generateReleaseOrderDraft(rbkg, m))
+                setWaConfirmed(false)
+              }
+              const canSend = sendMethod === 'email'
+                ? customerContactEmail.includes('@') && releaseDraft.trim()
+                : waConfirmed && releaseDraft.trim()
+              return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                  {/* Release Order fields card */}
+                  {ro && (
+                    <div style={{ border: '1px solid rgba(124,58,237,0.25)', borderRadius: 8, overflow: 'hidden' }}>
+                      <div style={{ padding: '8px 12px', background: '#7c3aed', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <FileText size={13} style={{ color: '#fff' }} />
+                          <span style={{ fontSize: 12, fontWeight: 700, color: '#fff', letterSpacing: 0.5 }}>RELEASE ORDER</span>
+                        </div>
+                        <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.8)', fontFamily: 'monospace' }}>{ro.reference_nbr}</span>
+                      </div>
+                      {roRow('Pick Up Date',  ro.pickup_empty_date)}
+                      {roRow('Valid Until',   ro.validity_expiration_date)}
+                      {roRow('Pick Up Depot', ro.pickup_depot)}
+                      {roRow('Depot Address', ro.pickup_depot_address)}
+                      {roRow('Booking Client', rbkg.customer_name)}
+                      {roRow('Port of Loading', rbkg.origin)}
+                      {ro.next_port_of_discharge ? roRow('Next Port', ro.next_port_of_discharge) : null}
+                      {roRow('Port of Discharge', rbkg.destination)}
+                      {roRow('Container', `${rbkg.quantity}x ${rbkg.container_type}`)}
+                      {roRow('Cargo',  ro.cargo_description)}
+                      {roRow('Weight', ro.cargo_weight ? `${ro.cargo_weight} kg` : undefined)}
+                      {roRow('Vessel', rbkg.vessel_name)}
+                      {roRow('Voyage', rbkg.voyage_number)}
+                      {roRow('Cut-Off', ro.cut_off_date)}
+                      {roRow('ETD', ro.etd)}
+                      {roRow('ETA', ro.eta)}
+                    </div>
+                  )}
+
+                  {/* Send method */}
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: 0.4, color: 'var(--text-muted)', marginBottom: 8 }}>Send via</div>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button
+                        className={`db-btn ${sendMethod === 'email' ? 'primary' : ''}`}
+                        style={sendMethod !== 'email' ? { background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-secondary)' } : {}}
+                        onClick={() => switchMethod('email')}
+                      >
+                        <Mail size={13} style={{ marginRight: 4 }} /> Email
+                      </button>
+                      <button
+                        className={`db-btn ${sendMethod === 'whatsapp' ? 'primary' : ''}`}
+                        style={sendMethod === 'whatsapp' ? { background: '#25d366', borderColor: '#25d366' } : { background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}
+                        onClick={() => switchMethod('whatsapp')}
+                      >
+                        <MessageCircle size={13} style={{ marginRight: 4 }} /> WhatsApp
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Contact input */}
+                  {sendMethod === 'email' && (
+                    <div>
+                      <label className="lt-label">Customer Email <span style={{ color: '#dc2626' }}>*</span></label>
+                      <input className="lt-input" style={{ width: '100%' }} type="email"
+                        value={customerContactEmail} onChange={e => setCustomerContactEmail(e.target.value)}
+                        placeholder="customer@example.com" />
+                    </div>
+                  )}
+                  {sendMethod === 'whatsapp' && (
+                    <div>
+                      <label className="lt-label">Customer WhatsApp Number</label>
+                      <input className="lt-input" style={{ width: '100%' }}
+                        value={customerContactPhone} onChange={e => setCustomerContactPhone(e.target.value)}
+                        placeholder="+94 7X XXX XXXX" />
+                    </div>
+                  )}
+
+                  {/* Draft message */}
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: 0.4, color: sendMethod === 'whatsapp' ? '#25d366' : 'var(--text-muted)' }}>
+                        {sendMethod === 'email' ? 'Email Draft' : 'WhatsApp Message'}
+                      </div>
+                      <button
+                        style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '2px 6px', borderRadius: 4 }}
+                        onClick={() => navigator.clipboard.writeText(releaseDraft)}
+                        title="Copy to clipboard"
+                      >
+                        <Copy size={12} /> Copy
+                      </button>
+                    </div>
+                    <textarea
+                      className="lt-input"
+                      rows={sendMethod === 'email' ? 16 : 14}
+                      style={{ width: '100%', resize: 'vertical' as const, fontFamily: sendMethod === 'email' ? 'ui-monospace, monospace' : 'inherit', fontSize: 11.5, lineHeight: 1.6 }}
+                      value={releaseDraft}
+                      onChange={e => setReleaseDraft(e.target.value)}
+                    />
+                  </div>
+
+                  {/* WhatsApp manual confirm */}
+                  {sendMethod === 'whatsapp' && (
+                    <div style={{ padding: '10px 14px', background: 'rgba(37,211,102,0.06)', border: '1px solid rgba(37,211,102,0.2)', borderRadius: 8 }}>
+                      <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer', fontSize: 12, color: 'var(--text-secondary)' }}>
+                        <input type="checkbox" checked={waConfirmed} onChange={e => setWaConfirmed(e.target.checked)} style={{ marginTop: 2 }} />
+                        <span>
+                          I confirm I have sent the release order to the customer via WhatsApp.
+                          <span style={{ display: 'block', fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>Copy the message above and paste it into WhatsApp, then check this box.</span>
+                        </span>
+                      </label>
+                    </div>
+                  )}
+
+                  {/* Optional notes */}
+                  <div>
+                    <label className="lt-label">Internal Note (optional)</label>
+                    <input className="lt-input" style={{ width: '100%' }} value={formNote}
+                      onChange={e => setFormNote(e.target.value)}
+                      placeholder="Collection instructions, remarks, etc." />
+                  </div>
+
+                  {/* Submit */}
+                  <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                    <button
+                      className="db-btn primary"
+                      disabled={!canSend}
+                      style={
+                        !canSend ? { opacity: 0.4, cursor: 'not-allowed' } :
+                        sendMethod === 'whatsapp' ? { background: '#25d366', borderColor: '#25d366' } : {}
+                      }
+                      onClick={handleModalSubmit}
+                    >
+                      {sendMethod === 'email'
+                        ? <><Mail size={12} style={{ marginRight: 6 }} /> Send Release Order via Email</>
+                        : <><MessageCircle size={12} style={{ marginRight: 6 }} /> Confirm WhatsApp Sent</>
+                      }
+                    </button>
+                  </div>
+                </div>
+              )
+            })() : selectedItem.actionKind === 'attach-release-order' ? (() => {
+              const roBkg = selectedItem.sourceData.booking as Booking
+              return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+                  {/* Header */}
+                  <div style={{ padding: '8px 14px', background: '#7c3aed', borderRadius: '8px 8px 0 0', marginBottom: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: '#fff', letterSpacing: 0.5 }}>RELEASE ORDER</span>
+                    <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.75)' }}>Attach & send to CS</span>
+                  </div>
+                  {/* Booking summary — read-only */}
+                  <div style={{ border: '1px solid var(--border)', borderRadius: '0 0 8px 8px', overflow: 'hidden', marginBottom: 16 }}>
+                    {[
+                      { label: 'Customer',   value: roBkg.customer_name },
+                      { label: 'Carrier',    value: roBkg.shipping_line || '—' },
+                      { label: 'Container',  value: `${roBkg.quantity}x ${roBkg.container_type}` },
+                      { label: 'Vessel',     value: roBkg.vessel_name || '—' },
+                      { label: 'Voyage',     value: roBkg.voyage_number || '—' },
+                      { label: 'Route',      value: `${roBkg.origin} → ${roBkg.destination}` },
+                    ].map(({ label, value }) => (
+                      <div key={label} style={{ display: 'grid', gridTemplateColumns: '100px 1fr', borderBottom: '1px solid var(--border)' }}>
+                        <div style={{ padding: '7px 12px', background: 'var(--bg-card)', borderRight: '1px solid var(--border)', fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center' }}>{label}</div>
+                        <div style={{ padding: '7px 12px', fontSize: 12, color: 'var(--text)' }}>{value}</div>
+                      </div>
+                    ))}
+                  </div>
+                  {/* Release Order Fields — structured form matching liner release order format */}
+                  <div style={{ marginBottom: 14 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: 0.4, color: '#7c3aed', marginBottom: 10 }}>Release Order Details</div>
+
+                    {/* Liner Reference */}
+                    <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: 0.5, color: 'var(--text-muted)', marginBottom: 6 }}>Liner Reference</div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 12 }}>
+                      <div>
+                        <label className="lt-label">Reference Nbr</label>
+                        <input className="lt-input" style={{ width: '100%' }} value={roFields.reference_nbr}
+                          onChange={e => setRoFields(f => ({ ...f, reference_nbr: e.target.value }))}
+                          placeholder="e.g. EBKG16474591" />
+                      </div>
+                      <div>
+                        <label className="lt-label">Pick Up Empty Date</label>
+                        <input type="date" className="lt-input" style={{ width: '100%' }} value={roFields.pickup_empty_date}
+                          onChange={e => setRoFields(f => ({ ...f, pickup_empty_date: e.target.value }))} />
+                      </div>
+                      <div>
+                        <label className="lt-label">Validity Expiration</label>
+                        <input type="date" className="lt-input" style={{ width: '100%' }} value={roFields.validity_expiration_date}
+                          onChange={e => setRoFields(f => ({ ...f, validity_expiration_date: e.target.value }))} />
+                      </div>
+                    </div>
+
+                    {/* Pick Up Depot */}
+                    <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: 0.5, color: 'var(--text-muted)', marginBottom: 6 }}>Pick Up Depot</div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 8, marginBottom: 12 }}>
+                      <div>
+                        <label className="lt-label">Depot Name</label>
+                        <input className="lt-input" style={{ width: '100%' }} value={roFields.pickup_depot}
+                          onChange={e => setRoFields(f => ({ ...f, pickup_depot: e.target.value }))}
+                          placeholder="e.g. Spectra Integrated Logistics" />
+                      </div>
+                      <div>
+                        <label className="lt-label">Depot Address</label>
+                        <input className="lt-input" style={{ width: '100%' }} value={roFields.pickup_depot_address}
+                          onChange={e => setRoFields(f => ({ ...f, pickup_depot_address: e.target.value }))}
+                          placeholder="Full address" />
+                      </div>
+                    </div>
+
+                    {/* Cargo */}
+                    <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: 0.5, color: 'var(--text-muted)', marginBottom: 6 }}>Cargo</div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 8, marginBottom: 12 }}>
+                      <div>
+                        <label className="lt-label">Cargo Description</label>
+                        <input className="lt-input" style={{ width: '100%' }} value={roFields.cargo_description}
+                          onChange={e => setRoFields(f => ({ ...f, cargo_description: e.target.value }))}
+                          placeholder="e.g. Coconut Milk" />
+                      </div>
+                      <div>
+                        <label className="lt-label">Cargo Weight (kg)</label>
+                        <input className="lt-input" style={{ width: '100%' }} value={roFields.cargo_weight}
+                          onChange={e => setRoFields(f => ({ ...f, cargo_weight: e.target.value }))}
+                          placeholder="e.g. 16,000" />
+                      </div>
+                    </div>
+
+                    {/* Schedule */}
+                    <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: 0.5, color: 'var(--text-muted)', marginBottom: 6 }}>Vessel Schedule</div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 12 }}>
+                      <div>
+                        <label className="lt-label">Cut-Off Date</label>
+                        <input type="date" className="lt-input" style={{ width: '100%' }} value={roFields.cut_off_date}
+                          onChange={e => setRoFields(f => ({ ...f, cut_off_date: e.target.value }))} />
+                      </div>
+                      <div>
+                        <label className="lt-label">ETD</label>
+                        <input type="date" className="lt-input" style={{ width: '100%' }} value={roFields.etd}
+                          onChange={e => setRoFields(f => ({ ...f, etd: e.target.value }))} />
+                      </div>
+                      <div>
+                        <label className="lt-label">ETA (Destination)</label>
+                        <input type="date" className="lt-input" style={{ width: '100%' }} value={roFields.eta}
+                          onChange={e => setRoFields(f => ({ ...f, eta: e.target.value }))} />
+                      </div>
+                    </div>
+
+                    {/* Optional */}
+                    <div>
+                      <label className="lt-label">Next Port of Discharge (if transshipment)</label>
+                      <input className="lt-input" style={{ width: '100%' }} value={roFields.next_port_of_discharge ?? ''}
+                        onChange={e => setRoFields(f => ({ ...f, next_port_of_discharge: e.target.value }))}
+                        placeholder="Optional — leave blank for direct service" />
+                    </div>
+                  </div>
+
+                  {/* Notes */}
+                  <div style={{ marginBottom: 16 }}>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>Notes for CS (optional)</div>
+                    <textarea className="lt-input" rows={2} style={{ width: '100%', resize: 'vertical' as const, fontSize: 13 }}
+                      value={formNote} onChange={e => setFormNote(e.target.value)}
+                      placeholder="Any instructions or remarks for the CS team…" />
+                  </div>
+                  {/* Submit */}
+                  <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                    <button className="db-btn primary"
+                      style={{ background: '#7c3aed', borderColor: '#7c3aed' }}
+                      disabled={!roFields.reference_nbr.trim()}
+                      onClick={handleModalSubmit}>
+                      <Send size={12} style={{ marginRight: 6 }} /> Send Release Order to CS
+                    </button>
+                  </div>
+                </div>
+              )
+            })() : selectedItem.actionKind === 'confirm-liner-booking' && actionModal ? (() => {
+              const { booking: cbBkg } = actionModal!.sourceData
+              return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+                  {/* Form header */}
+                  <div style={{ padding: '8px 14px', background: '#16a34a', borderRadius: '8px 8px 0 0', marginBottom: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: '#fff', letterSpacing: 0.5 }}>LINER BOOKING CONFIRMATION</span>
+                    <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.75)' }}>RA# {cbBkg.voyage_number || '—'}</span>
+                  </div>
+                  {/* Booking summary — read-only */}
+                  <div style={{ border: '1px solid var(--border)', borderRadius: '0 0 8px 8px', overflow: 'hidden', marginBottom: 16 }}>
+                    {[
+                      { label: 'Customer', value: cbBkg.customer_name },
+                      { label: 'Carrier', value: cbBkg.shipping_line || '—' },
+                      { label: 'Container', value: `${cbBkg.quantity}x ${cbBkg.container_type}` },
+                      { label: 'RA Number', value: cbBkg.voyage_number || 'Not assigned' },
+                      { label: 'Vessel', value: cbBkg.vessel_name || '—' },
+                      { label: 'Route', value: `${cbBkg.origin} → ${cbBkg.destination}` },
+                    ].map(({ label, value }) => (
+                      <div key={label} style={{ display: 'grid', gridTemplateColumns: '120px 1fr', borderBottom: '1px solid var(--border)' }}>
+                        <div style={{ padding: '8px 12px', background: 'var(--bg-card)', borderRight: '1px solid var(--border)', fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center' }}>{label}</div>
+                        <div style={{ padding: '8px 12px', fontSize: 12, color: 'var(--text)', fontWeight: label === 'RA Number' ? 700 : 400 }}>{value}</div>
+                      </div>
+                    ))}
+                  </div>
+                  {/* Booked? toggle */}
+                  <div style={{ marginBottom: 14 }}>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)', marginBottom: 10 }}>Was the liner booking confirmed?</div>
+                    <div style={{ display: 'flex', gap: 10 }}>
+                      {(['yes', 'no'] as const).map(v => (
+                        <button key={v} onClick={() => setLinerBooked(v)}
+                          style={{ flex: 1, padding: '10px 0', borderRadius: 8, border: `2px solid ${linerBooked === v ? (v === 'yes' ? '#16a34a' : '#dc2626') : 'var(--border)'}`,
+                            background: linerBooked === v ? (v === 'yes' ? 'rgba(22,163,74,0.08)' : 'rgba(220,38,38,0.06)') : '#fff',
+                            color: linerBooked === v ? (v === 'yes' ? '#16a34a' : '#dc2626') : 'var(--text-secondary)',
+                            fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
+                          {v === 'yes' ? '✓ Yes, booked' : '✗ No, couldn\'t book'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  {/* Reason — shown only when No */}
+                  {linerBooked === 'no' && (
+                    <div style={{ marginBottom: 14 }}>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: '#dc2626', marginBottom: 6 }}>Reason (required)</div>
+                      <textarea className="lt-input" rows={3} style={{ width: '100%', resize: 'vertical' as const, fontSize: 13 }}
+                        value={formNote} onChange={e => setFormNote(e.target.value)}
+                        placeholder="Explain why the booking couldn't be made…" />
+                    </div>
+                  )}
+                  {/* Submit */}
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 4 }}>
+                    <button className="db-btn primary"
+                      disabled={!linerBooked || (linerBooked === 'no' && !formNote.trim())}
+                      style={{ background: linerBooked === 'no' ? '#dc2626' : '#16a34a', borderColor: linerBooked === 'no' ? '#dc2626' : '#16a34a',
+                        opacity: (!linerBooked || (linerBooked === 'no' && !formNote.trim())) ? 0.5 : 1 }}
+                      onClick={handleModalSubmit}>
+                      {linerBooked === 'no' ? 'Revert to Pending Liner' : 'Confirm Liner Booking'}
+                    </button>
+                  </div>
+                </div>
+              )
+            })() : selectedItem.actionKind === 'submit-si' && actionModal ? (() => {
+              const siBkg = actionModal!.sourceData.booking as Booking
+              return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+                  {/* Header */}
+                  <div style={{ padding: '8px 14px', background: '#0891b2', borderRadius: '8px 8px 0 0', marginBottom: 1 }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: '#fff', letterSpacing: 0.5 }}>SUBMIT SHIPPING INSTRUCTIONS</span>
+                  </div>
+                  <div style={{ border: '1px solid var(--border)', borderRadius: '0 0 8px 8px', overflow: 'hidden' }}>
+                    {/* Booking summary */}
+                    <div style={{ padding: '10px 14px', background: 'rgba(8,145,178,0.04)', borderBottom: '1px solid var(--border)', fontSize: 12 }}>
+                      <strong>{siBkg.customer_name}</strong> — {siBkg.origin} → {siBkg.destination}
+                      <span style={{ color: 'var(--text-muted)', marginLeft: 8 }}>
+                        {siBkg.quantity}x {siBkg.container_type} · {siBkg.shipping_line || 'No liner'}
+                      </span>
+                    </div>
+
+                    {/* Cutoff dates */}
+                    {(siBkg.si_cutoff_date || siBkg.bl_cutoff_date || siBkg.vgm_cutoff_date) && (
+                      <div style={{ display: 'flex', gap: 0, borderBottom: '1px solid var(--border)' }}>
+                        {siBkg.si_cutoff_date && (
+                          <div style={{ flex: 1, padding: '6px 12px', background: 'rgba(8,145,178,0.04)', borderRight: '1px solid var(--border)', fontSize: 11 }}>
+                            <span style={{ color: 'var(--text-muted)' }}>SI Cutoff:</span> <strong>{siBkg.si_cutoff_date}</strong>
+                          </div>
+                        )}
+                        {siBkg.bl_cutoff_date && (
+                          <div style={{ flex: 1, padding: '6px 12px', background: 'rgba(217,119,6,0.04)', borderRight: '1px solid var(--border)', fontSize: 11 }}>
+                            <span style={{ color: 'var(--text-muted)' }}>BL Cutoff:</span> <strong>{siBkg.bl_cutoff_date}</strong>
+                          </div>
+                        )}
+                        {siBkg.vgm_cutoff_date && (
+                          <div style={{ flex: 1, padding: '6px 12px', background: 'rgba(168,85,247,0.04)', fontSize: 11 }}>
+                            <span style={{ color: 'var(--text-muted)' }}>VGM Cutoff:</span> <strong>{siBkg.vgm_cutoff_date}</strong>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* SI Document section */}
+                    <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)' }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: '#0891b2', marginBottom: 6 }}>SI DOCUMENT</div>
+                      <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                        <button
+                          className={`db-btn ${siMode === 'paste' ? 'primary' : ''}`}
+                          style={siMode !== 'paste' ? { background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-secondary)', fontSize: 11 } : { fontSize: 11 }}
+                          onClick={() => setSiMode('paste')}
+                        >
+                          <ClipboardPaste size={12} style={{ marginRight: 4 }} /> Paste
+                        </button>
+                        <button
+                          className={`db-btn ${siMode === 'upload' ? 'primary' : ''}`}
+                          style={siMode !== 'upload' ? { background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-secondary)', fontSize: 11 } : { fontSize: 11 }}
+                          onClick={() => setSiMode('upload')}
+                        >
+                          <Paperclip size={12} style={{ marginRight: 4 }} /> Upload
+                        </button>
+                      </div>
+
+                      {siMode === 'paste' && (
+                        <textarea
+                          className="lt-input"
+                          style={{ width: '100%', minHeight: 90, fontFamily: 'monospace', fontSize: 11, lineHeight: 1.5, resize: 'vertical' }}
+                          value={siContent}
+                          onChange={e => setSiContent(e.target.value)}
+                          placeholder="Paste shipping instructions here..."
+                        />
+                      )}
+
+                      {siMode === 'upload' && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <label className="db-btn"
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, cursor: 'pointer', background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}>
+                            <Paperclip size={12} />
+                            {siFileName ? 'Replace file' : 'Choose file'}
+                            <input type="file" accept=".pdf,.xlsx,.xls,.csv,.png,.jpg,.jpeg,.txt,.doc,.docx" style={{ display: 'none' }}
+                              onChange={e => {
+                                const file = e.target.files?.[0]
+                                if (!file) return
+                                setSiFileName(file.name)
+                                const reader = new FileReader()
+                                reader.onload = () => setSiContent(reader.result as string)
+                                reader.readAsDataURL(file)
+                                e.target.value = ''
+                              }} />
+                          </label>
+                          {siFileName && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+                              <FileText size={13} style={{ color: '#16a34a' }} />
+                              <span style={{ fontWeight: 600 }}>{siFileName}</span>
+                              <button style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, color: 'var(--text-muted)' }}
+                                onClick={() => { setSiFileName(''); setSiContent('') }} title="Remove file"><X size={12} /></button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* VGM Document section */}
+                    <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)' }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: '#7c3aed', marginBottom: 6 }}>VGM DOCUMENT <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>(optional)</span></div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <label className="db-btn"
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, cursor: 'pointer', background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}>
+                          <Paperclip size={12} />
+                          {vgmCertFileName ? 'Replace file' : 'Upload VGM'}
+                          <input type="file" accept=".pdf,.xlsx,.xls,.csv,.png,.jpg,.jpeg,.doc,.docx" style={{ display: 'none' }}
+                            onChange={e => {
+                              const f = e.target.files?.[0]
+                              if (!f) return
+                              setVgmCertFileName(f.name)
+                              const r = new FileReader()
+                              r.onload = () => setVgmCertContent(r.result as string)
+                              r.readAsDataURL(f)
+                              e.target.value = ''
+                            }} />
+                        </label>
+                        {vgmCertFileName && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+                            <FileText size={13} style={{ color: '#16a34a' }} />
+                            <span style={{ fontWeight: 600 }}>{vgmCertFileName}</span>
+                            <button style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, color: 'var(--text-muted)' }}
+                              onClick={() => { setVgmCertFileName(''); setVgmCertContent('') }}><X size={12} /></button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Notes */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr' }}>
+                      <div style={{ padding: '8px 12px', background: 'var(--bg-card)', borderRight: '1px solid var(--border)', fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center' }}>Notes</div>
+                      <div style={{ padding: '4px 8px' }}>
+                        <input className="lt-input" style={{ width: '100%', border: 'none', background: 'transparent', padding: '4px 0' }}
+                          value={formNote} onChange={e => setFormNote(e.target.value)} placeholder="Any notes about the SI submission..." />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Submit */}
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
+                    <button className="db-btn primary"
+                      disabled={!siContent.trim() || inttraSiLoading}
+                      style={siContent.trim() ? { background: '#0891b2', borderColor: '#0891b2' } : { opacity: 0.4, cursor: 'not-allowed' }}
+                      onClick={handleModalSubmit}>
+                      <Globe size={12} /> Submit SI & Confirm{vgmCertFileName ? ' (VGM attached)' : ''}
+                    </button>
+                  </div>
+                </div>
+              )
+            })() : (selectedItem.actionKind === 'booking-request' || selectedItem.actionKind === 'review-booking-request') && actionModal ? (() => {
+              const isCS = selectedItem.actionKind === 'booking-request'
+              const isReefer = bkContainers.some(c => c.type.includes('RF'))
+              return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+                  {/* Form header */}
+                  <div style={{ padding: '8px 14px', background: 'var(--accent)', borderRadius: '8px 8px 0 0', marginBottom: 1 }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: '#fff', letterSpacing: 0.5 }}>BOOKING FORMAT REQUEST</span>
+                    {!isCS && <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)', marginLeft: 10 }}>Submitted by CS — review and add RA number</span>}
+                  </div>
+                  {/* Fields table */}
+                  <div style={{ border: '1px solid var(--border)', borderRadius: '0 0 8px 8px', overflow: 'hidden' }}>
+                    {/* Carrier */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', borderBottom: '1px solid var(--border)' }}>
+                      <div style={{ padding: '8px 12px', background: 'var(--bg-card)', borderRight: '1px solid var(--border)', fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center' }}>Carrier</div>
+                      <div style={{ padding: '4px 8px' }}>
+                        <input list="rp-bk-liners" className="lt-input" style={{ width: '100%', border: 'none', background: 'transparent', padding: '4px 0' }}
+                          value={bkShippingLine} onChange={e => setBkShippingLine(e.target.value)} placeholder="e.g. MSC, Maersk, Hapag-Lloyd" />
+                        <datalist id="rp-bk-liners">{linerList.map(l => <option key={l.lin_id} value={l.name} />)}</datalist>
+                      </div>
+                    </div>
+                    {/* Containers (dynamic list) */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', borderBottom: '1px solid var(--border)' }}>
+                      <div style={{ padding: '8px 12px', background: 'var(--bg-card)', borderRight: '1px solid var(--border)', fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'flex-start', paddingTop: 10 }}>
+                        Containers
+                        <span style={{ fontSize: 9, color: 'var(--text-muted)', marginLeft: 4 }}>({bkContainers.reduce((s, c) => s + c.qty, 0)})</span>
+                      </div>
+                      <div style={{ padding: '4px 8px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        {bkContainers.map((ctn, ci) => (
+                          <div key={ci} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                            <input className="lt-input" style={{ width: 48, border: '1px solid var(--border)', borderRadius: 4, background: 'transparent', padding: '3px 4px', textAlign: 'center' }}
+                              type="number" min={1} value={ctn.qty}
+                              onChange={e => setBkContainers(prev => prev.map((c, i) => i === ci ? { ...c, qty: Math.max(1, parseInt(e.target.value) || 1) } : c))} />
+                            <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>×</span>
+                            <select className="lt-input" style={{ flex: 1, border: '1px solid var(--border)', borderRadius: 4, background: 'transparent', padding: '3px 4px', fontSize: 12 }}
+                              value={ctn.type} onChange={e => setBkContainers(prev => prev.map((c, i) => i === ci ? { ...c, type: e.target.value } : c))}>
+                              <option value="20'GP">20' GP</option><option value="40'GP">40' GP</option>
+                              <option value="40'HC">40' HC</option><option value="20'RF">20' RF (Reefer)</option>
+                              <option value="40'RF">40' RF (Reefer)</option><option value="20'OT">20' OT (Open Top)</option>
+                              <option value="40'OT">40' OT (Open Top)</option><option value="20'FR">20' FR (Flat Rack)</option>
+                              <option value="40'FR">40' FR (Flat Rack)</option>
+                            </select>
+                            {bkContainers.length > 1 && (
+                              <button type="button" onClick={() => setBkContainers(prev => prev.filter((_, i) => i !== ci))}
+                                style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#ef4444', fontSize: 14, padding: '0 2px', lineHeight: 1 }}
+                                title="Remove">×</button>
+                            )}
+                          </div>
+                        ))}
+                        <button type="button" onClick={() => setBkContainers(prev => [...prev, { type: "20'GP", qty: 1 }])}
+                          style={{ border: '1px dashed var(--border)', borderRadius: 4, background: 'transparent', cursor: 'pointer', padding: '3px 8px', fontSize: 11, color: 'var(--accent)', fontWeight: 600, alignSelf: 'flex-start', marginTop: 2 }}>
+                          + Add Container
+                        </button>
+                      </div>
+                    </div>
+                    {/* Commodity */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', borderBottom: '1px solid var(--border)' }}>
+                      <div style={{ padding: '8px 12px', background: 'var(--bg-card)', borderRight: '1px solid var(--border)', fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center' }}>Commodity</div>
+                      <div style={{ padding: '4px 8px' }}>
+                        <input className="lt-input" style={{ width: '100%', border: 'none', background: 'transparent', padding: '4px 0' }}
+                          value={bkCommodity} onChange={e => setBkCommodity(e.target.value)} placeholder="e.g. Coconut Milk, Garments" />
+                      </div>
+                    </div>
+                    {/* Cargo Ready Date */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', borderBottom: '1px solid var(--border)' }}>
+                      <div style={{ padding: '8px 12px', background: 'var(--bg-card)', borderRight: '1px solid var(--border)', fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center' }}>Cargo Ready Date</div>
+                      <div style={{ padding: '4px 8px' }}>
+                        <input className="lt-input" type="date" style={{ width: '100%', border: 'none', background: 'transparent', padding: '4px 0' }}
+                          value={bkCargoReadyDate} onChange={e => setBkCargoReadyDate(e.target.value)} />
+                      </div>
+                    </div>
+                    {/* Vessel + Vessel ETD */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr 90px 1fr', borderBottom: '1px solid var(--border)' }}>
+                      <div style={{ padding: '8px 12px', background: 'var(--bg-card)', borderRight: '1px solid var(--border)', fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center' }}>Vessel</div>
+                      <div style={{ padding: '4px 8px', borderRight: '1px solid var(--border)' }}>
+                        <input className="lt-input" style={{ width: '100%', border: 'none', background: 'transparent', padding: '4px 0' }}
+                          value={bkVessel} onChange={e => setBkVessel(e.target.value)} placeholder="e.g. MSC Asya" />
+                      </div>
+                      <div style={{ padding: '8px 8px', background: 'var(--bg-card)', borderRight: '1px solid var(--border)', fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center' }}>ETD</div>
+                      <div style={{ padding: '4px 8px' }}>
+                        <input className="lt-input" type="date" style={{ width: '100%', border: 'none', background: 'transparent', padding: '4px 0' }}
+                          value={bkVesselEtd} onChange={e => setBkVesselEtd(e.target.value)} />
+                      </div>
+                    </div>
+                    {/* Voyage */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', borderBottom: '1px solid var(--border)' }}>
+                      <div style={{ padding: '8px 12px', background: 'var(--bg-card)', borderRight: '1px solid var(--border)', fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center' }}>Voyage</div>
+                      <div style={{ padding: '4px 8px' }}>
+                        <input className="lt-input" style={{ width: '100%', border: 'none', background: 'transparent', padding: '4px 0' }}
+                          value={bkVoyage} onChange={e => setBkVoyage(e.target.value)} placeholder="e.g. MA622R" />
+                      </div>
+                    </div>
+                    {/* POD */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', borderBottom: '1px solid var(--border)' }}>
+                      <div style={{ padding: '8px 12px', background: 'var(--bg-card)', borderRight: '1px solid var(--border)', fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center' }}>POD</div>
+                      <div style={{ padding: '4px 8px' }}>
+                        <input className="lt-input" style={{ width: '100%', border: 'none', background: 'transparent', padding: '4px 0' }}
+                          value={bkPod} onChange={e => setBkPod(e.target.value)} placeholder="Port of Discharge" />
+                      </div>
+                    </div>
+                    {/* Customer */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', borderBottom: '1px solid var(--border)' }}>
+                      <div style={{ padding: '8px 12px', background: 'var(--bg-card)', borderRight: '1px solid var(--border)', fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center' }}>Customer</div>
+                      <div style={{ padding: '8px 10px', fontSize: 12, fontWeight: 600, color: 'var(--text)' }}>{selectedItem.customerName}</div>
+                    </div>
+                    {/* Agreed Rate + Rate Remark */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr 100px 1fr', borderBottom: '1px solid var(--border)' }}>
+                      <div style={{ padding: '8px 12px', background: 'var(--bg-card)', borderRight: '1px solid var(--border)', fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center' }}>Agreed Rate</div>
+                      <div style={{ padding: '4px 8px', borderRight: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>$</span>
+                        <input className="lt-input" type="number" min={0} step="any" style={{ width: '100%', border: 'none', background: 'transparent', padding: '4px 0' }}
+                          value={bkAgreedRate} onChange={e => { const v = e.target.value; if (v === '' || /^\d*\.?\d*$/.test(v)) setBkAgreedRate(v) }} placeholder="e.g. 1200" />
+                      </div>
+                      <div style={{ padding: '8px 8px', background: 'var(--bg-card)', borderRight: '1px solid var(--border)', fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center' }}>Rate Remark</div>
+                      <div style={{ padding: '4px 8px' }}>
+                        <input className="lt-input" style={{ width: '100%', border: 'none', background: 'transparent', padding: '4px 0' }}
+                          value={bkRateRemark} onChange={e => setBkRateRemark(e.target.value)} placeholder="e.g. As per contract, TBD" />
+                      </div>
+                    </div>
+                    {/* Delivery Term */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', borderBottom: '1px solid var(--border)' }}>
+                      <div style={{ padding: '8px 12px', background: 'var(--bg-card)', borderRight: '1px solid var(--border)', fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center' }}>Delivery Term</div>
+                      <div style={{ padding: '4px 8px' }}>
+                        <input className="lt-input" style={{ width: '100%', border: 'none', background: 'transparent', padding: '4px 0' }}
+                          value={bkDeliveryTerm} onChange={e => setBkDeliveryTerm(e.target.value)} placeholder="CY/CY" />
+                      </div>
+                    </div>
+                    {/* HS Code */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', borderBottom: '1px solid var(--border)' }}>
+                      <div style={{ padding: '8px 12px', background: 'var(--bg-card)', borderRight: '1px solid var(--border)', fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center' }}>HS Code</div>
+                      <div style={{ padding: '4px 8px' }}>
+                        <input className="lt-input" style={{ width: '100%', border: 'none', background: 'transparent', padding: '4px 0' }}
+                          value={bkHsCode} onChange={e => setBkHsCode(e.target.value)} placeholder="Harmonized System code (optional)" />
+                      </div>
+                    </div>
+                    {/* Special Instructions header */}
+                    <div style={{ padding: '7px 12px', background: 'rgba(15,143,168,0.12)', borderBottom: '1px solid var(--border)' }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)', letterSpacing: 0.4 }}>SPECIAL INSTRUCTIONS</span>
+                    </div>
+                    {/* Contract No + RA No (mutually exclusive) */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr 90px 1fr', borderBottom: '1px solid var(--border)' }}>
+                      <div style={{ padding: '8px 12px', background: 'var(--bg-card)', borderRight: '1px solid var(--border)', fontSize: 11, fontWeight: 600, color: bkRaNumber ? 'var(--text-muted)' : 'var(--text-secondary)', display: 'flex', alignItems: 'center' }}>Contract No</div>
+                      <div style={{ padding: '4px 8px', borderRight: '1px solid var(--border)', opacity: bkRaNumber ? 0.4 : 1 }}>
+                        <input className="lt-input" style={{ width: '100%', border: 'none', background: 'transparent', padding: '4px 0' }}
+                          value={bkContractNo} onChange={e => { setBkContractNo(e.target.value); if (e.target.value) setBkRaNumber('') }}
+                          disabled={!!bkRaNumber} placeholder={bkRaNumber ? 'N/A (RA No is set)' : 'e.g. 26-751GAC'} />
+                      </div>
+                      <div style={{ padding: '8px 8px', background: bkContractNo ? 'var(--bg-card)' : 'rgba(22,163,74,0.06)', borderRight: '1px solid var(--border)', fontSize: 11, fontWeight: 600, color: bkContractNo ? 'var(--text-muted)' : '#16a34a', display: 'flex', alignItems: 'center' }}>RA No</div>
+                      <div style={{ padding: '4px 8px', opacity: bkContractNo ? 0.4 : 1 }}>
+                        <input className="lt-input" style={{ width: '100%', border: 'none', background: 'transparent', padding: '4px 0', fontWeight: 600 }}
+                          value={bkRaNumber} onChange={e => { setBkRaNumber(e.target.value); if (e.target.value) setBkContractNo('') }}
+                          disabled={!!bkContractNo} placeholder={bkContractNo ? 'N/A (Contract is set)' : 'Liner booking ref'} />
+                      </div>
+                    </div>
+                    {bkContractNo && bkRaNumber && (
+                      <div style={{ padding: '6px 12px', background: '#fef2f2', color: '#dc2626', fontSize: 11, fontWeight: 600 }}>
+                        A customer cannot have both Contract No and RA No. Please clear one.
+                      </div>
+                    )}
+                    {/* Specific Routing */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', borderBottom: '1px solid var(--border)' }}>
+                      <div style={{ padding: '8px 12px', background: 'var(--bg-card)', borderRight: '1px solid var(--border)', fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center' }}>Specific Routing</div>
+                      <div style={{ padding: '4px 8px' }}>
+                        <input className="lt-input" style={{ width: '100%', border: 'none', background: 'transparent', padding: '4px 0' }}
+                          value={bkSpecificRouting} onChange={e => setBkSpecificRouting(e.target.value)} placeholder="e.g. via Singapore, avoid Suez" />
+                      </div>
+                    </div>
+                    {/* BL Type */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', borderBottom: '1px solid var(--border)' }}>
+                      <div style={{ padding: '8px 12px', background: 'var(--bg-card)', borderRight: '1px solid var(--border)', fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center' }}>BL Type</div>
+                      <div style={{ padding: '6px 10px', display: 'flex', gap: 16, alignItems: 'center' }}>
+                        {(['OBL', 'Seaway Bill'] as const).map(t => (
+                          <label key={t} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 12, color: 'var(--text-secondary)' }}>
+                            <input type="radio" name="rp-bk-bl-type" checked={bkBlType === t} onChange={() => setBkBlType(t)} />{t}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                    {/* Booking Type */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', borderBottom: '1px solid var(--border)' }}>
+                      <div style={{ padding: '8px 12px', background: 'var(--bg-card)', borderRight: '1px solid var(--border)', fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', lineHeight: 1.3 }}>If MKL/SAF<br /><span style={{ fontWeight: 400 }}>(Spot/FAK)</span></div>
+                      <div style={{ padding: '6px 10px', display: 'flex', gap: 16, alignItems: 'center' }}>
+                        {(['Spot', 'FAK'] as const).map(t => (
+                          <label key={t} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 12, color: 'var(--text-secondary)' }}>
+                            <input type="radio" name="rp-bk-booking-type" checked={bkBookingType === t} onChange={() => setBkBookingType(t)} />{t} Booking
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                    {/* Reefer Temp / PTI */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', borderBottom: '1px solid var(--border)' }}>
+                      <div style={{ padding: '8px 12px', background: isReefer ? 'rgba(14,165,233,0.08)' : 'var(--bg-card)', borderRight: '1px solid var(--border)', fontSize: 11, fontWeight: 600, color: isReefer ? '#0ea5e9' : 'var(--text-muted)', display: 'flex', alignItems: 'center' }}>Reefer/PTI</div>
+                      <div style={{ padding: '4px 8px' }}>
+                        <input className="lt-input" style={{ width: '100%', border: 'none', background: 'transparent', padding: '4px 0' }}
+                          value={bkReeferTemp} onChange={e => setBkReeferTemp(e.target.value)}
+                          placeholder={isReefer ? 'e.g. -18°C, PTI required' : 'N/A'} />
+                      </div>
+                    </div>
+                    {/* Delivery Agent */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr' }}>
+                      <div style={{ padding: '8px 12px', background: 'var(--bg-card)', borderRight: '1px solid var(--border)', fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center' }}>Delivery Agent</div>
+                      <div style={{ padding: '4px 8px' }}>
+                        <input className="lt-input" style={{ width: '100%', border: 'none', background: 'transparent', padding: '4px 0' }}
+                          value={bkDeliveryAgent} onChange={e => setBkDeliveryAgent(e.target.value)} placeholder="Will advise / agent name" />
+                      </div>
+                    </div>
+                  </div>
+                  {/* Submit */}
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
+                    <button className="db-btn primary" style={{ background: '#0f8fa8', borderColor: '#0f8fa8' }} onClick={handleModalSubmit}>
+                      {isCS
+                        ? <><Ship size={12} /> Create Booking &amp; Send to Procurement</>
+                        : <><Ship size={12} /> Assign RA Number &amp; Move to Booking</>
+                      }
+                    </button>
+                  </div>
+                </div>
+              )
+            })() : (
+              <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 14, padding: 24, boxShadow: '0 1px 2px rgba(15,23,42,0.03)' }}>
+                <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 18, color: 'var(--text)' }}>{selectedItem.actionLabel}</div>
+                <div style={{ fontSize: 13, color: '#64748b', marginBottom: 18 }}>{selectedItem.subtitle}</div>
+                <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', paddingTop: 18, borderTop: '1px solid #eef2f6' }}>
+                  <button
+                    className="db-btn primary"
+                    style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+                    onClick={() => handleAction(selectedItem)}
+                  >
+                    {selectedItem.actionLabel} <ChevronRight size={13} />
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Recently Pushed (below action card) */}
             {recentlyPushed.length > 0 && (
@@ -1751,82 +4179,125 @@ ABC Logistics (Pvt) Ltd`
         zIndex: 10,
         boxShadow: '0 -2px 12px rgba(0,0,0,0.04)',
       }}>
-        {roleSteps.map(step => {
-          const count = stepCounts[step.key] ?? 0
-          const isActive = effectiveStep === step.key
-          const isEmpty = count === 0
-          return (
-            <button
-              key={step.key}
-              onClick={() => setActiveStep(step.key)}
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                gap: 3,
-                padding: '6px 14px',
-                minWidth: 80,
-                border: 'none',
-                borderRadius: 10,
-                cursor: 'pointer',
-                background: isActive ? roleColor + '12' : 'transparent',
-                transition: 'background 0.15s',
-                flexShrink: 0,
-                position: 'relative',
-              }}
-            >
-              <div style={{
-                width: 26,
-                height: 26,
-                borderRadius: '50%',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: 11,
-                fontWeight: 700,
-                background: isActive ? roleColor : isEmpty ? 'rgba(0,0,0,0.06)' : roleColor + '18',
-                color: isActive ? '#fff' : isEmpty ? 'var(--text-muted)' : roleColor,
-                transition: 'all 0.15s',
-              }}>
-                {step.stepNumber}
-              </div>
-              <span style={{
-                fontSize: 10,
-                fontWeight: isActive ? 700 : 600,
-                color: isActive ? roleColor : isEmpty ? 'var(--text-muted)' : 'var(--text-secondary)',
-                whiteSpace: 'nowrap',
-                transition: 'color 0.15s',
-              }}>
-                {step.label}
-              </span>
-              {count > 0 && (
-                <span style={{
-                  position: 'absolute',
-                  top: 2,
-                  right: 6,
-                  minWidth: 16,
-                  height: 16,
-                  borderRadius: 8,
+        {(() => {
+          // Group consecutive steps that share a group tag
+          const chunks: (StepDef | StepDef[])[] = []
+          let ci = 0
+          while (ci < roleSteps.length) {
+            const s = roleSteps[ci]
+            if (s.group) {
+              const grp: StepDef[] = [s]
+              while (ci + 1 < roleSteps.length && roleSteps[ci + 1].group === s.group) {
+                grp.push(roleSteps[++ci])
+              }
+              chunks.push(grp)
+            } else {
+              chunks.push(s)
+            }
+            ci++
+          }
+
+          const renderStepBtn = (step: StepDef, compact?: boolean) => {
+            const count = stepCounts[step.key] ?? 0
+            const isActive = effectiveStep === step.key
+            const isGroupAvailable = step.group ? (groupHasItems[step.group] ?? false) : false
+            const isEmpty = count === 0 && !isGroupAvailable
+            const isGreyedOut = (activeRole === 'CS' || activeRole === 'Sales') && step.stepNumber >= 9
+            return (
+              <button
+                key={step.key}
+                onClick={() => { if (!isGreyedOut) setActiveStep(step.key) }}
+                style={{
+                  display: 'flex',
+                  flexDirection: compact ? 'row' : 'column',
+                  alignItems: 'center',
+                  gap: compact ? 6 : 3,
+                  padding: compact ? '3px 10px' : '6px 14px',
+                  minWidth: compact ? undefined : 80,
+                  border: 'none',
+                  borderRadius: compact ? 6 : 10,
+                  cursor: isGreyedOut ? 'not-allowed' : 'pointer',
+                  background: isActive && !isGreyedOut ? roleColor + '12' : 'transparent',
+                  transition: 'background 0.15s',
+                  flexShrink: 0,
+                  position: 'relative',
+                  opacity: isGreyedOut ? 0.35 : 1,
+                  pointerEvents: isGreyedOut ? 'none' as const : undefined,
+                }}
+              >
+                <div style={{
+                  width: compact ? 18 : 26,
+                  height: compact ? 18 : 26,
+                  borderRadius: '50%',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  fontSize: 9,
+                  fontSize: compact ? 9 : 11,
                   fontWeight: 700,
-                  background: isActive ? roleColor : '#ef4444',
-                  color: '#fff',
-                  padding: '0 4px',
-                  lineHeight: 1,
+                  background: isGreyedOut ? 'rgba(0,0,0,0.06)' : isActive ? roleColor : isEmpty ? 'rgba(0,0,0,0.06)' : roleColor + '18',
+                  color: isGreyedOut ? '#aaa' : isActive ? '#fff' : isEmpty ? 'var(--text-muted)' : roleColor,
+                  transition: 'all 0.15s',
+                  flexShrink: 0,
                 }}>
-                  {count}
+                  {step.stepNumber}
+                </div>
+                <span style={{
+                  fontSize: compact ? 9 : 10,
+                  fontWeight: isActive && !isGreyedOut ? 700 : 600,
+                  color: isGreyedOut ? '#aaa' : isActive ? roleColor : isEmpty ? 'var(--text-muted)' : 'var(--text-secondary)',
+                  whiteSpace: 'nowrap',
+                  transition: 'color 0.15s',
+                }}>
+                  {step.label}
                 </span>
-              )}
-            </button>
-          )
-        })}
+                {count > 0 && (
+                  <span style={{
+                    ...(compact ? {} : { position: 'absolute' as const, top: 2, right: 6 }),
+                    minWidth: compact ? 14 : 16,
+                    height: compact ? 14 : 16,
+                    borderRadius: compact ? 7 : 8,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: compact ? 8 : 9,
+                    fontWeight: 700,
+                    background: isActive ? roleColor : '#ef4444',
+                    color: '#fff',
+                    padding: '0 3px',
+                    lineHeight: 1,
+                    marginLeft: compact ? 'auto' : undefined,
+                  }}>
+                    {count}
+                  </span>
+                )}
+              </button>
+            )
+          }
+
+          return chunks.map((chunk, idx) => {
+            if (Array.isArray(chunk)) {
+              return (
+                <div key={`grp-${idx}`} style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+                  <div style={{
+                    width: 3,
+                    alignSelf: 'stretch',
+                    background: `${roleColor}30`,
+                    borderRadius: 2,
+                    margin: '2px 0',
+                  }} />
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                    {chunk.map(s => renderStepBtn(s, true))}
+                  </div>
+                </div>
+              )
+            }
+            return renderStepBtn(chunk as StepDef)
+          })
+        })()}
       </div>
 
       {/* Action Modal */}
-      {actionModal && (
+      {actionModal && actionModal.actionKind !== 'booking-request' && actionModal.actionKind !== 'review-booking-request' && actionModal.actionKind !== 'confirm-liner-booking' && actionModal.actionKind !== 'attach-release-order' && actionModal.actionKind !== 'release-booking' && actionModal.actionKind !== 'send-draft-bl' && actionModal.actionKind !== 'record-cutoff' && actionModal.actionKind !== 'request-si' && actionModal.actionKind !== 'submit-si' && actionModal.actionKind !== 'send-pre-advice' && (
         <div className="lt-modal-backdrop" onClick={() => setActionModal(null)}>
           <div className="lt-modal" onClick={e => e.stopPropagation()} style={{ width: actionModal.actionKind === 'send-kyc' ? 660 : 520, padding: '28px 30px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
@@ -1846,8 +4317,8 @@ ABC Logistics (Pvt) Ltd`
               <div style={{ display: 'flex', flexDirection: 'column', gap: 20, maxHeight: '65vh', overflowY: 'auto', paddingRight: 4 }}>
 
                 {/* ── Pre-fetched client registry data (only for KYC pending queue items) ── */}
-                {actionModal.sourceData.kycClient && (() => {
-                  const c: KycPendingClient = actionModal.sourceData.kycClient
+                {actionModal!.sourceData.kycClient && (() => {
+                  const c: KycPendingClient = actionModal!.sourceData.kycClient
                   const address = [c.addr_street_ln, c.addr_city, c.addr_country].filter(Boolean).join(', ')
                   return (
                     <div style={{ padding: '12px 14px', background: 'rgba(8,145,178,0.04)', border: '1px solid rgba(8,145,178,0.14)', borderLeft: '3px solid #0891b2', borderRadius: 8 }}>
@@ -1998,7 +4469,7 @@ ABC Logistics (Pvt) Ltd`
 
             {/* Verify KYC form (Finance) */}
             {actionModal.actionKind === 'verify-kyc' && (() => {
-              const kycReq: KycRequestRecord | undefined = actionModal.sourceData?.kycRequest
+              const kycReq: KycRequestRecord | undefined = actionModal!.sourceData?.kycRequest
               const docLabel = (label: string, val?: string) => (
                 <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
                   <span style={{
@@ -2342,128 +4813,10 @@ ABC Logistics (Pvt) Ltd`
               )
             })()}
 
-            {/* Booking request form */}
-            {actionModal.actionKind === 'booking-request' && (() => {
-              const ctx = actionModal.previousContext
-              const { inquiry: brInq } = actionModal.sourceData
-              return (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-                  {ctx && (
-                    <div className="ws-context-card" style={{ marginTop: 0 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                        <User size={11} style={{ color: 'var(--text-muted)' }} />
-                        <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)' }}>
-                          {empName(ctx.actor_id)} ({ROLE_LABELS[ctx.actor_role]})
-                        </span>
-                      </div>
-                      <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{ctx.action}</div>
-                    </div>
-                  )}
-
-                  {/* Route summary */}
-                  <div style={{ padding: '10px 14px', background: 'rgba(15,143,168,0.06)', border: '1px solid rgba(15,143,168,0.15)', borderRadius: 8, fontSize: 12 }}>
-                    <strong>{brInq.customer_name}</strong> — {brInq.origin} → {brInq.destination}
-                    <div style={{ color: 'var(--text-muted)', marginTop: 2 }}>{brInq.request} · {brInq.delivery_type === 'door-to-door' ? 'Door-to-Door' : 'Port-to-Port'}</div>
-                  </div>
-
-                  <div>
-                    <label className="lt-label">Preferred Shipping Line</label>
-                    <input list="ws-bk-liners" className="lt-input" style={{ width: '100%' }} value={bkShippingLine}
-                      onChange={e => setBkShippingLine(e.target.value)}
-                      placeholder="e.g. Maersk, MSC, Hapag-Lloyd (or leave blank for any)" />
-                    <datalist id="ws-bk-liners">
-                      {linerList.map(l => <option key={l.lin_id} value={l.name} />)}
-                    </datalist>
-                  </div>
-
-                  <div style={{ display: 'flex', gap: 12 }}>
-                    <div style={{ flex: 1 }}>
-                      <label className="lt-label">Container Type</label>
-                      <select className="lt-input" style={{ width: '100%' }} value={bkContainerType}
-                        onChange={e => setBkContainerType(e.target.value)}>
-                        <option value="20'GP">20&apos; GP</option>
-                        <option value="40'GP">40&apos; GP</option>
-                        <option value="40'HC">40&apos; HC</option>
-                        <option value="20'RF">20&apos; RF</option>
-                        <option value="40'RF">40&apos; RF</option>
-                        <option value="20'OT">20&apos; OT</option>
-                        <option value="40'OT">40&apos; OT</option>
-                        <option value="20'FR">20&apos; FR</option>
-                        <option value="40'FR">40&apos; FR</option>
-                      </select>
-                    </div>
-                    <div style={{ flex: 1 }}>
-                      <label className="lt-label">Quantity</label>
-                      <input className="lt-input" style={{ width: '100%' }} type="number" min={1}
-                        value={bkQuantity} onChange={e => setBkQuantity(Math.max(1, parseInt(e.target.value) || 1))} />
-                    </div>
-                  </div>
-
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 12, color: 'var(--text-secondary)' }}>
-                    <input type="checkbox" checked={bkIsUrgent} onChange={e => setBkIsUrgent(e.target.checked)} />
-                    <span>
-                      Mark as urgent
-                      <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 4 }}>(Procurement will be notified immediately)</span>
-                    </span>
-                  </label>
-
-                  {/* Excel attachment */}
-                  <div>
-                    <label className="lt-label">Attach Booking Request (Excel)</label>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
-                      <label
-                        className="db-btn"
-                        style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, cursor: 'pointer', background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}
-                      >
-                        <Paperclip size={13} />
-                        {bkAttachmentName ? 'Replace file' : 'Choose file'}
-                        <input
-                          type="file"
-                          accept=".xlsx,.xls,.csv"
-                          style={{ display: 'none' }}
-                          onChange={e => {
-                            const file = e.target.files?.[0]
-                            if (!file) return
-                            setBkAttachmentName(file.name)
-                            const reader = new FileReader()
-                            reader.onload = () => setBkAttachmentData(reader.result as string)
-                            reader.readAsDataURL(file)
-                            e.target.value = ''
-                          }}
-                        />
-                      </label>
-                      {bkAttachmentName && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text)' }}>
-                          <FileText size={13} style={{ color: '#16a34a' }} />
-                          <span style={{ fontWeight: 600 }}>{bkAttachmentName}</span>
-                          <button
-                            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, color: 'var(--text-muted)' }}
-                            onClick={() => { setBkAttachmentName(''); setBkAttachmentData('') }}
-                            title="Remove attachment"
-                          >
-                            <X size={12} />
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
-                      .xlsx, .xls, or .csv — optional booking request form prepared by CS
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="lt-label">Notes (optional)</label>
-                    <input className="lt-input" style={{ width: '100%' }} value={formNote}
-                      onChange={e => setFormNote(e.target.value)}
-                      placeholder="Special requirements, stacking, hazmat, etc." />
-                  </div>
-                </div>
-              )
-            })()}
 
             {/* Confirm booking form — Procurement books via InttraAPI */}
             {actionModal.actionKind === 'confirm-booking' && (() => {
-              const { booking: cbkg } = actionModal.sourceData
+              const { booking: cbkg } = actionModal!.sourceData
               const ctx = actionModal.previousContext
               return (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
@@ -2506,645 +4859,11 @@ ABC Logistics (Pvt) Ltd`
               )
             })()}
 
-            {/* Release booking form — CS sends release order + booking confirmation to customer */}
-            {actionModal.actionKind === 'release-booking' && (() => {
-              const { booking: rbkg } = actionModal.sourceData
-              const ctx = actionModal.previousContext
-              // Extract booking confirmation details from activity log
-              const vesselMatch = ctx?.notes?.match(/Vessel:\s*([^,|]+)/i)
-              const voyageMatch = ctx?.notes?.match(/Voyage:\s*([^,|]+)/i)
-              const refMatch = ctx?.notes?.match(/Booking Ref:\s*([^|]+)/i)
-              const etdMatch = ctx?.notes?.match(/ETD:\s*([^|]+)/i)
-              const etaMatch = ctx?.notes?.match(/ETA:\s*([^|]+)/i)
-              return (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-                  {ctx && (
-                    <div className="ws-context-card" style={{ marginTop: 0 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                        <User size={11} style={{ color: 'var(--text-muted)' }} />
-                        <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)' }}>
-                          {empName(ctx.actor_id)} ({ROLE_LABELS[ctx.actor_role]})
-                        </span>
-                      </div>
-                      <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{ctx.action}</div>
-                    </div>
-                  )}
-
-                  {/* Booking confirmation card */}
-                  <div style={{ padding: '14px 16px', background: 'rgba(22,163,106,0.06)', border: '1px solid rgba(22,163,106,0.2)', borderRadius: 8 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-                      <Ship size={14} style={{ color: '#16a34a' }} />
-                      <span style={{ fontSize: 13, fontWeight: 700, color: '#16a34a' }}>Booking Confirmation</span>
-                    </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 16px', fontSize: 12 }}>
-                      <div><span style={{ color: 'var(--text-muted)' }}>Customer:</span> <strong>{rbkg.customer_name}</strong></div>
-                      <div><span style={{ color: 'var(--text-muted)' }}>Route:</span> {rbkg.origin} → {rbkg.destination}</div>
-                      <div><span style={{ color: 'var(--text-muted)' }}>Vessel:</span> {vesselMatch?.[1]?.trim() || rbkg.vessel_name || 'TBD'}</div>
-                      <div><span style={{ color: 'var(--text-muted)' }}>Voyage:</span> {voyageMatch?.[1]?.trim() || rbkg.voyage_number || 'TBD'}</div>
-                      <div><span style={{ color: 'var(--text-muted)' }}>Container:</span> {rbkg.quantity}x {rbkg.container_type}</div>
-                      <div><span style={{ color: 'var(--text-muted)' }}>Liner:</span> {rbkg.shipping_line || 'N/A'}</div>
-                      {refMatch && <div><span style={{ color: 'var(--text-muted)' }}>Booking Ref:</span> <strong>{refMatch[1].trim()}</strong></div>}
-                      {etdMatch && <div><span style={{ color: 'var(--text-muted)' }}>ETD:</span> {etdMatch[1].trim()}</div>}
-                      {etaMatch && <div><span style={{ color: 'var(--text-muted)' }}>ETA:</span> {etaMatch[1].trim()}</div>}
-                    </div>
-                  </div>
-
-                  {/* Send method toggle */}
-                  <div>
-                    <label className="lt-label">Send Release Order via</label>
-                    <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-                      <button
-                        className={`db-btn ${sendMethod === 'email' ? 'primary' : ''}`}
-                        style={sendMethod !== 'email' ? { background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-secondary)' } : {}}
-                        onClick={() => setSendMethod('email')}
-                      >
-                        <Mail size={13} style={{ marginRight: 4 }} /> Email
-                      </button>
-                      <button
-                        className={`db-btn ${sendMethod === 'whatsapp' ? 'primary' : ''}`}
-                        style={sendMethod === 'whatsapp' ? { background: '#25d366', borderColor: '#25d366' } : { background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}
-                        onClick={() => setSendMethod('whatsapp')}
-                      >
-                        <MessageCircle size={13} style={{ marginRight: 4 }} /> WhatsApp
-                      </button>
-                    </div>
-                  </div>
-
-                  {sendMethod === 'email' && (
-                    <div>
-                      <label className="lt-label">Customer Email <span style={{ color: '#dc2626' }}>*</span></label>
-                      <input className="lt-input" style={{ width: '100%' }} type="email"
-                        value={customerContactEmail} onChange={e => setCustomerContactEmail(e.target.value)}
-                        placeholder="customer@example.com" />
-                    </div>
-                  )}
-
-                  {sendMethod === 'whatsapp' && (
-                    <>
-                      <div>
-                        <label className="lt-label">Customer WhatsApp Number</label>
-                        <input className="lt-input" style={{ width: '100%' }}
-                          value={customerContactPhone} onChange={e => setCustomerContactPhone(e.target.value)}
-                          placeholder="+94 7X XXX XXXX" />
-                      </div>
-                      <div style={{ padding: '10px 14px', background: 'rgba(37,211,102,0.06)', border: '1px solid rgba(37,211,102,0.2)', borderRadius: 8 }}>
-                        <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer', fontSize: 12, color: 'var(--text-secondary)' }}>
-                          <input type="checkbox" checked={waConfirmed} onChange={e => setWaConfirmed(e.target.checked)} style={{ marginTop: 2 }} />
-                          <span>
-                            I confirm that I have sent the release order and booking confirmation to the customer via WhatsApp.
-                            <span style={{ display: 'block', fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
-                              No WhatsApp integration — manual confirmation.
-                            </span>
-                          </span>
-                        </label>
-                      </div>
-                    </>
-                  )}
-
-                  <div>
-                    <label className="lt-label">Release Note / Instructions (optional)</label>
-                    <input className="lt-input" style={{ width: '100%' }} value={formNote} onChange={e => setFormNote(e.target.value)} placeholder="Collection instructions, pickup location, etc." />
-                  </div>
-                </div>
-              )
-            })()}
-
-            {/* Request SI modal */}
-            {actionModal.actionKind === 'request-si' && (() => {
-              const { booking: siBkg } = actionModal.sourceData
-              const ctx = actionModal.previousContext
-              const blCutoff = siBkg.bl_cutoff_date
-              const siCutoff = siBkg.si_cutoff_date
-              const primaryCutoff = blCutoff || siCutoff
-              const dLeft = primaryCutoff ? daysUntil(primaryCutoff) : 999
-              const isOvdSi = dLeft < 0
-              const urgencyColor = isOvdSi ? '#dc2626' : dLeft === 0 ? '#d97706' : '#0891b2'
-              const urgencyText = isOvdSi
-                ? `OVERDUE by ${Math.abs(dLeft)} day(s)`
-                : dLeft === 0 ? 'Due TODAY' : `${dLeft} day(s) remaining`
-
-              return (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-                  {ctx && (
-                    <div className="ws-context-card" style={{ marginTop: 0 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                        <User size={11} style={{ color: 'var(--text-muted)' }} />
-                        <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)' }}>
-                          {empName(ctx.actor_id)} ({ROLE_LABELS[ctx.actor_role]})
-                        </span>
-                      </div>
-                      <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{ctx.action}</div>
-                    </div>
-                  )}
-
-                  {/* Cutoff dates card */}
-                  <div style={{
-                    padding: '14px 16px',
-                    background: urgencyColor + '0a',
-                    border: `1px solid ${urgencyColor}30`,
-                    borderRadius: 8,
-                  }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-                      <AlertTriangle size={14} style={{ color: urgencyColor }} />
-                      <span style={{ fontSize: 13, fontWeight: 700, color: urgencyColor }}>
-                        Cutoff Dates
-                      </span>
-                      <span style={{
-                        fontSize: 11, fontWeight: 700, color: urgencyColor,
-                        marginLeft: 'auto',
-                        padding: '2px 8px',
-                        background: urgencyColor + '15',
-                        borderRadius: 10,
-                      }}>
-                        {urgencyText}
-                      </span>
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, marginBottom: 8 }}>
-                      {siCutoff && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <span style={{ width: 80, color: 'var(--text-muted)', fontWeight: 600, fontSize: 11 }}>SI Cutoff</span>
-                          <span style={{ fontWeight: 700 }}>{siCutoff}</span>
-                          <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>({daysUntil(siCutoff) < 0 ? `${Math.abs(daysUntil(siCutoff))}d overdue` : `${daysUntil(siCutoff)}d left`})</span>
-                        </div>
-                      )}
-                      {blCutoff && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <span style={{ width: 80, color: 'var(--text-muted)', fontWeight: 600, fontSize: 11 }}>BL Cutoff</span>
-                          <span style={{ fontWeight: 700 }}>{blCutoff}</span>
-                          <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>({daysUntil(blCutoff) < 0 ? `${Math.abs(daysUntil(blCutoff))}d overdue` : `${daysUntil(blCutoff)}d left`})</span>
-                        </div>
-                      )}
-                    </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 16px', fontSize: 12 }}>
-                      <div><span style={{ color: 'var(--text-muted)' }}>Customer:</span> <strong>{siBkg.customer_name}</strong></div>
-                      <div><span style={{ color: 'var(--text-muted)' }}>Route:</span> {siBkg.origin} → {siBkg.destination}</div>
-                      <div><span style={{ color: 'var(--text-muted)' }}>Vessel:</span> {siBkg.vessel_name || 'TBD'}</div>
-                      <div><span style={{ color: 'var(--text-muted)' }}>Voyage:</span> {siBkg.voyage_number || 'TBD'}</div>
-                      <div><span style={{ color: 'var(--text-muted)' }}>Container:</span> {siBkg.quantity}x {siBkg.container_type}</div>
-                      <div><span style={{ color: 'var(--text-muted)' }}>Liner:</span> {siBkg.shipping_line || 'N/A'}</div>
-                    </div>
-                  </div>
-
-                  {/* Send method toggle */}
-                  <div>
-                    <label className="lt-label">Contact Customer via</label>
-                    <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-                      <button
-                        className={`db-btn ${sendMethod === 'email' ? 'primary' : ''}`}
-                        style={sendMethod !== 'email' ? { background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-secondary)' } : {}}
-                        onClick={() => setSendMethod('email')}
-                      >
-                        <Mail size={13} style={{ marginRight: 4 }} /> Email
-                      </button>
-                      <button
-                        className={`db-btn ${sendMethod === 'whatsapp' ? 'primary' : ''}`}
-                        style={sendMethod === 'whatsapp' ? { background: '#25d366', borderColor: '#25d366' } : { background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}
-                        onClick={() => setSendMethod('whatsapp')}
-                      >
-                        <MessageCircle size={13} style={{ marginRight: 4 }} /> WhatsApp
-                      </button>
-                    </div>
-                  </div>
-
-                  {sendMethod === 'email' && (
-                    <div>
-                      <label className="lt-label">Customer Email <span style={{ color: '#dc2626' }}>*</span></label>
-                      <input className="lt-input" style={{ width: '100%' }} type="email"
-                        value={customerContactEmail} onChange={e => setCustomerContactEmail(e.target.value)}
-                        placeholder="customer@example.com" />
-                    </div>
-                  )}
-
-                  {sendMethod === 'whatsapp' && (
-                    <>
-                      <div>
-                        <label className="lt-label">Customer WhatsApp Number</label>
-                        <input className="lt-input" style={{ width: '100%' }}
-                          value={customerContactPhone} onChange={e => setCustomerContactPhone(e.target.value)}
-                          placeholder="+94 7X XXX XXXX" />
-                      </div>
-                      <div style={{ padding: '10px 14px', background: 'rgba(37,211,102,0.06)', border: '1px solid rgba(37,211,102,0.2)', borderRadius: 8 }}>
-                        <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer', fontSize: 12, color: 'var(--text-secondary)' }}>
-                          <input type="checkbox" checked={waConfirmed} onChange={e => setWaConfirmed(e.target.checked)} style={{ marginTop: 2 }} />
-                          <span>
-                            I confirm that I have sent the SI request to the customer via WhatsApp.
-                            <span style={{ display: 'block', fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
-                              No WhatsApp integration — manual confirmation.
-                            </span>
-                          </span>
-                        </label>
-                      </div>
-                    </>
-                  )}
-
-                  <div>
-                    <label className="lt-label">Notes (optional)</label>
-                    <input className="lt-input" style={{ width: '100%' }} value={formNote}
-                      onChange={e => setFormNote(e.target.value)}
-                      placeholder="Any instructions or reminders for the customer..." />
-                  </div>
-                </div>
-              )
-            })()}
-
-            {/* Record Cutoff modal */}
-            {actionModal.actionKind === 'record-cutoff' && (() => {
-              const { booking: coBkg } = actionModal.sourceData
-              return (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-                  {/* Booking summary */}
-                  <div style={{ padding: '10px 14px', background: 'rgba(15,143,168,0.06)', border: '1px solid rgba(15,143,168,0.15)', borderRadius: 8, fontSize: 12 }}>
-                    <strong>{coBkg.customer_name}</strong> — {coBkg.origin} → {coBkg.destination}
-                    <div style={{ color: 'var(--text-muted)', marginTop: 2 }}>
-                      {coBkg.quantity}x {coBkg.container_type} · {coBkg.shipping_line || 'No liner'}
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="lt-label">Shipping Line / Liner</label>
-                    <input list="ws-cut-liners" className="lt-input" style={{ width: '100%' }} value={cutoffLiner}
-                      onChange={e => setCutoffLiner(e.target.value)}
-                      placeholder="e.g. Maersk, MSC, Hapag-Lloyd" />
-                    <datalist id="ws-cut-liners">
-                      {linerList.map(l => <option key={l.lin_id} value={l.name} />)}
-                    </datalist>
-                  </div>
-
-                  {/* Paste / Upload toggle */}
-                  <div>
-                    <label className="lt-label">Cutoff Schedule</label>
-                    <div style={{ display: 'flex', gap: 8, marginTop: 4, marginBottom: 8 }}>
-                      <button
-                        className={`db-btn ${cutoffMode === 'paste' ? 'primary' : ''}`}
-                        style={cutoffMode !== 'paste' ? { background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-secondary)' } : {}}
-                        onClick={() => setCutoffMode('paste')}
-                      >
-                        <ClipboardPaste size={13} style={{ marginRight: 4 }} /> Paste
-                      </button>
-                      <button
-                        className={`db-btn ${cutoffMode === 'upload' ? 'primary' : ''}`}
-                        style={cutoffMode !== 'upload' ? { background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-secondary)' } : {}}
-                        onClick={() => setCutoffMode('upload')}
-                      >
-                        <Paperclip size={13} style={{ marginRight: 4 }} /> Upload
-                      </button>
-                    </div>
-
-                    {cutoffMode === 'paste' && (
-                      <textarea
-                        className="lt-input"
-                        style={{ width: '100%', minHeight: 100, fontFamily: 'monospace', fontSize: 11, lineHeight: 1.5, resize: 'vertical' }}
-                        value={cutoffContent}
-                        onChange={e => setCutoffContent(e.target.value)}
-                        placeholder="Paste vessel cutoff schedule here..."
-                      />
-                    )}
-
-                    {cutoffMode === 'upload' && (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <label
-                          className="db-btn"
-                          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, cursor: 'pointer', background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}
-                        >
-                          <Paperclip size={13} />
-                          {cutoffFileName ? 'Replace file' : 'Choose file'}
-                          <input
-                            type="file"
-                            accept=".pdf,.xlsx,.xls,.csv,.png,.jpg,.jpeg,.txt"
-                            style={{ display: 'none' }}
-                            onChange={e => {
-                              const file = e.target.files?.[0]
-                              if (!file) return
-                              setCutoffFileName(file.name)
-                              const reader = new FileReader()
-                              reader.onload = () => setCutoffContent(reader.result as string)
-                              reader.readAsDataURL(file)
-                              e.target.value = ''
-                            }}
-                          />
-                        </label>
-                        {cutoffFileName && (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text)' }}>
-                            <FileText size={13} style={{ color: '#16a34a' }} />
-                            <span style={{ fontWeight: 600 }}>{cutoffFileName}</span>
-                            <button
-                              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, color: 'var(--text-muted)' }}
-                              onClick={() => { setCutoffFileName(''); setCutoffContent('') }}
-                              title="Remove file"
-                            >
-                              <X size={12} />
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-
-                  <div style={{ display: 'flex', gap: 12 }}>
-                    <div style={{ flex: 1 }}>
-                      <label className="lt-label">SI Cutoff Date</label>
-                      <input className="lt-input" style={{ width: '100%' }} type="date"
-                        value={cutoffSiDate} onChange={e => setCutoffSiDate(e.target.value)} />
-                    </div>
-                    <div style={{ flex: 1 }}>
-                      <label className="lt-label">BL Cutoff Date</label>
-                      <input className="lt-input" style={{ width: '100%' }} type="date"
-                        value={cutoffBlDate} onChange={e => setCutoffBlDate(e.target.value)} />
-                    </div>
-                  </div>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                    SI &amp; BL cutoff dates trigger downstream follow-up tasks and reminders.
-                  </div>
-
-                  <div>
-                    <label className="lt-label">Notes (optional)</label>
-                    <input className="lt-input" style={{ width: '100%' }} value={cutoffNotes}
-                      onChange={e => setCutoffNotes(e.target.value)}
-                      placeholder="Any notes about vessel cutoff schedule..." />
-                  </div>
-                </div>
-              )
-            })()}
-
-            {/* Submit SI modal */}
-            {actionModal.actionKind === 'submit-si' && (() => {
-              const { booking: siBkg } = actionModal.sourceData
-              return (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-                  {/* Booking summary */}
-                  <div style={{ padding: '10px 14px', background: 'rgba(15,143,168,0.06)', border: '1px solid rgba(15,143,168,0.15)', borderRadius: 8, fontSize: 12 }}>
-                    <strong>{siBkg.customer_name}</strong> — {siBkg.origin} → {siBkg.destination}
-                    <div style={{ color: 'var(--text-muted)', marginTop: 2 }}>
-                      {siBkg.quantity}x {siBkg.container_type} · {siBkg.shipping_line || 'No liner'}
-                    </div>
-                  </div>
-
-                  {/* Cutoff dates */}
-                  {(siBkg.si_cutoff_date || siBkg.bl_cutoff_date) && (
-                    <div style={{ display: 'flex', gap: 12, fontSize: 11 }}>
-                      {siBkg.si_cutoff_date && (
-                        <div style={{ flex: 1, padding: '6px 10px', background: 'rgba(8,145,178,0.06)', border: '1px solid rgba(8,145,178,0.15)', borderRadius: 6 }}>
-                          <span style={{ color: 'var(--text-muted)' }}>SI Cutoff:</span> <strong>{siBkg.si_cutoff_date}</strong>
-                        </div>
-                      )}
-                      {siBkg.bl_cutoff_date && (
-                        <div style={{ flex: 1, padding: '6px 10px', background: 'rgba(217,119,6,0.06)', border: '1px solid rgba(217,119,6,0.15)', borderRadius: 6 }}>
-                          <span style={{ color: 'var(--text-muted)' }}>BL Cutoff:</span> <strong>{siBkg.bl_cutoff_date}</strong>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-
-                  {/* SI Document */}
-                  <div>
-                        <label className="lt-label">SI Document</label>
-                        <div style={{ display: 'flex', gap: 8, marginTop: 4, marginBottom: 8 }}>
-                          <button
-                            className={`db-btn ${siMode === 'paste' ? 'primary' : ''}`}
-                            style={siMode !== 'paste' ? { background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-secondary)' } : {}}
-                            onClick={() => setSiMode('paste')}
-                          >
-                            <ClipboardPaste size={13} style={{ marginRight: 4 }} /> Paste
-                          </button>
-                          <button
-                            className={`db-btn ${siMode === 'upload' ? 'primary' : ''}`}
-                            style={siMode !== 'upload' ? { background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-secondary)' } : {}}
-                            onClick={() => setSiMode('upload')}
-                          >
-                            <Paperclip size={13} style={{ marginRight: 4 }} /> Upload
-                          </button>
-                        </div>
-
-                        {siMode === 'paste' && (
-                          <textarea
-                            className="lt-input"
-                            style={{ width: '100%', minHeight: 100, fontFamily: 'monospace', fontSize: 11, lineHeight: 1.5, resize: 'vertical' }}
-                            value={siContent}
-                            onChange={e => setSiContent(e.target.value)}
-                            placeholder="Paste shipping instructions here..."
-                          />
-                        )}
-
-                        {siMode === 'upload' && (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <label
-                              className="db-btn"
-                              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, cursor: 'pointer', background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}
-                            >
-                              <Paperclip size={13} />
-                              {siFileName ? 'Replace file' : 'Choose file'}
-                              <input
-                                type="file"
-                                accept=".pdf,.xlsx,.xls,.csv,.png,.jpg,.jpeg,.txt,.doc,.docx"
-                                style={{ display: 'none' }}
-                                onChange={e => {
-                                  const file = e.target.files?.[0]
-                                  if (!file) return
-                                  setSiFileName(file.name)
-                                  const reader = new FileReader()
-                                  reader.onload = () => setSiContent(reader.result as string)
-                                  reader.readAsDataURL(file)
-                                  e.target.value = ''
-                                }}
-                              />
-                            </label>
-                            {siFileName && (
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text)' }}>
-                                <FileText size={13} style={{ color: '#16a34a' }} />
-                                <span style={{ fontWeight: 600 }}>{siFileName}</span>
-                                <button
-                                  style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, color: 'var(--text-muted)' }}
-                                  onClick={() => { setSiFileName(''); setSiContent('') }}
-                                  title="Remove file"
-                                >
-                                  <X size={12} />
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                        )}
-                  </div>
-
-                  <div>
-                    <label className="lt-label">Notes (optional)</label>
-                    <input className="lt-input" style={{ width: '100%' }} value={formNote}
-                      onChange={e => setFormNote(e.target.value)}
-                      placeholder="Any notes about the SI submission..." />
-                  </div>
-                </div>
-              )
-            })()}
-
-            {/* Send Draft BL modal */}
-            {actionModal.actionKind === 'send-draft-bl' && (() => {
-              const { booking: blBkg } = actionModal.sourceData
-              return (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-                  {/* Booking summary */}
-                  <div style={{ padding: '10px 14px', background: 'rgba(15,143,168,0.06)', border: '1px solid rgba(15,143,168,0.15)', borderRadius: 8, fontSize: 12 }}>
-                    <strong>{blBkg.customer_name}</strong> — {blBkg.origin} → {blBkg.destination}
-                    <div style={{ color: 'var(--text-muted)', marginTop: 2 }}>
-                      {blBkg.quantity}x {blBkg.container_type} · {blBkg.shipping_line || 'No liner'}
-                    </div>
-                  </div>
-
-                  {/* Cutoff dates */}
-                  {(blBkg.si_cutoff_date || blBkg.bl_cutoff_date) && (
-                    <div style={{ display: 'flex', gap: 12, fontSize: 11 }}>
-                      {blBkg.si_cutoff_date && (
-                        <div style={{ flex: 1, padding: '6px 10px', background: 'rgba(8,145,178,0.06)', border: '1px solid rgba(8,145,178,0.15)', borderRadius: 6 }}>
-                          <span style={{ color: 'var(--text-muted)' }}>SI Cutoff:</span> <strong>{blBkg.si_cutoff_date}</strong>
-                        </div>
-                      )}
-                      {blBkg.bl_cutoff_date && (
-                        <div style={{ flex: 1, padding: '6px 10px', background: 'rgba(217,119,6,0.06)', border: '1px solid rgba(217,119,6,0.15)', borderRadius: 6 }}>
-                          <span style={{ color: 'var(--text-muted)' }}>BL Cutoff:</span> <strong>{blBkg.bl_cutoff_date}</strong>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  <div style={{ padding: '10px 14px', background: 'rgba(8,145,178,0.06)', border: '1px solid rgba(8,145,178,0.18)', borderRadius: 8, fontSize: 12, color: '#0891b2', display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <FileText size={14} />
-                    Record the Draft BL received from {blBkg.shipping_line || 'the liner'} and forward it to the customer for approval.
-                  </div>
-
-                  {/* Draft BL document */}
-                  <div>
-                    <label className="lt-label">Draft BL Document</label>
-                    <div style={{ display: 'flex', gap: 8, marginTop: 4, marginBottom: 8 }}>
-                      <button
-                        className={`db-btn ${draftBlMode === 'paste' ? 'primary' : ''}`}
-                        style={draftBlMode !== 'paste' ? { background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-secondary)' } : {}}
-                        onClick={() => setDraftBlMode('paste')}
-                      >
-                        <ClipboardPaste size={13} style={{ marginRight: 4 }} /> Paste
-                      </button>
-                      <button
-                        className={`db-btn ${draftBlMode === 'upload' ? 'primary' : ''}`}
-                        style={draftBlMode !== 'upload' ? { background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-secondary)' } : {}}
-                        onClick={() => setDraftBlMode('upload')}
-                      >
-                        <Paperclip size={13} style={{ marginRight: 4 }} /> Upload
-                      </button>
-                    </div>
-
-                    {draftBlMode === 'paste' && (
-                      <textarea
-                        className="lt-input"
-                        style={{ width: '100%', minHeight: 100, fontFamily: 'monospace', fontSize: 11, lineHeight: 1.5, resize: 'vertical' }}
-                        value={draftBlContent}
-                        onChange={e => setDraftBlContent(e.target.value)}
-                        placeholder="Paste Draft BL content here..."
-                      />
-                    )}
-
-                    {draftBlMode === 'upload' && (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <label
-                          className="db-btn"
-                          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, cursor: 'pointer', background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}
-                        >
-                          <Paperclip size={13} />
-                          {draftBlFileName ? 'Replace file' : 'Choose file'}
-                          <input
-                            type="file"
-                            accept=".pdf,.xlsx,.xls,.csv,.png,.jpg,.jpeg,.txt,.doc,.docx"
-                            style={{ display: 'none' }}
-                            onChange={e => {
-                              const file = e.target.files?.[0]
-                              if (!file) return
-                              setDraftBlFileName(file.name)
-                              const reader = new FileReader()
-                              reader.onload = () => setDraftBlContent(reader.result as string)
-                              reader.readAsDataURL(file)
-                              e.target.value = ''
-                            }}
-                          />
-                        </label>
-                        {draftBlFileName && (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text)' }}>
-                            <FileText size={13} style={{ color: '#16a34a' }} />
-                            <span style={{ fontWeight: 600 }}>{draftBlFileName}</span>
-                            <button
-                              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, color: 'var(--text-muted)' }}
-                              onClick={() => { setDraftBlFileName(''); setDraftBlContent('') }}
-                              title="Remove file"
-                            >
-                              <X size={12} />
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Send method */}
-                  <div>
-                    <label className="lt-label">Send Draft BL to Customer via</label>
-                    <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-                      <button
-                        className={`db-btn ${sendMethod === 'email' ? 'primary' : ''}`}
-                        style={sendMethod !== 'email' ? { background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-secondary)' } : {}}
-                        onClick={() => setSendMethod('email')}
-                      >
-                        <Mail size={13} style={{ marginRight: 4 }} /> Email
-                      </button>
-                      <button
-                        className={`db-btn ${sendMethod === 'whatsapp' ? 'primary' : ''}`}
-                        style={sendMethod === 'whatsapp' ? { background: '#25d366', borderColor: '#25d366' } : { background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}
-                        onClick={() => setSendMethod('whatsapp')}
-                      >
-                        <MessageCircle size={13} style={{ marginRight: 4 }} /> WhatsApp
-                      </button>
-                    </div>
-                  </div>
-
-                  {sendMethod === 'email' && (
-                    <div>
-                      <label className="lt-label">Customer Email <span style={{ color: '#dc2626' }}>*</span></label>
-                      <input className="lt-input" style={{ width: '100%' }} type="email"
-                        value={customerContactEmail} onChange={e => setCustomerContactEmail(e.target.value)}
-                        placeholder="customer@example.com" />
-                    </div>
-                  )}
-
-                  {sendMethod === 'whatsapp' && (
-                    <>
-                      <div>
-                        <label className="lt-label">Customer WhatsApp Number</label>
-                        <input className="lt-input" style={{ width: '100%' }}
-                          value={customerContactPhone} onChange={e => setCustomerContactPhone(e.target.value)}
-                          placeholder="+94 7X XXX XXXX" />
-                      </div>
-                      <div style={{ padding: '10px 14px', background: 'rgba(37,211,102,0.06)', border: '1px solid rgba(37,211,102,0.2)', borderRadius: 8 }}>
-                        <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer', fontSize: 12, color: 'var(--text-secondary)' }}>
-                          <input type="checkbox" checked={waConfirmed} onChange={e => setWaConfirmed(e.target.checked)} style={{ marginTop: 2 }} />
-                          <span>
-                            I confirm that I have sent the Draft BL to the customer via WhatsApp.
-                            <span style={{ display: 'block', fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
-                              No WhatsApp integration — manual confirmation.
-                            </span>
-                          </span>
-                        </label>
-                      </div>
-                    </>
-                  )}
-
-                  <div>
-                    <label className="lt-label">Notes (optional)</label>
-                    <input className="lt-input" style={{ width: '100%' }} value={formNote}
-                      onChange={e => setFormNote(e.target.value)}
-                      placeholder="Any notes for the customer..." />
-                  </div>
-                </div>
-              )
-            })()}
+            {/* Submit SI — now inline, see ternary chain above */}
 
             {/* BL Approval modal */}
             {actionModal.actionKind === 'bl-approval' && (() => {
-              const { booking: baBkg } = actionModal.sourceData
+              const { booking: baBkg } = actionModal!.sourceData
               const isDtd = baBkg.delivery_type === 'door-to-door'
               const blType = isDtd ? 'House BL' : 'Draft BL'
               return (
@@ -3232,7 +4951,7 @@ ABC Logistics (Pvt) Ltd`
 
             {/* Record Master BL modal */}
             {actionModal.actionKind === 'record-master-bl' && (() => {
-              const { booking: mbBkg } = actionModal.sourceData
+              const { booking: mbBkg } = actionModal!.sourceData
               return (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
                   {/* Booking summary */}
@@ -3296,7 +5015,7 @@ ABC Logistics (Pvt) Ltd`
 
             {/* Create House BL modal */}
             {actionModal.actionKind === 'create-house-bl' && (() => {
-              const { booking: hbBkg } = actionModal.sourceData
+              const { booking: hbBkg } = actionModal!.sourceData
               return (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
                   {/* Booking summary */}
@@ -3463,12 +5182,6 @@ ABC Logistics (Pvt) Ltd`
                   (actionModal.actionKind === 'confirm-booking' && !formVessel.trim()) ||
                   (actionModal.actionKind === 'release-booking' && sendMethod === 'email' && (!customerContactEmail.trim() || !customerContactEmail.includes('@'))) ||
                   (actionModal.actionKind === 'release-booking' && sendMethod === 'whatsapp' && !waConfirmed) ||
-                  (actionModal.actionKind === 'request-si' && sendMethod === 'email' && (!customerContactEmail.trim() || !customerContactEmail.includes('@'))) ||
-                  (actionModal.actionKind === 'request-si' && sendMethod === 'whatsapp' && !waConfirmed) ||
-                  (actionModal.actionKind === 'submit-si' && inttraSiLoading) ||
-                  (actionModal.actionKind === 'submit-si' && !siContent.trim()) ||
-                  (actionModal.actionKind === 'send-draft-bl' && sendMethod === 'email' && (!customerContactEmail.trim() || !customerContactEmail.includes('@'))) ||
-                  (actionModal.actionKind === 'send-draft-bl' && sendMethod === 'whatsapp' && !waConfirmed) ||
                   (actionModal.actionKind === 'bl-approval' && blDecision === 'changes-requested' && !formNote.trim()) ||
                   (actionModal.actionKind === 'record-master-bl' && (!masterBlNumber.trim() || !masterBlConsignee.trim())) ||
                   (actionModal.actionKind === 'create-house-bl' && (!houseBlNumber.trim() || !houseBlConsignee.trim())) ||
@@ -3487,20 +5200,11 @@ ABC Logistics (Pvt) Ltd`
                   actionModal.actionKind === 'customer-response' && customerDecision === 'accepted' ? { background: '#16a34a', borderColor: '#16a34a' } :
                   actionModal.actionKind === 'customer-response' && customerDecision === 'rejected' ? { background: '#dc2626', borderColor: '#dc2626' } :
                   actionModal.actionKind === 'booking-request' ? { background: '#0f8fa8', borderColor: '#0f8fa8' } :
-                  actionModal.actionKind === 'record-cutoff' ? { background: '#0891b2', borderColor: '#0891b2' } :
                   actionModal.actionKind === 'confirm-booking' && formVessel.trim() ? { background: '#d97706', borderColor: '#d97706' } :
                   actionModal.actionKind === 'confirm-booking' ? { opacity: 0.4, cursor: 'not-allowed' } :
                   actionModal.actionKind === 'release-booking' && sendMethod === 'whatsapp' && waConfirmed ? { background: '#25d366', borderColor: '#25d366' } :
                   actionModal.actionKind === 'release-booking' && sendMethod === 'email' && customerContactEmail.includes('@') ? {} :
                   actionModal.actionKind === 'release-booking' ? { opacity: 0.4, cursor: 'not-allowed' } :
-                  actionModal.actionKind === 'request-si' && sendMethod === 'whatsapp' && waConfirmed ? { background: '#25d366', borderColor: '#25d366' } :
-                  actionModal.actionKind === 'request-si' && sendMethod === 'email' && customerContactEmail.includes('@') ? { background: '#0891b2', borderColor: '#0891b2' } :
-                  actionModal.actionKind === 'request-si' ? { opacity: 0.4, cursor: 'not-allowed' } :
-                  actionModal.actionKind === 'submit-si' && siContent.trim() ? { background: '#0891b2', borderColor: '#0891b2' } :
-                  actionModal.actionKind === 'submit-si' ? { opacity: 0.4, cursor: 'not-allowed' } :
-                  actionModal.actionKind === 'send-draft-bl' && sendMethod === 'whatsapp' && waConfirmed ? { background: '#25d366', borderColor: '#25d366' } :
-                  actionModal.actionKind === 'send-draft-bl' && sendMethod === 'email' && customerContactEmail.includes('@') ? { background: '#0891b2', borderColor: '#0891b2' } :
-                  actionModal.actionKind === 'send-draft-bl' ? { opacity: 0.4, cursor: 'not-allowed' } :
                   actionModal.actionKind === 'bl-approval' && blDecision === 'approved' ? { background: '#16a34a', borderColor: '#16a34a' } :
                   actionModal.actionKind === 'bl-approval' && blDecision === 'changes-requested' && formNote.trim() ? { background: '#d97706', borderColor: '#d97706' } :
                   actionModal.actionKind === 'bl-approval' ? { opacity: 0.4, cursor: 'not-allowed' } :
@@ -3528,15 +5232,9 @@ ABC Logistics (Pvt) Ltd`
                  actionModal.actionKind === 'customer-response' && customerDecision === 'accepted' ? <><Check size={12} /> Customer Accepted — Proceed to Booking</> :
                  actionModal.actionKind === 'customer-response' && customerDecision === 'rejected' ? <><X size={12} /> Customer Rejected — Close Inquiry</> :
                  actionModal.actionKind === 'booking-request' ? <><Ship size={12} /> Create Booking &amp; Send to Procurement</> :
-                 actionModal.actionKind === 'record-cutoff' ? <><Ship size={12} /> Record Cutoff &amp; Push</> :
                  actionModal.actionKind === 'confirm-booking' && formVessel.trim() ?<><Ship size={12} /> Confirm Manually &amp; Send to CS</> :
                  actionModal.actionKind === 'release-booking' && sendMethod === 'email' ? <><Mail size={12} /> Release &amp; Send via Email</> :
                  actionModal.actionKind === 'release-booking' && sendMethod === 'whatsapp' ? <><MessageCircle size={12} /> Release &amp; Confirm WhatsApp Sent</> :
-                 actionModal.actionKind === 'request-si' && sendMethod === 'email' ? <><Mail size={12} /> Request SI via Email</> :
-                 actionModal.actionKind === 'request-si' && sendMethod === 'whatsapp' ? <><MessageCircle size={12} /> Confirm SI Request via WhatsApp</> :
-                 actionModal.actionKind === 'submit-si' ?<><Globe size={12} /> Submit SI &amp; Confirm</> :
-                 actionModal.actionKind === 'send-draft-bl' && sendMethod === 'email' ? <><Mail size={12} /> Send Draft BL via Email</> :
-                 actionModal.actionKind === 'send-draft-bl' && sendMethod === 'whatsapp' ? <><MessageCircle size={12} /> Confirm Draft BL Sent</> :
                  actionModal.actionKind === 'bl-approval' && blDecision === 'approved' ? <><Check size={12} /> BL Approved</> :
                  actionModal.actionKind === 'bl-approval' && blDecision === 'changes-requested' ? <><Edit3 size={12} /> Record Changes Requested</> :
                  actionModal.actionKind === 'record-master-bl' ? <><FileText size={12} /> Record Master BL</> :
