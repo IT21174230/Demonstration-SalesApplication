@@ -1168,6 +1168,8 @@ ABC Logistics (Pvt) Ltd`
         // Fallback to inquiry request text
         if (!container) container = brInq.request?.match(/(\d{2}['']?\s*(?:GP|HC|OT|FR|RF))/i)?.[1]?.replace(/\s/g, '') ?? ''
         if (!qty) qty = brInq.request?.match(/(\d+)/)?.[1] ?? '1'
+        // Fallback: use first preferred liner if rate-context scan found nothing
+        if (!liner && brInq.preferred_liners?.length) liner = brInq.preferred_liners[0]
 
         setBkShippingLine(liner)
         setBkContainerType(container || "20'GP")
@@ -1179,8 +1181,11 @@ ABC Logistics (Pvt) Ltd`
         } else {
           setBkContainers([{ type: container || "20'GP", qty: parseInt(qty, 10) || 1 }])
         }
-        setBkCommodity('')
-        setBkCargoReadyDate('')
+        // Prefill structured fields directly from inquiry data
+        setBkCommodity(brInq.containers?.[0]?.commodityName ?? '')
+        setBkCargoReadyDate(brInq.cargo_ready_date ?? '')
+        setBkDeliveryTerm(brInq.incoterm ?? '')
+        setBkHsCode(brInq.containers?.[0]?.hs_code ?? '')
         setBkVessel('')
         setBkVesselEtd('')
         setBkVoyage('')
@@ -1188,8 +1193,6 @@ ABC Logistics (Pvt) Ltd`
         setBkContractNo('')
         setBkAgreedRate('')
         setBkRateRemark('')
-        setBkDeliveryTerm('')
-        setBkHsCode('')
         setBkBlType('')
         setBkBookingType('')
         setBkReeferTemp('')
